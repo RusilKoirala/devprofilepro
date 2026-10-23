@@ -11,6 +11,7 @@ const DAILY_LIMITS: Record<AiStep, number> = {
   write: 40,
   tailor: 20,
   win: 30,
+  chat: 80,
 }
 
 const redis =

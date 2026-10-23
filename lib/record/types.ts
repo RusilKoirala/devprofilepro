@@ -92,6 +92,8 @@ export interface ResumeLayout {
   section_order: ItemType[]
   // Item ids in the order the user dragged them. Unset means the default order.
   item_order?: string[]
+  // Tailored resumes only: the items chosen for this resume. The base resume shows every shown item.
+  include?: string[]
   items: { item_id: string; bullet_ids: string[] }[]
 }
 

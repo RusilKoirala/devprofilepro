@@ -54,3 +54,14 @@ Changes aimed at "best resume, effortlessly" (Problem 1, F3/F5/F6/F9):
 | A readiness badge ("Ready to send" / "N to fix") in the editor header, from the same checks as the Checks tab. | `components/app/checks-panel.tsx` |
 
 Verified: typecheck, ESLint, unit tests (incl. new `lib/resume/hints.test.ts`), production build, and the editor/start UI rendered with mock data. Not verified: a signed-in end-to-end run against Supabase and a live AI provider.
+
+## New resumes and resume chat — 23 October 2026
+
+| Change | Where |
+| --- | --- |
+| `/resume`: a prompt ("paste a job post, or say what this resume is for") turns into a conversation. One AI call (A4, `step: "tailor"`) picks and orders Career Record items, then the resume is saved as `kind: "tailored"` with `layout.include`, fitted and checked, each as a visible step. It never rewords lines: bullets are shared by every resume. | `lib/ai/tailor.ts`, `stageTailorPlan`/`stageTailorSave`, `components/app/resume-home.tsx` |
+| Hide/show on a tailored resume changes only its `include` list, not the item's status in the base resume. | `setItemStateIn` in `lib/record/edits.ts` |
+| Resume chat (Edit / Chat toggle in the editor). Each message is one AI call (`step: "chat"`) that returns a reply and typed edits. Code checks every edit against the current resume (ids exist, no numbers that aren't in the entry's facts or the user's own messages, no filler), applies the ones that pass in order, re-fits once and reports each as applied or skipped. Rewording goes through the fact-checked writer (`rewrite_entry`). | `lib/ai/chat.ts`, `lib/record/chat-actions.ts` (+ test), `chatWithResume` |
+| Edit logic moved to `lib/record/edits.ts` so server actions and the chat share it. | `lib/record/edits.ts` |
+
+Not verified: live AI runs of tailoring and chat (the browser checks used mock data without a signed-in session). Rewrite and pin still act on the shared item, so they affect every resume that shows it.
