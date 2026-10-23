@@ -4,7 +4,8 @@ import { extractRecord } from "@/lib/ai/extract"
 import { generateQuestions, MAX_QUESTIONS } from "@/lib/ai/questions"
 import { writeBullets } from "@/lib/ai/write"
 import { loadRecord, loadResume, type CareerRecord } from "@/lib/record/db"
-import { dedupeKey, type CutEntry, type Item, type ItemType, type ResumeLayout } from "@/lib/record/types"
+import { dedupeKey, itemTitle, type CutEntry, type Item, type ItemType, type ResumeLayout } from "@/lib/record/types"
+import { sameFact } from "@/lib/record/dedupe"
 import { groundItemData, looksImportant, verifyFacts } from "@/lib/record/verify"
 import type { RepoMeta } from "@/lib/ingest/types"
 import { byRecency } from "@/lib/resume/dates"
@@ -18,6 +19,9 @@ export interface BuildReport {
   skippedReadmes: string[]
   // What the Career Record holds after this build, shown as "Found 2 jobs, 5 projects…"
   counts: Partial<Record<ItemType, number>>
+  // What this build changed: new entries, and existing entries that gained facts.
+  added: string[]
+  updated: string[]
 }
 
 function countItems(items: Pick<Item, "type" | "status">[]): BuildReport["counts"] {
@@ -31,7 +35,7 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
   const record = await loadRecord(supabase)
   const sources = record.sources.filter((s) => s.kind !== "win" && s.status !== "failed" && s.raw_text)
   if (!sources.length) {
-    if (record.items.length) return { items: record.items.length, factsKept: 0, factsDropped: 0, skippedReadmes: [], counts: countItems(record.items) }
+    if (record.items.length) return { items: record.items.length, factsKept: 0, factsDropped: 0, skippedReadmes: [], counts: countItems(record.items), added: [], updated: [] }
     throw new Error("Add at least one source first.")
   }
 
@@ -42,9 +46,14 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
   // Imports are additive. Deleting accepted items here invalidates existing
   // layouts if writing or rendering subsequently fails, and loses hide choices.
   const byKey = new Map(record.items.map((i) => [dedupeKey(i), i.id]))
-  const existingFactTexts = new Set(record.facts.map((f) => `${f.item_id}:${f.text.toLowerCase()}`))
+  // Facts already on each item, including ones added earlier in this build. A reworded copy of one
+  // (the AI phrases facts a little differently on every read) is skipped, not saved again.
+  const factsByItem = new Map<string, string[]>()
+  for (const f of record.facts) factsByItem.set(f.item_id, [...(factsByItem.get(f.item_id) ?? []), f.text])
   let factsKept = 0
   let factsDropped = 0
+  const added = new Set<string>()
+  const updated = new Set<string>()
   const questionRows: { item_id: string; prompt: string; kind: string; options: string[] }[] = []
 
   for (const extracted of output.items) {
@@ -74,6 +83,7 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
       if (error) throw new Error(error.message)
       itemId = itemRow.id as string
       byKey.set(dedupeKey(candidate), itemId)
+      if (extracted.type !== "contact") added.add(itemTitle(candidate))
     } else {
       // A later source may supply a previously missing email, date or link.
       // Fill blanks while retaining the accepted values already on the item.
@@ -93,14 +103,17 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
 
     const factRows = allFacts
       .flatMap((f) => {
-        if (existingFactTexts.has(`${itemId}:${f.text.toLowerCase()}`)) return []
-        existingFactTexts.add(`${itemId}:${f.text.toLowerCase()}`)
+        const known = factsByItem.get(itemId!) ?? []
+        if (known.some((t) => sameFact(t, f.text))) return []
+        factsByItem.set(itemId!, [...known, f.text])
         const kind = kindById.get(f.source_id)
         return [{ item_id: itemId, text: f.text, quote: f.quote, source_id: f.source_id, label: kind === "github" || kind === "pr_link" ? "github" : "document" }]
       })
     if (factRows.length) {
       const { error } = await supabase.from("facts").insert(factRows)
       if (error) throw new Error(error.message)
+      const existing = record.items.find((i) => i.id === itemId)
+      if (existing && existing.type !== "contact") updated.add(itemTitle(existing))
     }
 
     if (teamProject && !record.items.find((i) => i.id === itemId)?.data.ownership_confirmed) {
@@ -122,7 +135,10 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
 
   const { data: after, error: afterError } = await supabase.from("items").select("type,status")
   if (afterError) throw new Error(afterError.message)
-  return { items: output.items.length, factsKept, factsDropped, skippedReadmes: skipped, counts: countItems(after as Pick<Item, "type" | "status">[]) }
+  return {
+    items: output.items.length, factsKept, factsDropped, skippedReadmes: skipped, counts: countItems(after as Pick<Item, "type" | "status">[]),
+    added: [...added], updated: [...updated].filter((t) => !added.has(t)),
+  }
 }
 
 // ④ Questions (A2), topping up to MAX_QUESTIONS open questions.

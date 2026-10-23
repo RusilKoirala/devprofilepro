@@ -25,6 +25,7 @@ import { pageCount, parserView, renderPdf } from "@/lib/resume/render"
 import { createClient } from "@/lib/supabase/server"
 import { isAppEnabled } from "@/lib/access"
 import { questionFact } from "@/lib/record/question-fact"
+import { findDuplicateFacts } from "@/lib/record/dedupe"
 import {
   addLine, BulletSnapshot, editLine, RANGE, removeLine, setItemOrderIn, setItemStateIn, setSectionOrderIn, updateDetailsIn, updateHeaderIn,
   type DeletedBullet, type DetailsInput, type HeaderInput,
@@ -122,11 +123,11 @@ export async function addSources(formData: FormData): Promise<ActionResult<Cover
 // ②→⑥ Build the base resume in stages, so the client shows real progress instead of a timer.
 
 // ② Extract + ③ quote check.
-export async function stageExtract(): Promise<ActionResult<{ counts: Partial<Record<ItemType, number>>; factsKept: number; factsDropped: number; skipped: string[] }>> {
+export async function stageExtract(): Promise<ActionResult<{ counts: Partial<Record<ItemType, number>>; factsKept: number; factsDropped: number; skipped: string[]; added: string[]; updated: string[] }>> {
   try {
     const { userId, supabase } = await session()
     const report = await buildRecord(supabase, userId)
-    return { ok: true, data: { counts: report.counts, factsKept: report.factsKept, factsDropped: report.factsDropped, skipped: report.skippedReadmes } }
+    return { ok: true, data: { counts: report.counts, factsKept: report.factsKept, factsDropped: report.factsDropped, skipped: report.skippedReadmes, added: report.added, updated: report.updated } }
   } catch (err) {
     return fail(err)
   }
@@ -367,6 +368,32 @@ export async function addManualItem(input: z.input<typeof ManualItemSchema>): Pr
     if (base) await relayout(base.id)
     revalidatePath("/record")
     return { ok: true, data: undefined }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+// Merge reworded copies of the same fact into one, keeping every line's citation pointing at a fact
+// that still exists. Nothing on the page changes; the Career Record just stops repeating itself.
+export async function mergeDuplicateFacts(): Promise<ActionResult<{ merged: number }>> {
+  try {
+    const { supabase } = await session()
+    const record = await loadRecord(supabase)
+    const citations = new Map<string, number>()
+    for (const b of record.bullets) for (const id of b.fact_ids) citations.set(id, (citations.get(id) ?? 0) + 1)
+    const merge = findDuplicateFacts(record.facts, citations)
+    if (!merge.size) return { ok: true, data: { merged: 0 } }
+    for (const b of record.bullets) {
+      if (!b.fact_ids.some((id) => merge.has(id))) continue
+      const fact_ids = [...new Set(b.fact_ids.map((id) => merge.get(id) ?? id))]
+      const { error } = await supabase.from("bullets").update({ fact_ids }).eq("id", b.id)
+      if (error) throw new Error(error.message)
+    }
+    const { error } = await supabase.from("facts").delete().in("id", [...merge.keys()])
+    if (error) throw new Error(error.message)
+    revalidatePath("/record")
+    revalidatePath("/home")
+    return { ok: true, data: { merged: merge.size } }
   } catch (err) {
     return fail(err)
   }

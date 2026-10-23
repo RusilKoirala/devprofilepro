@@ -1,10 +1,11 @@
 import "server-only"
+import { usdToCredits } from "@/lib/credits"
 import { createClient } from "@/lib/supabase/server"
 
 // Spend guards, on top of whatever hard limit is set in the provider's billing dashboard.
 //   AI_USER_DAILY_BUDGET_USD    per user per day, from ai_runs (default $0.50)
 //   AI_SERVER_DAILY_BUDGET_USD  per server process per day, all users together (default $2)
-const USER_DAILY = Number(process.env.AI_USER_DAILY_BUDGET_USD ?? 0.5)
+export const USER_DAILY = Number(process.env.AI_USER_DAILY_BUDGET_USD ?? 0.5)
 const SERVER_DAILY = Number(process.env.AI_SERVER_DAILY_BUDGET_USD ?? 2)
 
 export class BudgetError extends Error {}
@@ -37,6 +38,6 @@ export async function checkBudget() {
     return // no session (e.g. evals): the server-wide cap still applies
   }
   if (spent >= USER_DAILY) {
-    throw new BudgetError(`You've used today's AI budget ($${USER_DAILY}). Editing and downloads still work; try again tomorrow.`)
+    throw new BudgetError(`You've used today's ${usdToCredits(USER_DAILY)} credits. Editing and downloads still work; credits refill at midnight UTC.`)
   }
 }
