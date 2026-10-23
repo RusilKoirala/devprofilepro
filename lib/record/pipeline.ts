@@ -8,6 +8,7 @@ import { dedupeKey, type CutEntry, type Item, type ItemType, type ResumeLayout }
 import { groundItemData, looksImportant, verifyFacts } from "@/lib/record/verify"
 import type { RepoMeta } from "@/lib/ingest/types"
 import { byRecency } from "@/lib/resume/dates"
+import { applyItemOrder } from "@/lib/resume/order"
 import { fitToOnePage } from "@/lib/resume/fit"
 
 export interface BuildReport {
@@ -173,8 +174,8 @@ export function sectionOrder(items: Pick<Item, "type" | "status" | "data">[]): I
   return early ? ["education", "job", "project", "skills", "award"] : ["job", "project", "education", "skills", "award"]
 }
 
-// Jobs and schools are always reverse-chronological (a resume rule, not a ranking choice).
-// Projects, skills and awards go strongest first; the user reorders them by moving rank.
+// Default order: jobs and schools newest first, projects, skills and awards strongest first.
+// A drag in the editor overrides it (layout.item_order).
 export function orderItems<T extends Pick<Item, "type" | "rank" | "data">>(items: T[]): T[] {
   return [...items].sort((a, b) => {
     const dated = (t: string) => t === "job" || t === "education"
@@ -215,7 +216,14 @@ export async function writeBase(supabase: SupabaseClient, userId: string, target
   const role = targetRole?.trim() || existing?.layout?.target_role || undefined
   const { headline, written } = await writeItems(supabase, userId, record, { targetRole: role })
   const fresh = await loadRecord(supabase)
-  const layout: ResumeLayout = { ...defaultLayout(fresh, existing?.layout?.headline || headline), ...(role ? { target_role: role } : {}) }
+  const base = defaultLayout(fresh, existing?.layout?.headline || headline)
+  const itemOrder = existing?.layout?.item_order as string[] | undefined
+  const layout: ResumeLayout = {
+    ...base,
+    items: applyItemOrder(base.items, itemOrder),
+    ...(role ? { target_role: role } : {}),
+    ...(itemOrder ? { item_order: itemOrder } : {}),
+  }
   if (existing) {
     // Keep a section order the user chose; new sections are appended.
     const kept = (existing.layout?.section_order ?? []) as ItemType[]
@@ -238,6 +246,8 @@ export async function relayoutResume(supabase: SupabaseClient, resumeId: string)
   const layout: ResumeLayout = {
     ...base,
     ...(resume.layout.target_role ? { target_role: resume.layout.target_role } : {}),
+    ...(resume.layout.item_order ? { item_order: resume.layout.item_order } : {}),
+    items: applyItemOrder(base.items, resume.layout.item_order),
     section_order: kept.length ? [...kept, ...base.section_order.filter((t) => !kept.includes(t))] : base.section_order,
   }
   return fitAndSave(supabase, resumeId, layout, record)

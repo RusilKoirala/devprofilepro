@@ -32,7 +32,7 @@ export function QuestionCard({ resumeId, question, showItem = false }: { resumeI
   }
 
   return (
-    <div id={`q-${question.id}`} className="scroll-mt-24 rounded-lg border border-primary/25 bg-primary/5 p-3">
+    <div id={`q-${question.id}`} data-attention className="scroll-mt-24 rounded-lg border border-primary/25 bg-primary/5 p-3">
       <p className="flex items-start gap-2 text-sm">
         <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" />
         <span>

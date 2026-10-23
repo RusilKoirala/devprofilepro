@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase/server"
 import { isAppEnabled } from "@/lib/access"
 import { questionFact } from "@/lib/record/question-fact"
 import { REWRITE_STYLES, type RewriteStyle } from "@/lib/record/rewrite-styles"
+import { reorderWithin } from "@/lib/resume/order"
 
 export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -414,28 +415,20 @@ export async function restoreBullet(resumeId: string, snapshot: DeletedBullet): 
   }
 }
 
-// Move a project, skill group or award up or down. Order is stored as rank, so the
-// one-page fit also treats what the user moved up as more important.
-export async function moveItem(resumeId: string, itemId: string, direction: "up" | "down"): Promise<ActionResult> {
+// Entry order inside one section, from drag-and-drop or Move up/down. Display order only:
+// what gets cut to fit one page still follows strength.
+export async function setItemOrder(resumeId: string, sectionIds: string[]): Promise<ActionResult> {
   try {
     const { supabase } = await session()
-    const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
+    const ids = z.array(z.string().uuid()).min(1).max(100).parse(sectionIds)
+    const resume = await loadResume(supabase, resumeId)
     if (!resume) throw new Error("Resume not found")
-    const target = record.items.find((i) => i.id === itemId)
-    if (!target) throw new Error("Item not found")
-    if (target.type === "job" || target.type === "education") throw new Error("Jobs and schools stay newest first. Edit their dates to change the order.")
-    const group = resume.layout.items.map((li) => record.items.find((i) => i.id === li.item_id)).filter((i) => i?.type === target.type) as typeof record.items
-    const from = group.findIndex((i) => i.id === itemId)
-    const to = from + (direction === "up" ? -1 : 1)
-    if (from < 0 || to < 0 || to >= group.length) return { ok: true, data: undefined }
-    ;[group[from], group[to]] = [group[to], group[from]]
-    const top = Math.min(100, Math.max(...group.map((i) => i.rank), group.length))
-    for (const [n, item] of group.entries()) {
-      const rank = Math.max(1, top - n)
-      if (rank === item.rank) continue
-      const { error } = await supabase.from("items").update({ rank, updated_at: new Date().toISOString() }).eq("id", item.id)
-      if (error) throw new Error(error.message)
-    }
+    const current = resume.layout.items.map((li) => li.item_id)
+    if (new Set(ids).size !== ids.length || ids.some((id) => !current.includes(id))) throw new Error("That entry isn't on this resume any more. Refresh and try again.")
+    const known = resume.layout.item_order?.length ? [...resume.layout.item_order, ...current.filter((id) => !resume.layout.item_order!.includes(id))] : current
+    const item_order = reorderWithin(known, ids)
+    const { error } = await supabase.from("resumes").update({ layout: { ...resume.layout, item_order }, updated_at: new Date().toISOString() }).eq("id", resumeId)
+    if (error) throw new Error(error.message)
     await relayout(resumeId)
     return { ok: true, data: undefined }
   } catch (err) {
@@ -443,21 +436,15 @@ export async function moveItem(resumeId: string, itemId: string, direction: "up"
   }
 }
 
-export async function moveSection(resumeId: string, type: ItemType, direction: "up" | "down"): Promise<ActionResult> {
+// Section order from drag-and-drop or the arrows. Sections not on the page keep their place after these.
+export async function setSectionOrder(resumeId: string, order: ItemType[]): Promise<ActionResult> {
   try {
     const { supabase } = await session()
+    const types = z.array(z.enum(ITEM_TYPES).exclude(["contact"])).max(5).parse(order)
+    if (new Set(types).size !== types.length) throw new Error("Each section can appear once.")
     const resume = await loadResume(supabase, resumeId)
     if (!resume) throw new Error("Resume not found")
-    const present = new Set(resume.layout.items.map((li) => li.item_id))
-    const record = await loadRecord(supabase)
-    const shownTypes = new Set(record.items.filter((i) => present.has(i.id)).map((i) => i.type))
-    // Only swap with a section that is actually on the page.
-    const order = resume.layout.section_order.filter((t) => shownTypes.has(t))
-    const from = order.indexOf(type)
-    const to = from + (direction === "up" ? -1 : 1)
-    if (from < 0 || to < 0 || to >= order.length) return { ok: true, data: undefined }
-    ;[order[from], order[to]] = [order[to], order[from]]
-    const section_order = [...order, ...resume.layout.section_order.filter((t) => !shownTypes.has(t))]
+    const section_order = [...types, ...resume.layout.section_order.filter((t) => !types.includes(t as (typeof types)[number]))]
     const { error } = await supabase.from("resumes").update({ layout: { ...resume.layout, section_order }, updated_at: new Date().toISOString() }).eq("id", resumeId)
     if (error) throw new Error(error.message)
     await relayout(resumeId)
