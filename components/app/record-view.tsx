@@ -38,7 +38,7 @@ const GROUPS: { type: ItemType; title: string }[] = [
   { type: "award", title: "Awards" },
 ]
 
-export function RecordView({ items, baseResumeId, sourceCount }: { items: RecordItemView[]; baseResumeId: string | null; sourceCount: number }) {
+export function RecordView({ items, baseResumeId }: { items: RecordItemView[]; baseResumeId: string | null }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
@@ -51,12 +51,10 @@ export function RecordView({ items, baseResumeId, sourceCount }: { items: Record
   }
 
   return (
-    <div className="mt-6 space-y-8">
+    <div className="mt-4 space-y-8">
       <div className="flex flex-wrap items-center gap-2">
         <AddItemDialog />
-        <Button asChild variant="outline"><Link href="/start">Add a source</Link></Button>
         {baseResumeId && <Button asChild variant="ghost"><Link href={`/resume/${baseResumeId}`}>Open base resume</Link></Button>}
-        <span className="ml-auto text-sm text-muted-foreground">{sourceCount} sources</span>
       </div>
 
       {items.length === 0 && (
