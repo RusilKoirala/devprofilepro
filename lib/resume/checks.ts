@@ -1,5 +1,6 @@
 import "server-only"
 import { bannedWordsIn } from "@/lib/record/verify"
+import { dateFormat, dateValue as toNumber } from "@/lib/resume/dates"
 import type { ResumeDoc } from "@/lib/resume/schema"
 import { publicRequestStatus } from "@/lib/security/public-request"
 
@@ -27,24 +28,6 @@ export async function testLink(url: string): Promise<LinkStatus> {
   } catch {
     return "unchecked"
   }
-}
-
-const MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec"
-function dateFormat(d: string): string {
-  if (new RegExp(`^(${MONTHS})[a-z]*\\.? \\d{4}$`, "i").test(d)) return "Mon YYYY"
-  if (/^\d{4}$/.test(d)) return "YYYY"
-  if (/^\d{1,2}\/\d{4}$/.test(d)) return "MM/YYYY"
-  if (/^present$/i.test(d)) return "present"
-  return "other"
-}
-function toNumber(d: string): number | null {
-  if (/^present$/i.test(d)) return Infinity
-  if (dateFormat(d) === "other") return null
-  const year = Number(d.match(/\d{4}/)?.[0])
-  const numericMonth = d.match(/^(\d{1,2})\//)?.[1]
-  const month = numericMonth ? Number(numericMonth) - 1 : ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(d.slice(0, 3).toLowerCase())
-  if (numericMonth && (month < 0 || month > 11)) return null
-  return year * 12 + Math.max(0, month)
 }
 
 export async function runChecks(doc: ResumeDoc, opts: { pages: number; allBulletsSourced: boolean }): Promise<{ results: CheckResult[]; ready: boolean }> {

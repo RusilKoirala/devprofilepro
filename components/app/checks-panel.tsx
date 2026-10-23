@@ -14,9 +14,18 @@ const ICONS: Record<CheckStatus, React.ReactNode> = {
   not_checked: <CircleDashed className="size-4 text-muted-foreground" />,
 }
 
-export function ChecksPanel({ resumeId, version }: { resumeId: string; version: string }) {
-  const [state, setState] = useState<{ version: string; results: CheckResult[]; ready: boolean; parserText: string; error?: string } | null>(null)
+export interface ChecksState {
+  version: string
+  results: CheckResult[]
+  ready: boolean
+  parserText: string
+  error?: string
+}
 
+// Checks run on the actual rendered PDF and re-run whenever the resume changes.
+// Returns null while the current version is still being checked.
+export function useResumeChecks(resumeId: string, version: string): ChecksState | null {
+  const [state, setState] = useState<ChecksState | null>(null)
   useEffect(() => {
     let cancelled = false
     runResumeChecks(resumeId).then((res) => {
@@ -25,8 +34,31 @@ export function ChecksPanel({ resumeId, version }: { resumeId: string; version: 
     })
     return () => { cancelled = true }
   }, [resumeId, version])
+  return state && state.version === version ? state : null
+}
 
-  if (!state || state.version !== version) {
+export function ReadinessBadge({ state, onClick }: { state: ChecksState | null; onClick: () => void }) {
+  const fails = state?.results.filter((r) => r.status === "fail").length ?? 0
+  const warns = state?.results.filter((r) => r.status === "warn").length ?? 0
+  return (
+    <button type="button" onClick={onClick} className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs transition-colors hover:bg-muted">
+      {!state ? (
+        <><Spinner className="size-3" /> Checking…</>
+      ) : state.error ? (
+        <><CircleDashed className="size-3.5 text-muted-foreground" /> Checks unavailable</>
+      ) : fails ? (
+        <><XCircle className="size-3.5 text-destructive" /> {fails} to fix before sending</>
+      ) : warns ? (
+        <><AlertTriangle className="size-3.5 text-amber-400" /> Ready, {warns} to review</>
+      ) : (
+        <><CheckCircle2 className="size-3.5 text-emerald-400" /> Ready to send</>
+      )}
+    </button>
+  )
+}
+
+export function ChecksPanel({ state }: { state: ChecksState | null }) {
+  if (!state) {
     return <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground"><Spinner /> Checking your PDF and testing links…</div>
   }
   if (state.error) return <p className="py-8 text-sm text-destructive">{state.error}</p>
@@ -34,8 +66,8 @@ export function ChecksPanel({ resumeId, version }: { resumeId: string; version: 
   return (
     <div className="space-y-4">
       <Alert>
-        <AlertTitle>{state.ready ? "Reviewed and ready to export" : "Some checks failed"}</AlertTitle>
-        <AlertDescription>Checks are advice. You can always download.</AlertDescription>
+        <AlertTitle>{state.ready ? "Reviewed and ready to send" : "Fix these before you send it"}</AlertTitle>
+        <AlertDescription>Checks are advice, worst first. You can always download.</AlertDescription>
       </Alert>
       <ul className="space-y-2">
         {state.results.map((r) => (
@@ -51,7 +83,7 @@ export function ChecksPanel({ resumeId, version }: { resumeId: string; version: 
       </ul>
       <div>
         <h3 className="text-sm font-medium">Parser view</h3>
-        <p className="mb-2 text-xs text-muted-foreground">This is the text an applicant-tracking system reads from your actual PDF.</p>
+        <p className="mb-2 text-xs text-muted-foreground">The plain text our parser reads from your actual PDF. Applicant-tracking systems read the file the same way; each may map it to fields a little differently.</p>
         <pre className="max-h-96 overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap">{state.parserText}</pre>
       </div>
     </div>
