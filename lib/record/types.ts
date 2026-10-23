@@ -87,6 +87,8 @@ export interface SourceRow {
 
 export interface ResumeLayout {
   headline: string
+  // Optional "what are you applying for", steers which facts the writer leads with.
+  target_role?: string
   section_order: ItemType[]
   items: { item_id: string; bullet_ids: string[] }[]
 }

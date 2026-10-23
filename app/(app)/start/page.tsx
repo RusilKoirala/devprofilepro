@@ -10,20 +10,23 @@ export const maxDuration = 300
 export default async function StartPage() {
   const [user, supabase] = await Promise.all([currentUser(), createClient()])
   const githubLogin = user?.externalAccounts.find((a) => a.provider.includes("github"))?.username ?? null
-  const [{ data: sources, error: sourcesError }, { count, error: itemsError }] = await Promise.all([
+  const [{ data: sources, error: sourcesError }, { count, error: itemsError }, { data: base }] = await Promise.all([
     supabase.from("sources").select("id,kind,label,status,fetched_at").order("fetched_at", { ascending: false }),
     supabase.from("items").select("id", { count: "exact", head: true }),
+    supabase.from("resumes").select("layout").eq("kind", "base").maybeSingle(),
   ])
   if (sourcesError || itemsError) throw new Error(sourcesError?.message ?? itemsError?.message)
   const provider = aiProvider() === "openai" ? "OpenAI" : aiProvider() === "anthropic" ? "Anthropic (Claude)" : "your configured AI provider"
 
   return (
     <div className="mx-auto max-w-3xl pt-4">
-      <h2 className="text-lg font-medium">Give us what you have</h2>
+      <h2 className="text-lg font-medium">{count ? "Add more, then update" : "Give us what you have"}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Any one of these is enough for a first draft. Every line we write links back to where it came from.
+        {count
+          ? "New sources are merged into your Career Record. Bullets you edited are never overwritten."
+          : "No forms to fill in. We read what you already have, write a one-page resume, and every line links back to where it came from."}
       </p>
-      <StartForm githubLogin={githubLogin} sources={sources ?? []} hasRecord={Boolean(count)} />
+      <StartForm githubLogin={githubLogin} sources={sources ?? []} hasRecord={Boolean(count)} targetRole={base?.layout?.target_role ?? ""} />
       <p className="mt-8 text-xs text-muted-foreground">
         Your files are processed by {provider} to extract facts. Everything is private in your account.
       </p>

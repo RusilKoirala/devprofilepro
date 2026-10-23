@@ -26,17 +26,27 @@ function flatten(out: z.infer<typeof WriteSchema>): WrittenBullet[] {
 }
 
 const MAX_WORDS = 28
+const WEAK_OPENER = /^(worked on|working on|responsible for|helped|assisted|involved in|participated in|tasked with)\b/i
 
-const SYSTEM = `You write resume bullets for a software developer from their Career Record. Each <item> and <fact> has an id. Write bullets for every item in the budget list, grouped under that item's exact id, and cite the exact ids of the facts each bullet is built from. Never invent ids.
+const SYSTEM = `You write resume bullets for a software developer from their Career Record, the way a senior engineer who reviews resumes would. Each <item> and <fact> has an id. Write bullets for every item in the budget list, grouped under that item's exact id, and cite the exact ids of the facts each bullet is built from. Never invent ids.
 
 ${UNTRUSTED_NOTE}
 
+How a strong bullet reads: [past-tense verb] [what was built or changed] [with which technologies] [the result or scale, only if a cited fact gives one].
+  Weak: "Worked on the backend of the app using various technologies."
+  Strong: "Built a FastAPI service with PostgreSQL that handles sign-up and billing for ~200 paying users."
+
 Rules:
-- Start with a past-tense verb. Aim for about 22 words or fewer.
-- Plain, specific technical words. Say what was built, with what, and what happened.
+- Start with a specific past-tense verb (Built, Shipped, Designed, Cut, Migrated, Automated, Wrote, Added, Replaced…). Never start with "Worked on", "Responsible for", "Helped", "Assisted", "Involved in" or "Participated in".
+- Aim for 14-22 words. One idea per bullet. Don't repeat a fact across bullets, and don't restate the item's name.
+- Put the strongest, most specific bullet first in each item. Combine small related facts into one bullet rather than writing thin ones.
+- Name the concrete technologies from the facts inside the sentence, not as a trailing list.
+- Vary the opening verb: no two bullets on the whole resume should start with the same word when you can avoid it.
 - Only say what the cited facts say. No number unless a cited fact has that number. Keep ranges and "~" exactly as in the fact (e.g. "100-1k users" stays "100-1k").
+- No filler: "various", "multiple features", "etc.", "successfully", "robust", "scalable" (unless a fact shows scale).
 - Never use: ${BANNED_WORDS.join(", ")}.
 - Bullets marked "keep" were written by the user: don't output new bullets for those items unless asked.
+- If a target role is given, lead each item with the facts most relevant to it. Never add skills or claims the facts don't contain.
 - headline: a title the person has actually held (from a job item), or "Software Developer". Never invent a title.`
 
 function rangesIn(text: string): string[] {
@@ -59,6 +69,7 @@ export function checkBullet(b: WrittenBullet, itemFacts: Map<string, Fact>): str
   const banned = bannedWordsIn(b.text)
   if (banned.length) errors.push(`"${b.text}" uses banned words: ${banned.join(", ")}`)
   if (b.text.split(/\s+/).length > MAX_WORDS) errors.push(`"${b.text}" is longer than ${MAX_WORDS} words`)
+  if (WEAK_OPENER.test(b.text.trim())) errors.push(`"${b.text}" starts with a weak opener; start with what was built or changed`)
   return errors
 }
 
@@ -69,6 +80,8 @@ export async function writeBullets(opts: {
   keep?: Bullet[]
   budget?: Map<string, number> // max bullets per item
   targetRole?: string
+  // A one-off direction from the user, e.g. "shorter" or "lead with impact".
+  instruction?: string
 }): Promise<{ headline: string; bullets: WrittenBullet[]; fallbacks: number }> {
   // A shared README describes the project, not this person's contribution.
   // Show its metadata in the partial draft, but wait for their answer to write
@@ -101,7 +114,10 @@ export async function writeBullets(opts: {
     system: SYSTEM,
     content: [
       { type: "text", text: recordForPrompt(items, writingFacts, opts.keep ?? []) },
-      { type: "text", text: `Bullet budget per item:\n${budgetText}${opts.targetRole ? `\n\nTarget role: ${opts.targetRole}` : ""}` },
+      {
+        type: "text",
+        text: `Bullet budget per item:\n${budgetText}${opts.targetRole ? `\n\nTarget role: ${opts.targetRole}` : ""}${opts.instruction ? `\n\nThe user asked for this rewrite: ${opts.instruction}` : ""}`,
+      },
     ],
     check,
     acceptOnLastAttempt: true,

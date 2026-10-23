@@ -28,8 +28,7 @@ The new migration must be applied before using the revised writing actions. It h
 
 - Milestone 2 tailoring (`/jobs/new`, A4, match reports) and Milestone 3 wins, refresh proposals and revision review are absent. Do not advertise them as implemented.
 - Account/data deletion, PostHog funnel tracking, Sentry and invite/waitlist configuration still need completion or deployment verification.
-- Contact fields and item metadata lack a complete editing workflow. Explicit second-page controls also need work.
-- Onboarding progress advances on a timer rather than reporting actual server stages.
+- Explicit second-page controls still need work.
 - Source re-import overwrites raw text in place. Versioned source evidence is still needed for reliable historical provenance after refresh.
 - Quote matching and quantity checks do not prove semantic entailment of every claim. User review and live model evaluations remain necessary. Strict metadata matching may omit supported paraphrases.
 - Per-user generation caps require Upstash configuration. The process-local server spend guard is not a deployment-wide hard billing cap.
@@ -39,3 +38,19 @@ The new migration must be applied before using the revised writing actions. It h
 Offline tests cover evidence/quantity checks, team ownership, question answers, date handling, LaTeX escaping, SSRF destinations/redirects/DNS pinning, and real PDF pagination. `supabase/tests/record_integrity.sql` tests transaction rollback, layout references, manual edits, ownership, RLS and export immutability with two users.
 
 TypeScript, production build and ESLint are checked separately. ESLint retains the existing `LogoLoop.tsx` image warning. AI fixture dry runs inspect fixture structure only; paid live AI calls and hosted Clerk/Supabase browser flows were not exercised in this review.
+
+## Core-flow pass — 23 October 2026
+
+Changes aimed at "best resume, effortlessly" (Problem 1, F3/F5/F6/F9):
+
+| Change | Where |
+| --- | --- |
+| One "Build my resume" button: adds whatever is in the form, then runs extract → write → fit → questions as separate server calls, so the progress list shows real stages and what each found (items, facts matched, lines cut). | `components/app/start-form.tsx`, `stage*` actions in `lib/record/actions.ts`, `writeBase`/`relayoutResume` in `lib/record/pipeline.ts` |
+| Optional target role on `/start` and in the header editor, passed to Write (A3) so bullets lead with what matters for it. Stored in `resumes.layout.target_role`. | same |
+| Jobs and schools are always newest first; section order follows the person (Education first for students/interns, Experience first for working devs, Projects before Experience with no jobs). | `sectionOrder`, `orderItems`, `lib/resume/dates.ts` |
+| Write prompt rewritten around a verb → what → tech → result structure, with weak openers rejected by the code check. | `lib/ai/write.ts` |
+| Editor: edit name/contact/headline, edit any entry's title/company/dates/links/skills, add or remove a line (with undo), undo on hide, move projects/skills/awards and whole sections, rewrite with a direction (shorter, lead with impact, more technical, plainer). | `components/app/resume-editor.tsx` |
+| Impact questions appear inside the entry they improve, with a "Make it stronger" summary; plain-code coaching hints (weak opener, filler, too long, repeated verb, no result) on each line. | `components/app/questions-panel.tsx`, `lib/resume/hints.ts` |
+| A readiness badge ("Ready to send" / "N to fix") in the editor header, from the same checks as the Checks tab. | `components/app/checks-panel.tsx` |
+
+Verified: typecheck, ESLint, unit tests (incl. new `lib/resume/hints.test.ts`), production build, and the editor/start UI rendered with mock data. Not verified: a signed-in end-to-end run against Supabase and a live AI provider.

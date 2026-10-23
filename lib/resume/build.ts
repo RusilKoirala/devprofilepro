@@ -1,8 +1,6 @@
 import type { CareerRecord } from "@/lib/record/db"
-import type { Item, ItemType, ResumeLayout } from "@/lib/record/types"
+import type { Item, ResumeLayout } from "@/lib/record/types"
 import { SECTION_TITLES, type ResumeDoc, type ResumeEntry, type ResumeSection } from "@/lib/resume/schema"
-
-export const DEFAULT_SECTION_ORDER: ItemType[] = ["education", "job", "project", "skills", "award"]
 
 function dates(start?: string | null, end?: string | null) {
   if (start && end) return `${start} – ${end}`
