@@ -39,7 +39,8 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
         return {
           itemId: e.item_id,
           title: itemTitle(item),
-          subtitle: [e.subtitle, e.dates].filter(Boolean).join(" · "),
+          // Extracted education often repeats the date inside its details ("Expected Graduation: 2027").
+          subtitle: [e.subtitle, e.dates && !e.subtitle.toLowerCase().includes(e.dates.toLowerCase()) ? e.dates : ""].filter(Boolean).join(" · "),
           pinned: item.pinned,
           reason: item.reason,
           details: {

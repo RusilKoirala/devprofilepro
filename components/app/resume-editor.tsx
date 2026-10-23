@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { ArrowDown, ArrowUp, ChevronDown, Download, EyeOff, Lightbulb, Pencil, Pin, PinOff, Plus, RotateCcw, Sparkles, Trash2, Wand2 } from "lucide-react"
+import { ArrowDown, ArrowUp, ChevronDown, Download, EyeOff, GripVertical, Lightbulb, MoreHorizontal, Pencil, Pin, PinOff, Plus, RotateCcw, Sparkles, Trash2, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { ChecksPanel, ReadinessBadge, useResumeChecks } from "@/components/app/checks-panel"
 import { FactChip, type FactView } from "@/components/app/fact-chip"
@@ -11,7 +11,7 @@ import { QuestionCard, type QuestionView } from "@/components/app/questions-pane
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
@@ -19,10 +19,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
-  addBullet, deleteBullet, editBullet, moveItem, moveSection, regenerateItem, restoreBullet, restoreCut, setItemState, updateHeader, updateItemDetails, type ActionResult,
+  addBullet, deleteBullet, editBullet, regenerateItem, restoreBullet, restoreCut, setItemOrder, setItemState, setSectionOrder, updateHeader, updateItemDetails, type ActionResult,
 } from "@/lib/record/actions"
 import { REWRITE_LABELS, type RewriteStyle } from "@/lib/record/rewrite-styles"
 import type { ItemType } from "@/lib/record/types"
+import { displayUrl } from "@/lib/resume/build"
 import { bulletHint } from "@/lib/resume/hints"
 import { OVERLEAF_URL } from "@/lib/resume/latex"
 
@@ -52,6 +53,7 @@ export interface EditorData {
 }
 
 type Entry = EditorData["sections"][number]["entries"][number]
+type SectionType = EditorData["sections"][number]["type"]
 type Run = <T>(action: () => Promise<ActionResult<T>>, after?: (data: T) => void) => void
 
 export function ResumeEditor({ data }: { data: EditorData }) {
@@ -60,6 +62,17 @@ export function ResumeEditor({ data }: { data: EditorData }) {
   const [downloading, setDownloading] = useState(false)
   const [tab, setTab] = useState("preview")
   const checks = useResumeChecks(data.resumeId, data.version)
+  // Optimistic section order while the save + re-fit runs; dropped once the refreshed data arrives.
+  const [localOrder, setLocalOrder] = useState<{ version: string; types: SectionType[] } | null>(null)
+  const [drag, setDrag] = useState<{ type: SectionType; over: SectionType | null; after: boolean } | null>(null)
+  // Same idea for entries inside a section.
+  const [localItems, setLocalItems] = useState<{ version: string; ids: string[] } | null>(null)
+  const [entryDrag, setEntryDrag] = useState<{ section: SectionType; id: string; over: string | null; after: boolean } | null>(null)
+  const itemIndex = localItems?.version === data.version ? new Map(localItems.ids.map((id, n) => [id, n])) : null
+  const sections = (localOrder?.version === data.version
+    ? [...data.sections].sort((a, b) => localOrder.types.indexOf(a.type) - localOrder.types.indexOf(b.type))
+    : data.sections
+  ).map((s) => (itemIndex ? { ...s, entries: [...s.entries].sort((a, b) => (itemIndex.get(a.itemId) ?? 0) - (itemIndex.get(b.itemId) ?? 0)) } : s))
 
   const run: Run = (action, after) => {
     startTransition(async () => {
@@ -68,6 +81,57 @@ export function ResumeEditor({ data }: { data: EditorData }) {
       after?.(res.data)
       router.refresh()
     })
+  }
+
+  function reorder(types: SectionType[]) {
+    if (types.join() === sections.map((s) => s.type).join()) return
+    setLocalOrder({ version: data.version, types })
+    startTransition(async () => {
+      const res = await setSectionOrder(data.resumeId, types)
+      if (!res.ok) {
+        setLocalOrder(null)
+        return void toast.error(res.error)
+      }
+      router.refresh()
+    })
+  }
+
+  function move(type: SectionType, to: number) {
+    const types = sections.map((s) => s.type).filter((t) => t !== type)
+    types.splice(Math.max(0, Math.min(to, types.length)), 0, type)
+    reorder(types)
+  }
+
+  function moveEntry(section: SectionType, id: string, to: number) {
+    const current = sections.find((s) => s.type === section)!.entries.map((e) => e.itemId)
+    const ids = current.filter((x) => x !== id)
+    ids.splice(Math.max(0, Math.min(to, ids.length)), 0, id)
+    if (ids.join() === current.join()) return
+    const all = sections.flatMap((s) => (s.type === section ? ids : s.entries.map((e) => e.itemId)))
+    setLocalItems({ version: data.version, ids: all })
+    startTransition(async () => {
+      const res = await setItemOrder(data.resumeId, ids)
+      if (!res.ok) {
+        setLocalItems(null)
+        return void toast.error(res.error)
+      }
+      router.refresh()
+    })
+  }
+
+  function dropEntry() {
+    const d = entryDrag
+    setEntryDrag(null)
+    if (!d?.over || d.over === d.id) return
+    const rest = sections.find((s) => s.type === d.section)!.entries.map((e) => e.itemId).filter((x) => x !== d.id)
+    moveEntry(d.section, d.id, rest.indexOf(d.over) + (d.after ? 1 : 0))
+  }
+
+  function drop() {
+    if (!drag?.over || drag.over === drag.type) return setDrag(null)
+    const rest = sections.map((s) => s.type).filter((t) => t !== drag.type)
+    move(drag.type, rest.indexOf(drag.over) + (drag.after ? 1 : 0))
+    setDrag(null)
   }
 
   const allBullets = data.sections.flatMap((s) => s.entries.flatMap((e) => e.bullets.map((b) => b.text)))
@@ -107,6 +171,16 @@ export function ResumeEditor({ data }: { data: EditorData }) {
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-medium">{data.title}</h2>
           <ReadinessBadge state={checks} onClick={() => setTab("checks")} />
+          {(questions.length > 0 || hinted > 0) && (
+            <button
+              type="button"
+              onClick={() => document.querySelector("[data-attention]")?.scrollIntoView({ behavior: "smooth", block: "center" })}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Sparkles className="size-3.5" />
+              {[questions.length && `${questions.length} question${questions.length === 1 ? "" : "s"}`, hinted && `${hinted} to polish`].filter(Boolean).join(" · ")}
+            </button>
+          )}
           {pending && <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Spinner /> Saving…</span>}
         </div>
         <div className="flex items-center gap-2">
@@ -128,54 +202,100 @@ export function ResumeEditor({ data }: { data: EditorData }) {
         </div>
       </div>
 
-      {(questions.length > 0 || hinted > 0) && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 text-sm">
-          <Sparkles className="size-4 shrink-0 text-primary" />
-          <p className="min-w-0 flex-1">
-            <span className="font-medium">Make it stronger. </span>
-            <span className="text-muted-foreground">
-              {[
-                questions.length && `${questions.length} quick answer${questions.length === 1 ? "" : "s"} (numbers we can't guess)`,
-                hinted && `${hinted} line${hinted === 1 ? "" : "s"} to polish (look for the bulb)`,
-              ].filter(Boolean).join(" · ")}
-            </span>
-          </p>
-          {questions.length > 0 && (
-            <Button size="sm" variant="secondary" onClick={() => document.getElementById(`q-${questions[0].id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>
-              Answer the first one
-            </Button>
-          )}
-        </div>
-      )}
-
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {/* Editor */}
         <div className="space-y-6">
           <HeaderCard resumeId={data.resumeId} header={data.header} pending={pending} run={run} />
 
-          {data.sections.map((section, si) => (
-            <section key={section.type} className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-medium tracking-wider text-muted-foreground uppercase">{section.title}</h2>
-                <div className="flex">
-                  <IconButton label="Move section up" disabled={pending || si === 0} onClick={() => run(() => moveSection(data.resumeId, section.type, "up"))}><ArrowUp /></IconButton>
-                  <IconButton label="Move section down" disabled={pending || si === data.sections.length - 1} onClick={() => run(() => moveSection(data.resumeId, section.type, "down"))}><ArrowDown /></IconButton>
+          {sections.map((section, si) => {
+            const target = drag && drag.over === section.type && drag.type !== section.type
+            return (
+              <section
+                key={section.type}
+                className={`relative space-y-3 rounded-xl transition-opacity ${drag?.type === section.type ? "opacity-40" : ""}`}
+                onDragOver={(e) => {
+                  if (!drag) return
+                  e.preventDefault()
+                  const box = e.currentTarget.getBoundingClientRect()
+                  const after = e.clientY > box.top + box.height / 2
+                  if (drag.over !== section.type || drag.after !== after) setDrag({ ...drag, over: section.type, after })
+                }}
+                onDrop={(e) => { e.preventDefault(); drop() }}
+              >
+                {target && <div className={`pointer-events-none absolute inset-x-0 h-0.5 rounded-full bg-primary ${drag.after ? "-bottom-3" : "-top-3"}`} />}
+                <div className="group/section flex h-8 items-center justify-between">
+                  <div
+                    draggable={!pending}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = "move"
+                      e.dataTransfer.setData("text/plain", section.type)
+                      setDrag({ type: section.type, over: null, after: false })
+                    }}
+                    onDragEnd={() => setDrag(null)}
+                    className="flex cursor-grab md:-ml-5 items-center gap-1 rounded-md py-1 pr-2 text-muted-foreground active:cursor-grabbing"
+                    title="Drag to reorder sections"
+                  >
+                    <GripVertical className="size-3.5 transition-opacity md:opacity-0 md:group-hover/section:opacity-100" />
+                    <h2 className="text-xs font-medium tracking-wider uppercase">{section.title}</h2>
+                  </div>
+                  <div className="flex transition-opacity md:opacity-0 md:group-hover/section:opacity-100 md:focus-within:opacity-100">
+                    <IconButton label="Move section up" disabled={pending || si === 0} onClick={() => move(section.type, si - 1)}><ArrowUp /></IconButton>
+                    <IconButton label="Move section down" disabled={pending || si === sections.length - 1} onClick={() => move(section.type, si + 1)}><ArrowDown /></IconButton>
+                  </div>
                 </div>
-              </div>
-              {section.entries.map((entry, ei) => (
-                <EntryCard
-                  key={entry.itemId}
-                  resumeId={data.resumeId}
-                  type={section.type}
-                  entry={entry}
-                  position={{ first: ei === 0, last: ei === section.entries.length - 1 }}
-                  allBullets={allBullets}
-                  pending={pending}
-                  run={run}
-                />
-              ))}
-            </section>
-          ))}
+                {section.entries.map((entry, ei) => {
+                  const dragging = entryDrag?.id === entry.itemId
+                  const over = entryDrag && entryDrag.section === section.type && entryDrag.over === entry.itemId && !dragging
+                  return (
+                    <div
+                      key={entry.itemId}
+                      className={`relative transition-opacity ${dragging ? "opacity-40" : ""}`}
+                      onDragOver={(e) => {
+                        if (!entryDrag || entryDrag.section !== section.type) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        const box = e.currentTarget.getBoundingClientRect()
+                        const after = e.clientY > box.top + box.height / 2
+                        if (entryDrag.over !== entry.itemId || entryDrag.after !== after) setEntryDrag({ ...entryDrag, over: entry.itemId, after })
+                      }}
+                      onDrop={(e) => {
+                        if (!entryDrag) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        dropEntry()
+                      }}
+                    >
+                      {over && <div className={`pointer-events-none absolute inset-x-2 z-10 h-0.5 rounded-full bg-primary ${entryDrag.after ? "-bottom-[7px]" : "-top-[7px]"}`} />}
+                      <EntryCard
+                        resumeId={data.resumeId}
+                        type={section.type}
+                        entry={entry}
+                        position={{ first: ei === 0, last: ei === section.entries.length - 1 }}
+                        allBullets={allBullets}
+                        pending={pending}
+                        run={run}
+                        onMove={(to) => moveEntry(section.type, entry.itemId, to === "up" ? ei - 1 : ei + 1)}
+                        handle={
+                          section.entries.length > 1
+                            ? {
+                                draggable: !pending,
+                                onDragStart: (e: React.DragEvent) => {
+                                  e.stopPropagation()
+                                  e.dataTransfer.effectAllowed = "move"
+                                  e.dataTransfer.setData("text/plain", entry.itemId)
+                                  setEntryDrag({ section: section.type, id: entry.itemId, over: null, after: false })
+                                },
+                                onDragEnd: () => setEntryDrag(null),
+                              }
+                            : null
+                        }
+                      />
+                    </div>
+                  )
+                })}
+              </section>
+            )
+          })}
 
           {data.otherQuestions.length > 0 && (
             <section className="space-y-2">
@@ -240,7 +360,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
 
 function HeaderCard({ resumeId, header, pending, run }: { resumeId: string; header: EditorData["header"]; pending: boolean; run: Run }) {
   const [open, setOpen] = useState(false)
-  const contact = [header.email, header.phone, header.location, header.linkedin, header.github, header.website].filter(Boolean)
+  const contact = [header.email, header.phone, header.location, ...[header.linkedin, header.github, header.website].filter(Boolean).map(displayUrl)].filter(Boolean)
   const missing = [!header.name && "your name", !header.email && "an email", !(header.github || header.linkedin || header.website) && "a link"].filter(Boolean)
 
   function submit(form: FormData) {
@@ -255,11 +375,11 @@ function HeaderCard({ resumeId, header, pending, run }: { resumeId: string; head
         <div className="min-w-0">
           <div className="text-lg font-semibold">{header.name || <span className="text-muted-foreground">Your name</span>}</div>
           {header.headline && <div className="text-sm">{header.headline}</div>}
-          <div className="mt-1 truncate text-sm text-muted-foreground">{contact.join(" · ") || "No contact details yet"}</div>
+          <div className="mt-1 text-sm text-muted-foreground">{contact.join(" · ") || "No contact details yet"}</div>
           {header.targetRole && <div className="mt-2 text-xs text-muted-foreground">Aimed at: <span className="text-foreground">{header.targetRole}</span></div>}
           {missing.length > 0 && <div className="mt-2 text-xs text-amber-400">Add {missing.join(", ")} so recruiters can reach you.</div>}
         </div>
-        <Button size="sm" variant={missing.length ? "secondary" : "ghost"} disabled={pending} onClick={() => setOpen(true)}><Pencil /> Edit</Button>
+        <Button size="sm" variant={missing.length ? "secondary" : "ghost"} className={missing.length ? "" : "text-muted-foreground"} disabled={pending} onClick={() => setOpen(true)}><Pencil /> Edit</Button>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
@@ -297,7 +417,7 @@ const DETAIL_FIELDS: Record<string, { key: keyof Details; label: string; placeho
   skills: [{ key: "category", label: "Group name" }, { key: "skills", label: "Skills (comma separated)", wide: true }],
 }
 
-function EntryCard({ resumeId, type, entry, position, allBullets, pending, run }: {
+function EntryCard({ resumeId, type, entry, position, allBullets, pending, run, onMove, handle }: {
   resumeId: string
   type: string
   entry: Entry
@@ -305,10 +425,11 @@ function EntryCard({ resumeId, type, entry, position, allBullets, pending, run }
   allBullets: string[]
   pending: boolean
   run: Run
+  onMove: (direction: "up" | "down") => void
+  handle: { draggable: boolean; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void } | null
 }) {
   const [editing, setEditing] = useState(false)
   const [adding, setAdding] = useState(false)
-  const movable = type === "project" || type === "award" || type === "skills"
   const writable = type === "job" || type === "project" || type === "award"
 
   function saveDetails(form: FormData) {
@@ -327,44 +448,63 @@ function EntryCard({ resumeId, type, entry, position, allBullets, pending, run }
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="group/entry relative rounded-xl border border-border bg-card p-4 transition-colors hover:border-foreground/15">
+      {handle && (
+        <div
+          {...handle}
+          title="Drag to reorder"
+          className="absolute top-0 bottom-0 left-0 flex w-4 cursor-grab items-center justify-center rounded-l-xl text-muted-foreground transition-opacity active:cursor-grabbing md:opacity-0 md:group-hover/entry:opacity-100"
+        >
+          <GripVertical className="size-3.5" />
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3">
         <button type="button" className="min-w-0 text-left" onClick={() => setEditing(true)} title="Edit title, dates and links">
           <div className="font-medium">{entry.title}</div>
           {entry.subtitle && <div className="truncate text-sm text-muted-foreground">{entry.subtitle}</div>}
         </button>
-        <div className="flex shrink-0 items-center gap-0.5">
-          {movable && (
-            <>
-              <IconButton label="Move up" disabled={pending || position.first} onClick={() => run(() => moveItem(resumeId, entry.itemId, "up"))}><ArrowUp /></IconButton>
-              <IconButton label="Move down" disabled={pending || position.last} onClick={() => run(() => moveItem(resumeId, entry.itemId, "down"))}><ArrowDown /></IconButton>
-            </>
+        <div className="flex shrink-0 items-center">
+          {entry.pinned && (
+            <IconButton label="Pinned: never cut to fit. Click to unpin." disabled={pending} onClick={() => run(() => setItemState(resumeId, entry.itemId, { pinned: false }))}>
+              <Pin className="fill-current text-foreground" />
+            </IconButton>
           )}
-          <IconButton label={entry.pinned ? "Unpin" : "Pin (never cut to fit)"} disabled={pending} onClick={() => run(() => setItemState(resumeId, entry.itemId, { pinned: !entry.pinned }))}>
-            {entry.pinned ? <PinOff /> : <Pin />}
-          </IconButton>
-          {writable && entry.bullets.length > 0 && (
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="icon" variant="ghost" className="size-8 text-muted-foreground" disabled={pending} aria-label="Rewrite bullets"><Wand2 /></Button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent>Rewrite bullets</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Rewrite from the same facts</DropdownMenuLabel>
-                {(Object.keys(REWRITE_LABELS) as RewriteStyle[]).map((style) => (
-                  <DropdownMenuItem key={style} onSelect={() => run(() => regenerateItem(resumeId, entry.itemId, style), () => toast.success("Rewritten. Numbers and claims still come only from your facts."))}>
-                    {REWRITE_LABELS[style]}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <IconButton label="Edit details" disabled={pending} onClick={() => setEditing(true)}><Pencil /></IconButton>
-          <IconButton label="Hide from resume" disabled={pending} onClick={hide}><EyeOff /></IconButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" className="size-8 text-muted-foreground transition-opacity md:opacity-0 md:group-hover/entry:opacity-100 data-[state=open]:opacity-100 md:focus-visible:opacity-100" disabled={pending} aria-label={`Actions for ${entry.title}`}>
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              {writable && entry.bullets.length > 0 && (
+                <>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger><Wand2 /> Rewrite lines</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {(Object.keys(REWRITE_LABELS) as RewriteStyle[]).map((style) => (
+                        <DropdownMenuItem key={style} onSelect={() => run(() => regenerateItem(resumeId, entry.itemId, style), () => toast.success("Rewritten. Numbers and claims still come only from your facts."))}>
+                          {REWRITE_LABELS[style]}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem onSelect={() => setEditing(true)}><Pencil /> Edit details</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => run(() => setItemState(resumeId, entry.itemId, { pinned: !entry.pinned }))}>
+                {entry.pinned ? <><PinOff /> Unpin</> : <><Pin /> Pin (never cut)</>}
+              </DropdownMenuItem>
+              {handle && (
+                <>
+                  <DropdownMenuItem disabled={position.first} onSelect={() => onMove("up")}><ArrowUp /> Move up</DropdownMenuItem>
+                  <DropdownMenuItem disabled={position.last} onSelect={() => onMove("down")}><ArrowDown /> Move down</DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={hide}><EyeOff /> Hide from resume</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -387,6 +527,12 @@ function EntryCard({ resumeId, type, entry, position, allBullets, pending, run }
         </ul>
       )}
 
+      {entry.questions.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {entry.questions.map((q) => <QuestionCard key={q.id} resumeId={resumeId} question={q} />)}
+        </div>
+      )}
+
       {writable &&
         (adding ? (
           <BulletInput
@@ -397,22 +543,17 @@ function EntryCard({ resumeId, type, entry, position, allBullets, pending, run }
             onSave={(text) => run(() => addBullet(resumeId, entry.itemId, text), () => setAdding(false))}
           />
         ) : (
-          <Button size="sm" variant="ghost" className="mt-2 h-7 px-2 text-xs text-muted-foreground" disabled={pending} onClick={() => setAdding(true)}>
+          <Button size="sm" variant="ghost" className="mt-1.5 -mb-1.5 -ml-2 h-7 px-2 text-xs text-muted-foreground transition-opacity md:opacity-0 md:group-hover/entry:opacity-100 md:focus-visible:opacity-100" disabled={pending} onClick={() => setAdding(true)}>
             <Plus /> Add a line
           </Button>
         ))}
 
-      {entry.questions.length > 0 && (
-        <div className="mt-3 space-y-2">
-          {entry.questions.map((q) => <QuestionCard key={q.id} resumeId={resumeId} question={q} />)}
-        </div>
-      )}
 
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Edit {entry.title}</DialogTitle>
-            <DialogDescription>{type === "job" || type === "education" ? "Jobs and schools are ordered newest first by these dates." : "Saved as “You told us”."}</DialogDescription>
+            <DialogDescription>{type === "job" || type === "education" ? "Sorted newest first by these dates unless you drag it somewhere else." : "Saved as “You told us”."}</DialogDescription>
           </DialogHeader>
           <form action={saveDetails} className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -512,7 +653,7 @@ function BulletRow({ bullet, hint, disabled, onSave, onDelete }: {
           {hint && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-1 rounded-md px-1 text-[11px] text-amber-400 hover:bg-amber-400/10">
+                <button type="button" data-attention onClick={() => setEditing(true)} className="inline-flex items-center gap-1 rounded-md px-1 text-[11px] text-amber-400 hover:bg-amber-400/10">
                   <Lightbulb className="size-3" /> {hint.kind === "no_result" ? "Add a result?" : "Polish"}
                 </button>
               </TooltipTrigger>

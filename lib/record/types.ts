@@ -90,6 +90,8 @@ export interface ResumeLayout {
   // Optional "what are you applying for", steers which facts the writer leads with.
   target_role?: string
   section_order: ItemType[]
+  // Item ids in the order the user dragged them. Unset means the default order.
+  item_order?: string[]
   items: { item_id: string; bullet_ids: string[] }[]
 }
 

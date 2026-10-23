@@ -23,3 +23,11 @@ test("entries sort newest first, with Present on top and undated last", () => {
   ]
   assert.deepEqual([...entries].sort(byRecency).map((e) => e.id), ["now", "single", "mid", "old", "none"])
 })
+
+test("a dragged order is kept and new entries stay in their default slot", async () => {
+  const { applyItemOrder, reorderWithin } = await import("./order.ts")
+  const items = ["new", "a", "b", "c"].map((item_id) => ({ item_id }))
+  assert.deepEqual(applyItemOrder(items, ["c", "a", "b"]).map((i) => i.item_id), ["new", "c", "a", "b"])
+  assert.deepEqual(applyItemOrder(items, undefined).map((i) => i.item_id), ["new", "a", "b", "c"])
+  assert.deepEqual(reorderWithin(["j1", "p1", "p2", "e1"], ["p2", "p1"]), ["j1", "p2", "p1", "e1"])
+})
