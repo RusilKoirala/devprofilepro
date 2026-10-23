@@ -4,7 +4,7 @@ export const CLAUDE_MODEL = "claude-opus-5-5"
 export const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4.1-mini"
 
 export type AiProvider = "anthropic" | "openai"
-export type AiStep = "transcribe" | "extract" | "questions" | "write" | "tailor" | "win"
+export type AiStep = "transcribe" | "extract" | "questions" | "write" | "tailor" | "win" | "chat"
 
 export function aiProvider(): AiProvider | null {
   if (process.env.ANTHROPIC_API_KEY) return "anthropic"

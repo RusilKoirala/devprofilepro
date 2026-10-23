@@ -184,8 +184,9 @@ export function orderItems<T extends Pick<Item, "type" | "rank" | "data">>(items
   })
 }
 
-export function defaultLayout(record: Pick<CareerRecord, "items" | "bullets">, headline: string): ResumeLayout {
-  const shown = record.items.filter((i) => i.status !== "hidden" && i.type !== "contact")
+export function defaultLayout(record: Pick<CareerRecord, "items" | "bullets">, headline: string, include?: string[]): ResumeLayout {
+  const picked = include ? new Set(include) : null
+  const shown = record.items.filter((i) => i.type !== "contact" && (picked ? picked.has(i.id) : i.status !== "hidden"))
   return {
     headline,
     section_order: sectionOrder(shown),
@@ -241,12 +242,14 @@ export async function writeBase(supabase: SupabaseClient, userId: string, target
 export async function relayoutResume(supabase: SupabaseClient, resumeId: string) {
   const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
   if (!resume) throw new Error("Resume not found")
-  const base = defaultLayout(record, resume.layout.headline)
+  const include = resume.kind === "tailored" ? resume.layout.include : undefined
+  const base = defaultLayout(record, resume.layout.headline, include)
   const kept = resume.layout.section_order ?? []
   const layout: ResumeLayout = {
     ...base,
     ...(resume.layout.target_role ? { target_role: resume.layout.target_role } : {}),
     ...(resume.layout.item_order ? { item_order: resume.layout.item_order } : {}),
+    ...(include ? { include } : {}),
     items: applyItemOrder(base.items, resume.layout.item_order),
     section_order: kept.length ? [...kept, ...base.section_order.filter((t) => !kept.includes(t))] : base.section_order,
   }

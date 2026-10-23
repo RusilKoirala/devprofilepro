@@ -13,15 +13,23 @@ import type { IngestedSource } from "@/lib/ingest/types"
 import { RateLimitedError } from "@/lib/ratelimit"
 import { loadRecord, loadResume, saveSources } from "@/lib/record/db"
 import { buildRecord, refreshQuestions, relayoutResume, writeBase, writeItems } from "@/lib/record/pipeline"
-import { ItemDataSchema, ITEM_TYPES, type ItemType } from "@/lib/record/types"
+import { ItemDataSchema, ITEM_TYPES, type ItemType, type ResumeLayout } from "@/lib/record/types"
+import { planTailoredResume, TailorSchema, type TailorPlan } from "@/lib/ai/tailor"
+import { chatTurn, resumeForChat, type ChatMessage } from "@/lib/ai/chat"
+import { checkActions, presentFields, type ChatAction, type ChatContext } from "@/lib/record/chat-actions"
+import { SECTION_TITLES } from "@/lib/resume/schema"
 import { runChecks, type CheckResult } from "@/lib/resume/checks"
 import { loadResumeDoc } from "@/lib/resume/load"
+import type { ResumeDoc } from "@/lib/resume/schema"
 import { pageCount, parserView, renderPdf } from "@/lib/resume/render"
 import { createClient } from "@/lib/supabase/server"
 import { isAppEnabled } from "@/lib/access"
 import { questionFact } from "@/lib/record/question-fact"
+import {
+  addLine, BulletSnapshot, editLine, RANGE, removeLine, setItemOrderIn, setItemStateIn, setSectionOrderIn, updateDetailsIn, updateHeaderIn,
+  type DeletedBullet, type DetailsInput, type HeaderInput,
+} from "@/lib/record/edits"
 import { REWRITE_STYLES, type RewriteStyle } from "@/lib/record/rewrite-styles"
-import { reorderWithin } from "@/lib/resume/order"
 
 export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -159,6 +167,53 @@ export async function stageFit(resumeId: string): Promise<ActionResult<{ pages: 
   }
 }
 
+// New resume from a request or job post, in stages like the first build: plan (AI) → save → fit → check.
+export async function stageTailorPlan(brief: string): Promise<ActionResult<TailorPlan>> {
+  try {
+    const { userId, supabase } = await session()
+    const text = z.string().trim().min(3, "Say a little more about what this resume is for.").max(20000).parse(brief)
+    const record = await loadRecord(supabase)
+    if (!record.items.some((i) => i.type !== "contact")) throw new Error("Your Career Record is empty. Add a source first.")
+    return { ok: true, data: await planTailoredResume(userId, text, record.items, record.facts, record.bullets) }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+export async function stageTailorSave(brief: string, input: TailorPlan): Promise<ActionResult<{ resumeId: string; title: string }>> {
+  try {
+    const { supabase } = await session()
+    const plan = TailorSchema.parse(input)
+    const [record, { data: base, error: baseError }] = await Promise.all([loadRecord(supabase), supabase.from("resumes").select("layout").eq("kind", "base").maybeSingle()])
+    if (baseError) throw new Error(baseError.message)
+    // The plan came back through the browser: keep only ids that are really in this user's record.
+    const known = new Set(record.items.filter((i) => i.type !== "contact").map((i) => i.id))
+    const include = plan.items.map((i) => i.item_id).filter((id) => known.has(id))
+    if (!include.length) throw new Error("Nothing in your Career Record matched this. Try describing the role differently.")
+    const types = new Map(record.items.map((i) => [i.id, i.type]))
+    const { data: job, error: jobError } = await supabase
+      .from("jobs")
+      .insert({ company: plan.company, role: plan.role, description: z.string().max(20000).parse(brief), match_report: { requirements: plan.requirements, summary: plan.summary, reasons: plan.items } })
+      .select("id")
+      .single()
+    if (jobError) throw new Error(jobError.message)
+    const layout: ResumeLayout = {
+      headline: base?.layout?.headline ?? "",
+      target_role: plan.role ?? plan.title,
+      section_order: [...new Set([...plan.section_order, "job", "project", "education", "skills", "award"] as const)],
+      // Relevance order for projects, skills and awards; jobs and schools stay newest first.
+      item_order: include.filter((id) => types.get(id) !== "job" && types.get(id) !== "education"),
+      include,
+      items: [],
+    }
+    const { data, error } = await supabase.from("resumes").insert({ kind: "tailored", job_id: job.id, title: plan.title.slice(0, 120) || "New resume", layout }).select("id").single()
+    if (error) throw new Error(error.message)
+    return { ok: true, data: { resumeId: data.id as string, title: plan.title } }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
 // Recompute a resume's layout from the record (keeping its headline and section order) and re-fit.
 async function relayout(resumeId: string) {
   const { supabase } = await session()
@@ -175,49 +230,31 @@ export async function refit(resumeId: string): Promise<ActionResult> {
   }
 }
 
-export async function editBullet(resumeId: string, bulletId: string, text: string): Promise<ActionResult> {
+// Each action: one edit from lib/record/edits.ts, then re-fit the page.
+async function edit<T>(resumeId: string | null, apply: (supabase: Awaited<ReturnType<typeof session>>["supabase"]) => Promise<T>): Promise<ActionResult<T extends void ? undefined : T>> {
   try {
     const { supabase } = await session()
-    const clean = text.trim()
-    if (!clean) return { ok: false, error: "A bullet can't be empty. Remove it by hiding the item instead." }
-    const [{ data: bullet, error: bulletError }, resume] = await Promise.all([
-      supabase.from("bullets").select("item_id").eq("id", bulletId).single(),
-      loadResume(supabase, resumeId),
-    ])
-    if (bulletError) throw new Error(bulletError.message)
-    if (!resume?.layout.items.some((li) => li.item_id === bullet.item_id && li.bullet_ids.includes(bulletId))) throw new Error("Bullet not found in this resume")
-    // Edited text is a new user assertion; old quotes no longer prove it.
-    const { data: fact, error: factError } = await supabase.from("facts").insert({ item_id: bullet.item_id, text: clean, label: "user", approx: RANGE.test(clean) }).select("id").single()
-    if (factError) throw new Error(factError.message)
-    const { error } = await supabase.from("bullets").update({ text: clean, fact_ids: [fact.id], user_edited: true, updated_at: new Date().toISOString() }).eq("id", bulletId)
-    if (error) throw new Error(error.message)
-    await relayout(resumeId)
-    return { ok: true, data: undefined }
+    const data = (await apply(supabase)) as T extends void ? undefined : T
+    if (resumeId) await relayout(resumeId)
+    revalidatePath("/record")
+    return { ok: true, data }
   } catch (err) {
     return fail(err)
   }
 }
 
+export async function editBullet(resumeId: string, bulletId: string, text: string): Promise<ActionResult> {
+  return edit(resumeId, (supabase) => editLine(supabase, resumeId, bulletId, text))
+}
+
 export async function setItemState(resumeId: string | null, itemId: string, patch: { pinned?: boolean; status?: "shown" | "hidden" }): Promise<ActionResult> {
-  try {
-    const { supabase } = await session()
-    const safePatch = z.object({ pinned: z.boolean().optional(), status: z.enum(["shown", "hidden"]).optional() }).strict().parse(patch)
-    const { error } = await supabase.from("items").update({ ...safePatch, updated_at: new Date().toISOString() }).eq("id", itemId)
-    if (error) throw new Error(error.message)
-    if (resumeId) await relayout(resumeId)
-    revalidatePath("/record")
-    return { ok: true, data: undefined }
-  } catch (err) {
-    return fail(err)
-  }
+  return edit(resumeId, (supabase) => setItemStateIn(supabase, resumeId, itemId, patch))
 }
 
 // Restoring something the fit step cut pins it, so the next fit doesn't cut it again.
 export async function restoreCut(resumeId: string, itemId: string): Promise<ActionResult> {
   return setItemState(resumeId, itemId, { pinned: true, status: "shown" })
 }
-
-const RANGE = /\d\s*[-–]\s*\d|[<>~+]|\bk\b/i
 
 export async function answerQuestion(resumeId: string | null, questionId: string, answer: string | null): Promise<ActionResult> {
   try {
@@ -268,190 +305,36 @@ export async function regenerateItem(resumeId: string, itemId: string, style: Re
   }
 }
 
-// Links typed by hand: "github.com/x" or a bare GitHub username become full URLs.
-function normalizeLink(value: string | null | undefined, kind?: "github" | "linkedin"): string | null {
-  const v = value?.trim()
-  if (!v) return null
-  if (/^https?:\/\//i.test(v)) return v
-  if (kind === "github" && /^@?[A-Za-z0-9-]+$/.test(v)) return `https://github.com/${v.replace(/^@/, "")}`
-  if (kind === "linkedin" && /^[A-Za-z0-9-]+$/.test(v)) return `https://www.linkedin.com/in/${v}`
-  return `https://${v}`
+export async function updateHeader(resumeId: string, input: HeaderInput): Promise<ActionResult> {
+  return edit(resumeId, (supabase) => updateHeaderIn(supabase, resumeId, input))
 }
 
-const text = (max = 200) => z.string().trim().max(max).nullable().optional()
-
-const HeaderSchema = z.object({
-  name: text(120),
-  headline: text(120),
-  target_role: text(120),
-  email: text(),
-  phone: text(60),
-  location: text(120),
-  website: text(),
-  github: text(),
-  linkedin: text(),
-})
-
-// Name, contact line, headline and target role. Typed by the user, so no source check.
-export async function updateHeader(resumeId: string, input: z.input<typeof HeaderSchema>): Promise<ActionResult> {
-  try {
-    const { supabase } = await session()
-    const h = HeaderSchema.parse(input)
-    const contact = {
-      name: h.name || null,
-      email: h.email || null,
-      phone: h.phone || null,
-      location: h.location || null,
-      website: normalizeLink(h.website),
-      github: normalizeLink(h.github, "github"),
-      linkedin: normalizeLink(h.linkedin, "linkedin"),
-    }
-    const [{ data: existing, error: contactError }, resume] = await Promise.all([
-      supabase.from("items").select("id,data").eq("type", "contact").limit(1).maybeSingle(),
-      loadResume(supabase, resumeId),
-    ])
-    if (contactError) throw new Error(contactError.message)
-    if (!resume) throw new Error("Resume not found")
-    if (existing) {
-      const { error } = await supabase.from("items").update({ data: { ...existing.data, ...contact }, updated_at: new Date().toISOString() }).eq("id", existing.id)
-      if (error) throw new Error(error.message)
-    } else {
-      const { error } = await supabase.from("items").insert({ type: "contact", data: contact, rank: 100, status: "shown", reason: "Added by you" })
-      if (error) throw new Error(error.message)
-    }
-    const layout = { ...resume.layout, headline: h.headline ?? "", target_role: h.target_role || undefined }
-    const { error } = await supabase.from("resumes").update({ layout, updated_at: new Date().toISOString() }).eq("id", resumeId)
-    if (error) throw new Error(error.message)
-    await relayout(resumeId)
-    return { ok: true, data: undefined }
-  } catch (err) {
-    return fail(err)
-  }
+export async function updateItemDetails(resumeId: string | null, itemId: string, input: DetailsInput): Promise<ActionResult> {
+  return edit(resumeId, (supabase) => updateDetailsIn(supabase, itemId, input))
 }
 
-const DetailsSchema = z.object({
-  role: text(), company: text(), name: text(), url: text(), school: text(), degree: text(), details: text(300),
-  category: text(80), location: text(120), start: text(40), end: text(40),
-  tech: z.array(z.string().trim().min(1).max(60)).max(20).nullable().optional(),
-  skills: z.array(z.string().trim().min(1).max(60)).max(40).nullable().optional(),
-})
-const EDITABLE: Record<Exclude<ItemType, "contact">, (keyof z.infer<typeof DetailsSchema>)[]> = {
-  job: ["role", "company", "location", "start", "end"],
-  project: ["name", "url", "tech", "start", "end"],
-  award: ["name", "url", "start", "end"],
-  education: ["school", "degree", "details", "location", "start", "end"],
-  skills: ["category", "skills"],
-}
-
-// Titles, companies, dates, links and skill lists, edited by hand.
-export async function updateItemDetails(resumeId: string | null, itemId: string, input: z.input<typeof DetailsSchema>): Promise<ActionResult> {
-  try {
-    const { supabase } = await session()
-    const patch = DetailsSchema.parse(input)
-    const { data: item, error: itemError } = await supabase.from("items").select("type,data").eq("id", itemId).single()
-    if (itemError) throw new Error(itemError.message)
-    if (item.type === "contact") throw new Error("Edit contact details from the resume header.")
-    const allowed = EDITABLE[item.type as Exclude<ItemType, "contact">]
-    const data = { ...item.data }
-    for (const key of allowed) {
-      if (!(key in patch)) continue
-      const value = patch[key]
-      data[key] = key === "url" ? normalizeLink(value as string | null) : Array.isArray(value) ? (value.length ? value : null) : value || null
-    }
-    const { error } = await supabase.from("items").update({ data, updated_at: new Date().toISOString() }).eq("id", itemId)
-    if (error) throw new Error(error.message)
-    if (resumeId) await relayout(resumeId)
-    revalidatePath("/record")
-    return { ok: true, data: undefined }
-  } catch (err) {
-    return fail(err)
-  }
-}
-
-// A bullet typed by the user: saved as a "You told us" fact plus a bullet that cites it.
 export async function addBullet(resumeId: string, itemId: string, input: string): Promise<ActionResult> {
-  try {
-    const { supabase } = await session()
-    const clean = z.string().trim().min(3, "Write a little more.").max(400).parse(input)
-    const { data: fact, error: factError } = await supabase.from("facts").insert({ item_id: itemId, text: clean, label: "user", approx: RANGE.test(clean) }).select("id").single()
-    if (factError) throw new Error(factError.message)
-    const { error } = await supabase.from("bullets").insert({ item_id: itemId, text: clean, fact_ids: [fact.id], user_edited: true })
-    if (error) throw new Error(error.message)
-    await relayout(resumeId)
-    return { ok: true, data: undefined }
-  } catch (err) {
-    return fail(err)
-  }
+  return edit(resumeId, (supabase) => addLine(supabase, itemId, input))
 }
 
-const BulletSnapshot = z.object({ item_id: z.string().uuid(), text: z.string().min(1).max(600), fact_ids: z.array(z.string().uuid()).min(1), user_edited: z.boolean() })
-export type DeletedBullet = z.infer<typeof BulletSnapshot>
-
-// Facts stay in the Career Record; only the wording goes. Returns what's needed to undo.
 export async function deleteBullet(resumeId: string, bulletId: string): Promise<ActionResult<DeletedBullet>> {
-  try {
-    const { supabase } = await session()
-    const { data: bullet, error: bulletError } = await supabase.from("bullets").select("item_id,text,fact_ids,user_edited").eq("id", bulletId).single()
-    if (bulletError) throw new Error(bulletError.message)
-    const { error } = await supabase.from("bullets").delete().eq("id", bulletId)
-    if (error) throw new Error(error.message)
-    await relayout(resumeId)
-    return { ok: true, data: bullet as DeletedBullet }
-  } catch (err) {
-    return fail(err)
-  }
+  return edit(resumeId, (supabase) => removeLine(supabase, bulletId))
 }
 
 export async function restoreBullet(resumeId: string, snapshot: DeletedBullet): Promise<ActionResult> {
-  try {
-    const { supabase } = await session()
-    // The database re-checks that every fact belongs to this user and item.
+  // The database re-checks that every fact belongs to this user and item.
+  return edit(resumeId, async (supabase) => {
     const { error } = await supabase.from("bullets").insert(BulletSnapshot.parse(snapshot))
     if (error) throw new Error(error.message)
-    await relayout(resumeId)
-    return { ok: true, data: undefined }
-  } catch (err) {
-    return fail(err)
-  }
+  })
 }
 
-// Entry order inside one section, from drag-and-drop or Move up/down. Display order only:
-// what gets cut to fit one page still follows strength.
 export async function setItemOrder(resumeId: string, sectionIds: string[]): Promise<ActionResult> {
-  try {
-    const { supabase } = await session()
-    const ids = z.array(z.string().uuid()).min(1).max(100).parse(sectionIds)
-    const resume = await loadResume(supabase, resumeId)
-    if (!resume) throw new Error("Resume not found")
-    const current = resume.layout.items.map((li) => li.item_id)
-    if (new Set(ids).size !== ids.length || ids.some((id) => !current.includes(id))) throw new Error("That entry isn't on this resume any more. Refresh and try again.")
-    const known = resume.layout.item_order?.length ? [...resume.layout.item_order, ...current.filter((id) => !resume.layout.item_order!.includes(id))] : current
-    const item_order = reorderWithin(known, ids)
-    const { error } = await supabase.from("resumes").update({ layout: { ...resume.layout, item_order }, updated_at: new Date().toISOString() }).eq("id", resumeId)
-    if (error) throw new Error(error.message)
-    await relayout(resumeId)
-    return { ok: true, data: undefined }
-  } catch (err) {
-    return fail(err)
-  }
+  return edit(resumeId, (supabase) => setItemOrderIn(supabase, resumeId, sectionIds))
 }
 
-// Section order from drag-and-drop or the arrows. Sections not on the page keep their place after these.
 export async function setSectionOrder(resumeId: string, order: ItemType[]): Promise<ActionResult> {
-  try {
-    const { supabase } = await session()
-    const types = z.array(z.enum(ITEM_TYPES).exclude(["contact"])).max(5).parse(order)
-    if (new Set(types).size !== types.length) throw new Error("Each section can appear once.")
-    const resume = await loadResume(supabase, resumeId)
-    if (!resume) throw new Error("Resume not found")
-    const section_order = [...types, ...resume.layout.section_order.filter((t) => !types.includes(t as (typeof types)[number]))]
-    const { error } = await supabase.from("resumes").update({ layout: { ...resume.layout, section_order }, updated_at: new Date().toISOString() }).eq("id", resumeId)
-    if (error) throw new Error(error.message)
-    await relayout(resumeId)
-    return { ok: true, data: undefined }
-  } catch (err) {
-    return fail(err)
-  }
+  return edit(resumeId, (supabase) => setSectionOrderIn(supabase, resumeId, order))
 }
 
 const ManualItemSchema = z.object({
@@ -496,6 +379,132 @@ export async function markSent(exportId: string, sent: boolean): Promise<ActionR
     if (error) throw new Error(error.message)
     revalidatePath("/home")
     return { ok: true, data: undefined }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+// Chat about one resume: one AI call proposes typed edits, code checks each against the resume,
+// applies the ones that pass in order, re-fits once, and reports every edit as applied or skipped.
+export interface ChatEditResult {
+  label: string
+  ok: boolean
+  reason?: string
+}
+
+const ChatHistory = z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(20000) })).min(1).max(30)
+const HEADER_KEYS = ["name", "headline", "target_role", "email", "phone", "location", "website", "github", "linkedin"] as const
+const DETAIL_KEYS = ["role", "company", "name", "url", "school", "degree", "details", "category", "location", "start", "end", "tech", "skills"] as const
+
+export async function chatWithResume(resumeId: string, messages: ChatMessage[]): Promise<ActionResult<{ reply: string; edits: ChatEditResult[] }>> {
+  try {
+    const { userId, supabase } = await session()
+    // Only the most recent turns go to the model; long chats stay cheap.
+    const history = ChatHistory.parse(messages).slice(-12)
+    if (history.at(-1)?.role !== "user") throw new Error("Nothing to answer.")
+    const loaded = await loadResumeDoc(supabase, resumeId)
+    if (!loaded) return { ok: false, error: "Resume not found" }
+    const { text, ctx: base } = resumeForChat(loaded.resume, loaded.record, loaded.doc)
+    const ctx: ChatContext = { ...base, userMessages: history.filter((m) => m.role === "user").map((m) => m.content) }
+    const out = await chatTurn(userId, text, history, ctx)
+
+    const title = (id: string | null) => (id ? `“${ctx.entries.get(id)?.title ?? "entry"}”` : "")
+    const lineEntry = (id: string | null) => (id ? title(ctx.lines.get(id)?.entryId ?? null) : "")
+    const label = (a: ChatAction): string => {
+      switch (a.type) {
+        case "edit_line": return `Edited a line in ${lineEntry(a.line_id)}`
+        case "add_line": return `Added a line to ${title(a.entry_id)}`
+        case "remove_line": return `Removed a line from ${lineEntry(a.line_id)}`
+        case "rewrite_entry": return `Rewrote ${title(a.entry_id)}${a.text ? ` (${a.text})` : ""}`
+        case "hide_entry": return `Took ${title(a.entry_id)} off the page`
+        case "show_entry": return `Put ${title(a.entry_id)} back on the page`
+        case "pin_entry": return `Pinned ${title(a.entry_id)}`
+        case "unpin_entry": return `Unpinned ${title(a.entry_id)}`
+        case "move_entry": return `Moved ${title(a.entry_id)} to position ${(a.position ?? 0) + 1}`
+        case "move_section": return `Moved ${SECTION_TITLES[a.section ?? "project"]} to position ${(a.position ?? 0) + 1}`
+        case "update_details": return `Updated details of ${title(a.entry_id)}`
+        case "update_header": return "Updated the header"
+      }
+    }
+
+    const edits: ChatEditResult[] = []
+    let changed = false
+    let stale = false // hide/show changes which entries the layout holds; moves need it current
+    for (const c of checkActions(out.actions, ctx)) {
+      const a = c.action
+      if (!c.ok) {
+        edits.push({ label: label(a), ok: false, reason: c.reason })
+        continue
+      }
+      try {
+        switch (a.type) {
+          case "edit_line": await editLine(supabase, resumeId, a.line_id!, a.text!); break
+          case "add_line": await addLine(supabase, a.entry_id!, a.text!); break
+          case "remove_line": await removeLine(supabase, a.line_id!); break
+          case "rewrite_entry": {
+            const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
+            await writeItems(supabase, userId, record, { itemIds: [a.entry_id!], releaseEdits: true, targetRole: resume?.layout.target_role, instruction: a.text?.trim() || undefined })
+            break
+          }
+          case "hide_entry":
+          case "show_entry":
+            await setItemStateIn(supabase, resumeId, a.entry_id!, { status: a.type === "hide_entry" ? "hidden" : "shown" })
+            stale = true
+            break
+          case "pin_entry":
+          case "unpin_entry":
+            await setItemStateIn(supabase, resumeId, a.entry_id!, { pinned: a.type === "pin_entry" })
+            break
+          case "move_entry":
+          case "move_section": {
+            if (stale) await relayoutResume(supabase, resumeId)
+            stale = false
+            const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
+            if (!resume) throw new Error("Resume not found")
+            const types = new Map(record.items.map((i) => [i.id, i.type]))
+            const place = <T,>(list: T[], value: T, at: number) => {
+              const rest = list.filter((x) => x !== value)
+              rest.splice(Math.max(0, Math.min(at, rest.length)), 0, value)
+              return rest
+            }
+            if (a.type === "move_entry") {
+              const type = types.get(a.entry_id!)
+              const ids = resume.layout.items.map((li) => li.item_id).filter((id) => types.get(id) === type)
+              if (!ids.includes(a.entry_id!)) throw new Error("It isn't on the page any more.")
+              await setItemOrderIn(supabase, resumeId, place(ids, a.entry_id!, a.position!))
+            } else {
+              const present = new Set(resume.layout.items.map((li) => types.get(li.item_id)))
+              const order = resume.layout.section_order.filter((t) => present.has(t))
+              await setSectionOrderIn(supabase, resumeId, place(order, a.section!, a.position!))
+            }
+            break
+          }
+          case "update_details": await updateDetailsIn(supabase, a.entry_id!, presentFields(a.fields, DETAIL_KEYS) as DetailsInput); break
+          case "update_header": await updateHeaderIn(supabase, resumeId, presentFields(a.fields, HEADER_KEYS) as HeaderInput); break
+        }
+        changed = true
+        edits.push({ label: label(a), ok: true })
+      } catch (err) {
+        edits.push({ label: label(a), ok: false, reason: err instanceof Error ? err.message : "Couldn't apply this" })
+      }
+    }
+    if (changed) await relayout(resumeId)
+    return { ok: true, data: { reply: out.reply, edits } }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+// The finished resume for a result card: its render shape plus how the checks went.
+export async function resumeSummary(resumeId: string): Promise<ActionResult<{ doc: ResumeDoc; fails: number; warns: number }>> {
+  const checks = await runResumeChecks(resumeId)
+  if (!checks.ok) return checks
+  try {
+    const { supabase } = await session()
+    const loaded = await loadResumeDoc(supabase, resumeId)
+    if (!loaded) return { ok: false, error: "Resume not found" }
+    const count = (status: string) => checks.data.results.filter((r) => r.status === status).length
+    return { ok: true, data: { doc: loaded.doc, fails: count("fail"), warns: count("warn") } }
   } catch (err) {
     return fail(err)
   }

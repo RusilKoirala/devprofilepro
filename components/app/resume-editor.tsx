@@ -3,11 +3,12 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { ArrowDown, ArrowUp, ChevronDown, Download, EyeOff, GripVertical, Lightbulb, MoreHorizontal, Pencil, Pin, PinOff, Plus, RotateCcw, Sparkles, Trash2, Wand2 } from "lucide-react"
+import { ArrowDown, ArrowUp, ChevronDown, Download, EyeOff, GripVertical, Lightbulb, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RotateCcw, Sparkles, Trash2, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { ChecksPanel, ReadinessBadge, useResumeChecks } from "@/components/app/checks-panel"
 import { FactChip, type FactView } from "@/components/app/fact-chip"
 import { QuestionCard, type QuestionView } from "@/components/app/questions-panel"
+import { ResumeChat } from "@/components/app/resume-chat"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -61,6 +62,9 @@ export function ResumeEditor({ data }: { data: EditorData }) {
   const [pending, startTransition] = useTransition()
   const [downloading, setDownloading] = useState(false)
   const [tab, setTab] = useState("preview")
+  // The chat swaps in for the editor column, so the live preview stays in view while you talk.
+  const [mode, setMode] = useState<"edit" | "chat">("edit")
+  const [chatBusy, setChatBusy] = useState(false)
   const checks = useResumeChecks(data.resumeId, data.version)
   // Optimistic section order while the save + re-fit runs; dropped once the refreshed data arrives.
   const [localOrder, setLocalOrder] = useState<{ version: string; types: SectionType[] } | null>(null)
@@ -168,8 +172,23 @@ export function ResumeEditor({ data }: { data: EditorData }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-lg font-medium">{data.title}</h2>
+          <div role="tablist" aria-label="Edit or chat" className="inline-flex rounded-full border border-border p-0.5 text-xs">
+            {(["edit", "chat"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => setMode(m)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors ${mode === m ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {m === "edit" ? <Pencil className="size-3" /> : <MessageSquare className="size-3" />}
+                {m === "edit" ? "Edit" : "Chat"}
+              </button>
+            ))}
+          </div>
           <ReadinessBadge state={checks} onClick={() => setTab("checks")} />
           {(questions.length > 0 || hinted > 0) && (
             <button
@@ -203,8 +222,11 @@ export function ResumeEditor({ data }: { data: EditorData }) {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className={mode === "chat" ? "lg:sticky lg:top-20 lg:self-start" : "hidden"}>
+          <ResumeChat resumeId={data.resumeId} onBusy={setChatBusy} />
+        </div>
         {/* Editor */}
-        <div className="space-y-6">
+        <div className={mode === "edit" ? "space-y-6" : "hidden"}>
           <HeaderCard resumeId={data.resumeId} header={data.header} pending={pending} run={run} />
 
           {sections.map((section, si) => {
@@ -341,7 +363,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
                   src={`/api/pdf/${data.resumeId}?v=${encodeURIComponent(data.version)}#toolbar=0&view=FitH`}
                   className="aspect-[8.5/11] w-full rounded-xl border border-border bg-white"
                 />
-                {pending && (
+                {(pending || chatBusy) && (
                   <div className="absolute inset-0 flex items-start justify-center rounded-xl bg-background/40 pt-6 backdrop-blur-[1px]">
                     <span className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs"><Spinner /> Updating the page…</span>
                   </div>
