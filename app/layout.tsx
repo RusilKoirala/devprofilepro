@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,8 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DevProfile Pro - Auto-generate Resumes from GitHub & LinkedIn",
-  description: "Transform your GitHub and LinkedIn profiles into professional PDF resumes. Connect your accounts, generate beautiful resumes instantly, and get insights to improve your developer profile.",
+  title: "DevProfilePro",
+  description:
+    "DevProfile reads your GitHub, LinkedIn, X and old resume and turns them into a clean one-page LaTeX resume that updates when you ship. Coming soon.",
 };
 
 export default function RootLayout({
@@ -23,11 +26,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+    <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <TooltipProvider>{children}</TooltipProvider>
+        <Toaster position="bottom-center" theme="dark" />
       </body>
     </html>
   );
