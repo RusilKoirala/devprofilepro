@@ -1,115 +1,36 @@
 # DevProfile Pro
 
-A SaaS product that helps developers auto-generate professional resumes from their GitHub and LinkedIn profiles.
+Build a developer resume from public GitHub data, uploaded PDFs, pasted notes, or manual entries. The current implementation covers the first-resume workflow; see [the implementation plan](docs/IMPLEMENTATION.md) and [review notes](docs/REVIEW.md) for remaining work.
 
-## Phase 1: Foundation Setup ✅
+## Local setup
 
-This project has been initialized with:
-- Next.js 16 (App Router)
-- TypeScript
-- Tailwind CSS v4
-- shadcn/ui components
-- Supabase client configuration
-- Landing page with navbar, hero, and footer
+1. Install Node.js 20.9 or newer, then run `npm ci`.
+2. Copy `.env.example` to `.env.local` and fill in Clerk, Supabase, and an AI provider's keys.
+3. Configure Clerk sign-in providers. Enable Clerk's Supabase integration and add Clerk as a third-party auth provider in Supabase. The app uses the ordinary publishable/anon Supabase key and Clerk session tokens; it does not need a Supabase service-role key.
+4. Apply **all** files in `supabase/migrations/` in filename order. `0002_record_integrity.sql` is required by the atomic bullet-writing server action. Use a local Supabase database first; review the migration before applying it to an existing hosted database.
+5. Run `npm run dev` and open [localhost:3000](http://localhost:3000).
 
-## Getting Started
+The landing page can run without Clerk keys. Protected routes require configured authentication. Set Upstash variables to enforce per-user generation limits; the environment example lists the AI spend guards too.
 
-### Prerequisites
+## Validation
 
-- Node.js 18+ installed
-- npm, yarn, pnpm, or bun
+- `npm test`: offline regression tests, including actual PDF rendering and pagination.
+- `npm run lint`: ESLint.
+- `npx tsc --noEmit`: TypeScript.
+- `npm run build`: production build; Google Fonts requires network access.
+- `npm run eval -- --dry-run`: inspect the AI fixtures without making paid AI calls.
+- `npm run eval`: live AI evaluation; uses the configured provider and incurs API costs.
 
-### Installation
+Run `supabase/tests/record_integrity.sql` with `psql -v ON_ERROR_STOP=1 -f ...` against a disposable/local database after applying the migrations. It exercises RLS, cross-user references, atomic replacements, manual-edit preservation, and immutable exports. Fixtures are rolled back.
 
-1. Clone the repository and navigate to the project directory
+## Code map
 
-2. Install dependencies:
-```bash
-npm install
-```
+- `app/(app)`: onboarding, home, Career Record and resume editor.
+- `app/api`: PDF previews, immutable exports, LaTeX and JSON downloads.
+- `lib/ingest`: GitHub, merged PRs, PDF and paste ingestion.
+- `lib/ai`: extraction, clarification questions, writing and spend guards.
+- `lib/record`: persistence, provenance checks and server actions.
+- `lib/resume`: document construction, PDF fitting, checks and LaTeX.
+- `supabase/migrations`: schema, ownership rules and storage policies.
 
-3. Set up environment variables:
-```bash
-cp .env.example .env.local
-```
-
-4. Configure your Supabase project:
-   - Create a project at [supabase.com](https://supabase.com)
-   - Copy your project URL and anon key
-   - Add them to `.env.local`:
-     ```
-     NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-     NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-     SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-     ```
-
-5. Run the development server:
-```bash
-npm run dev
-```
-
-6. Open [http://localhost:3000](http://localhost:3000) in your browser
-
-## Project Structure
-
-```
-/app
-  /(marketing)          # Marketing pages (landing page)
-    layout.tsx          # Marketing layout with navbar/footer
-    page.tsx            # Landing page
-  layout.tsx            # Root layout
-  globals.css           # Global styles
-/components
-  /ui                   # shadcn/ui components
-  /marketing            # Marketing components (navbar, footer, hero)
-/lib
-  /supabase             # Supabase client configuration
-    client.ts           # Browser client
-    server.ts           # Server component client
-    middleware.ts       # Middleware helper
-  utils.ts              # Utility functions (cn helper)
-/types
-  index.ts              # TypeScript type definitions
-```
-
-## Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint
-
-## Tech Stack
-
-- **Framework**: Next.js 16 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS v4
-- **UI Components**: shadcn/ui
-- **Database**: Supabase (PostgreSQL)
-- **Deployment**: Vercel (recommended)
-
-## Next Steps (Phase 2)
-
-The following features will be implemented in Phase 2:
-- NextAuth.js setup with email/password authentication
-- GitHub OAuth integration
-- User dashboard layout
-- Database schema creation in Supabase
-
-## Environment Variables
-
-See `.env.example` for all required environment variables. The following are needed for Phase 1:
-
-- `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Your Supabase anonymous key
-- `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key (server-only)
-
-Additional environment variables will be added in future phases for:
-- NextAuth.js
-- GitHub OAuth
-- LinkedIn OAuth
-- Stripe payments
-
-## License
-
-Private project - All rights reserved
+Private project. All rights reserved.

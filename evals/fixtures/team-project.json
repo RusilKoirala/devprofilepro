@@ -1,0 +1,12 @@
+{
+  "name": "Team project README (asks what you built)",
+  "sources": [
+    { "id": "s-repo", "kind": "github", "label": "GitHub repo: hackathon-health", "raw_text": "Repository: hackathon-health\nDescription: Symptom triage chatbot built at HackMIT 2025\nTech: Python, FastAPI, React\nStars: 14\nForks: 2\nLast pushed: 2025-09-20\nContributors: 4 (team)\nCommits by sam-k: 19\nURL: https://github.com/team-hm/hackathon-health\nREADME:\n# Hackathon Health\nOur team of four built a symptom triage chatbot in 36 hours. Won 2nd place in the healthcare track. Frontend in React, API in FastAPI, deployed on Fly.io.", "meta": { "repo_id": 10, "score": 30, "signals": [] } },
+    { "id": "s-note", "kind": "paste", "label": "Pasted notes", "raw_text": "I'm Sam Kim, sam.kim@example.com. Second-year student at Georgia Tech.", "meta": {} }
+  ],
+  "expect": {
+    "team_project": ["hackathon-health"],
+    "question_kinds": ["ownership", "team"],
+    "must_not_mention": ["single-handedly", "built the entire"]
+  }
+}
