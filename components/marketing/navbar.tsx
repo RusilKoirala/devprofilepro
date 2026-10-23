@@ -23,7 +23,8 @@ const links = [
   { href: "#faq", label: "FAQ" },
 ]
 
-export function Navbar() {
+// `auth` holds the Clerk sign-in / dashboard controls; absent when Clerk isn't configured.
+export function Navbar({ auth }: { auth?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
 
@@ -59,9 +60,13 @@ export function Navbar() {
         </nav>
 
         <div className="col-start-3 flex items-center justify-end gap-2">
-          <Button asChild size="sm" variant="secondary" className="hidden rounded-full px-4 sm:inline-flex">
-            <Link href="#waitlist">Join the waitlist</Link>
-          </Button>
+          {auth ? (
+            <div className="hidden items-center gap-2 sm:flex">{auth}</div>
+          ) : (
+            <Button asChild size="sm" variant="secondary" className="hidden rounded-full px-4 sm:inline-flex">
+              <Link href="#waitlist">Join the waitlist</Link>
+            </Button>
+          )}
 
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
@@ -89,9 +94,13 @@ export function Navbar() {
                   </Button>
                 ))}
                 <Separator className="my-3" />
-                <Button asChild className="rounded-full" onClick={() => setOpen(false)}>
-                  <Link href="#waitlist">Join the waitlist</Link>
-                </Button>
+                {auth ? (
+                  <div className="flex items-center gap-2">{auth}</div>
+                ) : (
+                  <Button asChild className="rounded-full" onClick={() => setOpen(false)}>
+                    <Link href="#waitlist">Join the waitlist</Link>
+                  </Button>
+                )}
               </nav>
             </SheetContent>
           </Sheet>

@@ -1,7 +1,10 @@
-import type { SourceDoc } from "@/lib/resume/schema"
+import "server-only"
+import { clerkClient } from "@clerk/nextjs/server"
+import type { IngestedSource, RepoMeta, SignalFact } from "@/lib/ingest/types"
 
 const API = "https://api.github.com"
-const MAX_READMES = 8
+const MAX_DEEP = 15
+const MAX_REPOS = 300
 const MAX_README_CHARS = 6000
 
 interface GitHubUser {
@@ -13,13 +16,11 @@ interface GitHubUser {
   location: string | null
   email: string | null
   twitter_username: string | null
-  public_repos: number
-  followers: number
   html_url: string
-  created_at: string
 }
 
 interface GitHubRepo {
+  id: number
   name: string
   full_name: string
   description: string | null
@@ -28,6 +29,7 @@ interface GitHubRepo {
   forks_count: number
   fork: boolean
   archived: boolean
+  size: number
   topics?: string[]
   homepage: string | null
   html_url: string
@@ -40,32 +42,73 @@ export class GitHubError extends Error {
   }
 }
 
-function headers(accept = "application/vnd.github+json"): HeadersInit {
-  const h: Record<string, string> = {
+// Frameworks worth naming on a resume, by dependency name. Anything not listed is ignored.
+const NOTABLE_DEPS: Record<string, string> = {
+  next: "Next.js", react: "React", vue: "Vue", svelte: "Svelte", "@angular/core": "Angular",
+  express: "Express", fastify: "Fastify", "@nestjs/core": "NestJS", hono: "Hono",
+  prisma: "Prisma", "drizzle-orm": "Drizzle", mongoose: "MongoDB", pg: "PostgreSQL",
+  "@supabase/supabase-js": "Supabase", firebase: "Firebase", redis: "Redis", ioredis: "Redis",
+  tailwindcss: "Tailwind CSS", "socket.io": "Socket.IO", graphql: "GraphQL", trpc: "tRPC",
+  "@trpc/server": "tRPC", stripe: "Stripe", "react-native": "React Native", expo: "Expo",
+  electron: "Electron", three: "Three.js", "@anthropic-ai/sdk": "Claude API", openai: "OpenAI API",
+  langchain: "LangChain", vitest: "Vitest", jest: "Jest", playwright: "Playwright",
+  django: "Django", flask: "Flask", fastapi: "FastAPI", sqlalchemy: "SQLAlchemy", pandas: "pandas",
+  numpy: "NumPy", torch: "PyTorch", tensorflow: "TensorFlow", "scikit-learn": "scikit-learn",
+  pydantic: "Pydantic", celery: "Celery", "github.com/gin-gonic/gin": "Gin", "github.com/gofiber/fiber": "Fiber",
+  tokio: "Tokio", axum: "Axum", actix_web: "Actix", "actix-web": "Actix", serde: "Serde",
+}
+
+const TUTORIAL_NAME = /(todo|clone|tutorial|course|bootcamp|practice|exercise|learning|hello-?world)/i
+
+// Prefer the user's own OAuth token from Clerk (5,000 req/hr, as them), then our server token.
+export async function githubTokenFor(userId: string): Promise<{ token: string | null; login: string | null }> {
+  try {
+    const client = await clerkClient()
+    const [tokens, user] = await Promise.all([
+      client.users.getUserOauthAccessToken(userId, "github"),
+      client.users.getUser(userId),
+    ])
+    const login = user.externalAccounts.find((a) => a.provider.includes("github"))?.username ?? null
+    const token = tokens.data[0]?.token ?? null
+    if (token) return { token, login }
+    return { token: process.env.GITHUB_TOKEN ?? null, login }
+  } catch {
+    return { token: process.env.GITHUB_TOKEN ?? null, login: null }
+  }
+}
+
+function makeFetch(token: string | null) {
+  const headers = (accept = "application/vnd.github+json"): HeadersInit => ({
     Accept: accept,
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "devprofile-pro",
-  }
-  if (process.env.GITHUB_TOKEN) h.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`
-  return h
-}
-
-async function gh<T>(path: string, revalidate = 600): Promise<T> {
-  const res = await fetch(`${API}${path}`, { headers: headers(), next: { revalidate } })
-  if (res.status === 404) throw new GitHubError("GitHub user not found", 404)
-  if (res.status === 403 || res.status === 429)
-    throw new GitHubError("GitHub rate limit hit — set GITHUB_TOKEN to raise it", res.status)
-  if (!res.ok) throw new GitHubError(`GitHub API error (${res.status})`, res.status)
-  return res.json() as Promise<T>
-}
-
-async function readme(fullName: string): Promise<string> {
-  const res = await fetch(`${API}/repos/${fullName}/readme`, {
-    headers: headers("application/vnd.github.raw+json"),
-    next: { revalidate: 3600 },
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   })
-  if (!res.ok) return ""
-  return (await res.text()).slice(0, MAX_README_CHARS)
+
+  async function gh<T>(path: string): Promise<T> {
+    const res = await fetch(`${API}${path}`, { headers: headers(), cache: "no-store" })
+    if (res.status === 404) throw new GitHubError("Not found on GitHub", 404)
+    if (res.status === 403 || res.status === 429) throw new GitHubError("GitHub rate limit hit", res.status)
+    if (!res.ok) throw new GitHubError(`GitHub API error (${res.status})`, res.status)
+    return res.json() as Promise<T>
+  }
+
+  async function raw(path: string): Promise<string | null> {
+    const res = await fetch(`${API}${path}`, { headers: headers("application/vnd.github.raw+json"), cache: "no-store" })
+    return res.ok ? res.text() : null
+  }
+
+  // Count via the Link header's last page with per_page=1.
+  async function count(path: string): Promise<number | null> {
+    const res = await fetch(`${API}${path}${path.includes("?") ? "&" : "?"}per_page=1`, { headers: headers(), cache: "no-store" })
+    if (!res.ok) return null
+    const last = res.headers.get("link")?.match(/[?&]page=(\d+)>; rel="last"/)
+    if (last) return Number(last[1])
+    const body = (await res.json()) as unknown[]
+    return Array.isArray(body) ? body.length : null
+  }
+
+  return { gh, raw, count }
 }
 
 export function normalizeGitHubUsername(input: string): string {
@@ -76,90 +119,150 @@ export function normalizeGitHubUsername(input: string): string {
     .split(/[/?#]/)[0]
 }
 
-// Rank by stars, with a boost for recently pushed repos so current work shows up.
-function score(repo: GitHubRepo): number {
-  const ageDays = (Date.now() - new Date(repo.pushed_at).getTime()) / 86_400_000
-  const recency = Math.max(0, 1 - ageDays / 365)
-  return repo.stargazers_count * 2 + repo.forks_count + recency * 5 + (repo.description ? 1 : 0)
+// Plain-code score; the AI later explains and can override. Low scores are hidden, never deleted.
+function quickScore(r: GitHubRepo): number {
+  const ageDays = (Date.now() - new Date(r.pushed_at).getTime()) / 86_400_000
+  let s = 0
+  if (r.homepage) s += 15
+  if (r.description) s += 5
+  s += Math.min(20, r.stargazers_count * 2)
+  s += Math.max(0, 10 - ageDays / 36)
+  if (r.fork) s -= 25
+  if (r.size === 0) s -= 40
+  if (TUTORIAL_NAME.test(r.name)) s -= 10
+  return s
 }
 
-// Cheap change signal: repo count + the most recent push times.
-export async function githubFingerprint(username: string): Promise<string> {
-  const repos = await gh<GitHubRepo[]>(
-    `/users/${username}/repos?per_page=5&sort=pushed&type=owner`,
-    0
-  )
-  return [repos.length, ...repos.map((r) => `${r.name}@${r.pushed_at}`)].join("|")
-}
-
-export async function ingestGitHub(
-  rawUsername: string
-): Promise<{ docs: SourceDoc[]; fingerprint: string }> {
-  const username = normalizeGitHubUsername(rawUsername)
-  const [user, repos] = await Promise.all([
-    gh<GitHubUser>(`/users/${username}`),
-    gh<GitHubRepo[]>(`/users/${username}/repos?per_page=100&sort=pushed&type=owner`),
-  ])
-
-  const own = repos.filter((r) => !r.fork && !r.archived)
-  const languageCounts = new Map<string, number>()
-  for (const r of own) {
-    if (r.language) languageCounts.set(r.language, (languageCounts.get(r.language) ?? 0) + 1)
+function parseDeps(file: string, text: string): string[] {
+  const names: string[] = []
+  try {
+    if (file === "package.json") {
+      const pkg = JSON.parse(text)
+      names.push(...Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }))
+    } else if (file === "go.mod") {
+      for (const m of text.matchAll(/^\s*(?:require\s+)?([\w.\-/]+)\s+v[\d.]+/gm)) names.push(m[1])
+    } else {
+      // requirements.txt, pyproject.toml, Cargo.toml: grab package-looking tokens at line start
+      for (const m of text.matchAll(/^\s*"?([A-Za-z][\w\-]*)/gm)) names.push(m[1].toLowerCase())
+    }
+  } catch {
+    return []
   }
-  const languages = [...languageCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([lang, n]) => `${lang} (${n} repos)`)
-  const totalStars = own.reduce((sum, r) => sum + r.stargazers_count, 0)
+  return [...new Set(names.map((n) => NOTABLE_DEPS[n]).filter(Boolean))]
+}
 
-  const docs: SourceDoc[] = [
+const MANIFESTS = ["package.json", "requirements.txt", "pyproject.toml", "go.mod", "Cargo.toml"]
+
+export async function ingestGitHub(opts: { userId: string; username?: string }): Promise<IngestedSource[]> {
+  const { token, login } = await githubTokenFor(opts.userId)
+  const username = normalizeGitHubUsername(opts.username || login || "")
+  if (!username) throw new GitHubError("No GitHub username", 400)
+  if (!/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(username)) throw new GitHubError("Invalid GitHub username", 400)
+  const { gh, raw, count } = makeFetch(token)
+
+  const user = await gh<GitHubUser>(`/users/${username}`)
+  const repos: GitHubRepo[] = []
+  for (let page = 1; repos.length < MAX_REPOS; page++) {
+    const batch = await gh<GitHubRepo[]>(`/users/${username}/repos?type=owner&per_page=100&page=${page}`)
+    repos.push(...batch)
+    if (batch.length < 100) break
+  }
+
+  const ranked = repos.map((r) => ({ r, s: quickScore(r) })).sort((a, b) => b.s - a.s)
+  const deep = ranked.slice(0, MAX_DEEP)
+  const rest = ranked.slice(MAX_DEEP)
+
+  const profileLines = [
+    `Name: ${user.name ?? user.login}`,
+    user.bio && `Bio: ${user.bio}`,
+    user.company && `Company: ${user.company}`,
+    user.location && `Location: ${user.location}`,
+    user.email && `Email: ${user.email}`,
+    user.blog && `Website: ${user.blog}`,
+    user.twitter_username && `X: https://x.com/${user.twitter_username}`,
+    `GitHub: ${user.html_url}`,
+  ].filter(Boolean) as string[]
+
+  const sources: IngestedSource[] = [
     {
-      source: "github",
-      title: `GitHub profile: ${user.login}`,
+      kind: "github",
+      label: `GitHub profile: ${user.login}`,
+      raw_text: profileLines.join("\n"),
       url: user.html_url,
-      text: [
-        `Name: ${user.name ?? user.login}`,
-        user.bio && `Bio: ${user.bio}`,
-        user.company && `Company: ${user.company}`,
-        user.location && `Location: ${user.location}`,
-        user.email && `Email: ${user.email}`,
-        user.blog && `Website: ${user.blog}`,
-        user.twitter_username && `X: https://x.com/${user.twitter_username}`,
-        `GitHub: ${user.html_url}`,
-        `Public repos: ${user.public_repos}, followers: ${user.followers}, total stars on own repos: ${totalStars}`,
-        `Languages used across repositories: ${languages.join(", ")}`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
+      dedupe_key: `profile:${user.login.toLowerCase()}`,
+      meta: { login: user.login },
     },
   ]
 
-  const top = [...own].sort((a, b) => score(b) - score(a))
-  const withReadmes = top.slice(0, MAX_READMES)
-  const readmes = await Promise.all(withReadmes.map((r) => readme(r.full_name)))
+  const deepSources = await Promise.all(
+    deep.map(async ({ r, s }) => {
+      const [readme, languages, contributors, userCommits, manifests] = await Promise.all([
+        raw(`/repos/${r.full_name}/readme`).then((t) => t?.slice(0, MAX_README_CHARS) ?? ""),
+        gh<Record<string, number>>(`/repos/${r.full_name}/languages`).catch(() => ({})),
+        count(`/repos/${r.full_name}/contributors?anon=0`),
+        count(`/repos/${r.full_name}/commits?author=${user.login}`),
+        Promise.all(MANIFESTS.map(async (f) => [f, await raw(`/repos/${r.full_name}/contents/${f}`)] as const)),
+      ])
+      const langs = Object.entries(languages)
+        .sort((a, b) => b[1] - a[1])
+        .map(([l]) => l)
+        .slice(0, 6)
+      const deps = [...new Set(manifests.flatMap(([f, t]) => (t ? parseDeps(f, t) : [])))]
+      const solo = contributors === 1 && userCommits != null && userCommits > 0 && !r.fork
 
-  top.slice(0, 25).forEach((repo, i) => {
-    const lines = [
-      `Repository: ${repo.name}`,
-      repo.description && `Description: ${repo.description}`,
-      repo.language && `Primary language: ${repo.language}`,
-      repo.topics?.length && `Topics: ${repo.topics.join(", ")}`,
-      `Stars: ${repo.stargazers_count}, forks: ${repo.forks_count}, last pushed: ${repo.pushed_at.slice(0, 10)}`,
-      repo.homepage && `Live: ${repo.homepage}`,
-      `URL: ${repo.html_url}`,
-      readmes[i] && `README:\n${readmes[i]}`,
-    ]
-    docs.push({
-      source: "github",
-      title: `GitHub repo: ${repo.name}`,
-      url: repo.html_url,
-      text: lines.filter(Boolean).join("\n"),
+      // Every signal line is written into raw_text, so its quote always verifies.
+      const signalLines: SignalFact[] = []
+      const tech = [...langs, ...deps.filter((d) => !langs.includes(d))]
+      if (tech.length) signalLines.push({ text: `Built with ${tech.join(", ")}`, quote: `Tech: ${tech.join(", ")}` })
+      if (r.homepage) signalLines.push({ text: `Deployed at ${r.homepage}`, quote: `Live: ${r.homepage}` })
+      if (r.stargazers_count >= 5) signalLines.push({ text: `${r.stargazers_count} GitHub stars`, quote: `Stars: ${r.stargazers_count}` })
+      if (solo) signalLines.push({ text: "Solo project", quote: "Contributors: 1 (solo)" })
+
+      const lines = [
+        `Repository: ${r.name}`,
+        r.description && `Description: ${r.description}`,
+        tech.length && `Tech: ${tech.join(", ")}`,
+        r.topics?.length && `Topics: ${r.topics.join(", ")}`,
+        `Stars: ${r.stargazers_count}`,
+        `Forks: ${r.forks_count}`,
+        `Last pushed: ${r.pushed_at.slice(0, 10)}`,
+        r.homepage && `Live: ${r.homepage}`,
+        solo ? "Contributors: 1 (solo)" : contributors == null ? "Contributors: unknown (could not check)" : `Contributors: ${contributors}${contributors > 1 ? " (team)" : " (ownership unconfirmed)"}`,
+        `Commits by ${user.login}: ${userCommits ?? "unknown (could not check)"}`,
+        r.fork && "This repository is a fork.",
+        `URL: ${r.html_url}`,
+        readme && `README:\n${readme}`,
+      ].filter(Boolean)
+
+      const meta: RepoMeta = {
+        repo_id: r.id, name: r.name, stars: r.stargazers_count, forks: r.forks_count, is_fork: r.fork,
+        archived: r.archived, homepage: r.homepage, pushed_at: r.pushed_at, languages: langs, deps,
+        contributors, user_commits: userCommits, score: s, signals: signalLines,
+      }
+      return {
+        kind: "github",
+        label: `GitHub repo: ${r.name}`,
+        raw_text: lines.join("\n"),
+        url: r.html_url,
+        dedupe_key: `repo:${r.id}`,
+        meta: meta as unknown as Record<string, unknown>,
+      } satisfies IngestedSource
     })
-  })
+  )
+  sources.push(...deepSources)
 
-  const fingerprint = [
-    repos.length,
-    ...repos.slice(0, 5).map((r) => `${r.name}@${r.pushed_at}`),
-  ].join("|")
+  if (rest.length) {
+    sources.push({
+      kind: "github",
+      label: `Other GitHub repos (${rest.length})`,
+      raw_text: rest
+        .map(({ r }) => `${r.name}${r.fork ? " (fork)" : ""}: ${r.description ?? "no description"}${r.language ? ` [${r.language}]` : ""}`)
+        .join("\n"),
+      url: `${user.html_url}?tab=repositories`,
+      dedupe_key: `others:${user.login.toLowerCase()}`,
+      meta: { count: rest.length },
+    })
+  }
 
-  return { docs, fingerprint }
+  return sources
 }

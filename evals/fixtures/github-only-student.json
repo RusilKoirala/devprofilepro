@@ -1,0 +1,16 @@
+{
+  "name": "Student with GitHub only, 3 small repos",
+  "sources": [
+    { "id": "s-profile", "kind": "github", "label": "GitHub profile: alexdev", "raw_text": "Name: Alex Rivera\nBio: CS student at State University. I like building tools.\nLocation: Austin, TX\nGitHub: https://github.com/alexdev", "meta": {} },
+    { "id": "s-repo1", "kind": "github", "label": "GitHub repo: study-buddy", "raw_text": "Repository: study-buddy\nDescription: Flashcard app with spaced repetition\nTech: TypeScript, Next.js, Supabase, Tailwind CSS\nStars: 3\nForks: 0\nLast pushed: 2026-09-12\nLive: https://study-buddy.vercel.app\nContributors: 1 (solo)\nCommits by alexdev: 84\nURL: https://github.com/alexdev/study-buddy\nREADME:\n# Study Buddy\nA flashcard app that schedules reviews with the SM-2 spaced repetition algorithm. Sign in with Google, create decks, import CSV files. Built for my classmates in CS 314.", "meta": { "repo_id": 1, "score": 40, "signals": [] } },
+    { "id": "s-repo2", "kind": "github", "label": "GitHub repo: rust-ray", "raw_text": "Repository: rust-ray\nDescription: A small ray tracer\nTech: Rust\nStars: 0\nForks: 0\nLast pushed: 2026-03-02\nContributors: 1 (solo)\nCommits by alexdev: 23\nURL: https://github.com/alexdev/rust-ray\nREADME:\n# rust-ray\nFollowing Ray Tracing in One Weekend. Renders spheres with diffuse and metal materials, multithreaded with rayon.", "meta": { "repo_id": 2, "score": 20, "signals": [] } },
+    { "id": "s-repo3", "kind": "github", "label": "GitHub repo: todo-app", "raw_text": "Repository: todo-app\nTech: JavaScript\nStars: 0\nForks: 0\nLast pushed: 2024-01-10\nContributors: 1 (solo)\nCommits by alexdev: 2\nURL: https://github.com/alexdev/todo-app\nREADME:\n# todo-app\nCreated with create-react-app. Tutorial project.", "meta": { "repo_id": 3, "score": 0, "signals": [] } }
+  ],
+  "expect": {
+    "no_item_types": ["job"],
+    "projects_before_jobs": true,
+    "shown": ["study-buddy"],
+    "hidden": ["todo-app"],
+    "must_not_mention": ["intern", "engineer at"]
+  }
+}

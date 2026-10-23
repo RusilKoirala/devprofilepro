@@ -1,0 +1,11 @@
+{
+  "name": "Resume PDF only, no GitHub",
+  "sources": [
+    { "id": "s-resume", "kind": "resume_pdf", "label": "resume_2025.pdf", "raw_text": "Priya Shah\npriya.shah@example.com | (555) 010-2233 | linkedin.com/in/priyashah\nEducation\nUniversity of Waterloo, BASc Computer Engineering, Sep 2021 - Apr 2026\nExperience\nSoftware Developer Intern, Shopify, May 2024 - Aug 2024, Toronto\n- Built an internal dashboard in React and GraphQL to track checkout errors\n- Reduced flaky test runs in the payments CI pipeline\nBackend Intern, Wealthsimple, Jan 2023 - Apr 2023, Toronto\n- Wrote Python services for document ingestion using FastAPI and PostgreSQL\nProjects\nCampusMap - indoor navigation app for campus buildings (Kotlin, Firebase), 1,200 downloads on Google Play\nSkills\nLanguages: Python, TypeScript, Kotlin, SQL", "meta": {} }
+  ],
+  "expect": {
+    "item_types": ["job", "education", "project"],
+    "dates_verbatim": ["May 2024", "Aug 2024", "Jan 2023"],
+    "must_not_mention": ["spearheaded", "leveraged"]
+  }
+}
