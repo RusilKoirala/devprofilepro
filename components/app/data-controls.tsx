@@ -36,7 +36,7 @@ export function DataControls({ sources }: { sources: SourceListItem[] }) {
     startTransition(async () => {
       const res = await removeSource(source.id)
       if (!res.ok) return void toast.error(res.error)
-      toast.success(`Removed ${source.label}`, { description: `${res.data.facts} facts${res.data.entries ? ` and ${res.data.entries} entries that only it supported` : ""} were deleted. Your resumes were re-fitted.` })
+      toast.success(`Removed ${source.label}`, { description: `${res.data.facts} facts${res.data.entries ? ` and ${res.data.entries} entries that only it supported` : ""} were deleted. Your resumes were re-fitted.${res.data.review ? ` ${res.data.review} line${res.data.review === 1 ? "" : "s"} also cited other sources and stayed; your resume checks ask you to confirm each still holds.` : ""}` })
       router.refresh()
     })
   }
@@ -94,7 +94,7 @@ export function DataControls({ sources }: { sources: SourceListItem[] }) {
           <DialogHeader>
             <DialogTitle>Remove {removing?.label}?</DialogTitle>
             <DialogDescription>
-              Its {removing?.facts ?? 0} facts are deleted, along with lines and entries that only it supported. Lines you wrote yourself stay. PDFs you already downloaded don&apos;t change.
+              Its {removing?.facts ?? 0} facts are deleted, along with lines and entries that only it supported. Lines that also cite another source stay, flagged so you can check the whole line is still true. Your saved resumes update; PDFs you already downloaded are snapshots and don&apos;t change.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

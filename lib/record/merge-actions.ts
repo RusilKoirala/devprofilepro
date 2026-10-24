@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { isAppEnabled } from "@/lib/access"
+import { remapReport } from "@/lib/ai/tailor-check"
 import { DetailsSchema, EDITABLE, normalizeLink } from "@/lib/record/edits"
 import { relayoutResume } from "@/lib/record/pipeline"
 import type { ItemType, ResumeLayout } from "@/lib/record/types"
@@ -26,8 +27,9 @@ function must(error: { message: string } | null) {
 
 const Id = z.string().uuid()
 
-// Everything from `dropId` moves onto `keepId`: facts, questions, lines the person wrote, and each
-// resume's choices. `fields` are the values they picked where the two disagreed.
+// Everything from `dropId` moves onto `keepId`: facts, questions, lines the person wrote, each
+// resume's choices and each saved match report's citations. `fields` are the values they picked
+// where the two disagreed.
 export async function mergeEntries(keepId: string, dropId: string, fields: Record<string, string | string[] | null>): Promise<ActionResult> {
   try {
     const { supabase } = await session()
@@ -79,6 +81,13 @@ export async function mergeEntries(keepId: string, dropId: string, fields: Recor
       const l = r.layout as ResumeLayout
       const layout: ResumeLayout = { ...l, include: swap(l.include), item_order: swap(l.item_order), own_items: swap(l.own_items), items: l.items.filter((li) => li.item_id !== drop) }
       must((await supabase.from("resumes").update({ layout }).eq("id", r.id)).error)
+    }
+    // Saved match reports that cited the dropped entry now cite the kept one.
+    const { data: jobs, error: jobsError } = await supabase.from("jobs").select("id,match_report").not("match_report", "is", null)
+    must(jobsError)
+    for (const j of jobs ?? []) {
+      const report = remapReport(j.match_report, drop, keep)
+      if (report) must((await supabase.from("jobs").update({ match_report: report }).eq("id", j.id)).error)
     }
     must((await supabase.from("items").delete().eq("id", drop)).error)
     for (const r of resumes ?? []) await relayoutResume(supabase, r.id as string)

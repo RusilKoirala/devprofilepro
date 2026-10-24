@@ -13,8 +13,15 @@ function entryFor(item: Item, bullets: ResumeEntry["bullets"]): ResumeEntry {
   switch (item.type) {
     case "job":
       return { ...base, title: d.role ?? "", subtitle: d.company ?? "" }
-    case "education":
-      return { ...base, title: d.school ?? "", subtitle: [d.degree, d.details].filter(Boolean).join(", ") }
+    case "education": {
+      // Extracted education often repeats itself: the date inside the details ("Expected
+      // Graduation: 2027") or the details inside the degree. Print each once.
+      const degree = d.degree ?? ""
+      const details = d.details && !degree.toLowerCase().includes(d.details.toLowerCase()) ? d.details : ""
+      const subtitle = [degree, details].filter(Boolean).join(", ")
+      const unsaid = (x?: string | null) => (x && !subtitle.toLowerCase().includes(x.toLowerCase()) ? x : null)
+      return { ...base, title: d.school ?? "", subtitle, dates: dates(unsaid(d.start), unsaid(d.end)) }
+    }
     case "skills":
       return { ...base, title: d.category ?? "Skills", subtitle: (d.skills ?? []).join(", ") }
     default:

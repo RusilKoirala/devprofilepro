@@ -170,7 +170,7 @@ export function StartForm({ githubLogin, sources, hasRecord, targetRole }: { git
         </div>
 
         {stages && (
-          <ol className="space-y-3 rounded-2xl border border-border bg-card p-4">
+          <ol aria-live="polite" aria-label="Build progress" className="space-y-3 rounded-2xl border border-border bg-card p-4">
             {stages.map((s) => (
               <li key={s.label} className="flex items-start gap-3 text-sm">
                 <span className="mt-0.5 shrink-0">

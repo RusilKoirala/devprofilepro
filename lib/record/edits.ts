@@ -82,6 +82,16 @@ export async function editLine(supabase: SupabaseClient, resumeId: string, bulle
   }
   const { error } = await supabase.from("bullets").update({ text: clean, fact_ids: [fact!.id], user_edited: true, updated_at: now() }).eq("id", bulletId)
   must(error)
+  await clearReview(supabase, bullet!.item_id, bulletId)
+}
+
+// The person rewrote a line that lost part of its source, or confirmed it still holds.
+export async function clearReview(supabase: SupabaseClient, itemId: string, bulletId: string) {
+  const { data: item, error } = await supabase.from("items").select("data").eq("id", itemId).single()
+  must(error)
+  const list: string[] = item!.data.review_lines ?? []
+  if (!list.includes(bulletId)) return
+  must((await supabase.from("items").update({ data: { ...item!.data, review_lines: list.filter((id) => id !== bulletId) } }).eq("id", itemId)).error)
 }
 
 // A line typed by the user: saved as a "You told us" fact plus a bullet that cites it.

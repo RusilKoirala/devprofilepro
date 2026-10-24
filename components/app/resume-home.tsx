@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { ArrowRight, CheckCircle2, CircleDashed, X, XCircle } from "lucide-react"
-import { MatchReport } from "@/components/app/match-report"
+import { MatchReport, pageEvidence } from "@/components/app/match-report"
+import { MATCH_REPORT_VERSION } from "@/lib/ai/tailor-check"
 import { NewResumePrompt } from "@/components/app/new-resume-prompt"
 import { offerUpgrade } from "@/components/app/upgrade-prompt"
 import { UpgradeDialog } from "@/components/app/upgrade-dialog"
@@ -42,7 +43,7 @@ interface CreateTurn {
   id: number
   brief: string
   steps: Step[]
-  result?: { resumeId: string; title: string; doc: ResumeDoc; plan: TailorPlan; fails: number; warns: number }
+  result?: { resumeId: string; title: string; doc: ResumeDoc; bulletFacts: Record<string, string[]>; plan: TailorPlan; fails: number; warns: number }
 }
 interface EditTurn {
   kind: "edit"
@@ -92,7 +93,8 @@ export function ResumeHome({ firstName, resumes, usage }: { firstName: string; r
   // Same harness as the chat inside a resume: one AI call, checked edits, one re-fit.
   async function edit(resumeId: string, brief: string) {
     const id = Date.now()
-    const earlier = turns.filter((t): t is EditTurn => t.kind === "edit" && t.resumeId === resumeId && !t.error && !t.busy)
+    // The last few exchanges, like the editor's chat (12 messages), so long sessions stay bounded.
+    const earlier = turns.filter((t): t is EditTurn => t.kind === "edit" && t.resumeId === resumeId && !t.error && !t.busy).slice(-5)
     const history = [
       ...earlier.flatMap((t) => [{ role: "user" as const, content: t.brief }, { role: "assistant" as const, content: forModel({ role: "assistant", content: t.reply ?? "", edits: t.edits }) }]),
       { role: "user" as const, content: brief },
@@ -136,9 +138,9 @@ export function ResumeHome({ firstName, resumes, usage }: { firstName: string; r
     if (!saved) return
     const fit = await step(2, () => stageFit(saved.resumeId), (d) => (d.pinnedOverflow ? "Pinned items don't fit on one page" : d.cuts ? `One page. Moved ${d.cuts} weaker line${d.cuts === 1 ? "" : "s"} off to fit` : "Fits on one page"))
     if (!fit) return
-    const summary = await step(3, () => resumeSummary(saved.resumeId), (d) => (d.fails ? `${d.fails} to fix before sending` : !d.ready ? "A few things to review before sending" : d.warns ? `Checks passed, ${d.warns} to review` : "Checks passed"))
+    const summary = await step(3, () => resumeSummary(saved.resumeId), (d) => (d.fails ? `Built · ${d.fails} to fix before sending` : d.warns ? `Built · ${d.warns} to review before sending` : "Built · passed the automatic checks"))
     if (!summary) return
-    patch(id, 3, {}, { resumeId: saved.resumeId, title: saved.title, doc: summary.doc, plan, fails: summary.fails, warns: summary.warns })
+    patch(id, 3, {}, { resumeId: saved.resumeId, title: saved.title, doc: summary.doc, bulletFacts: summary.bulletFacts, plan, fails: summary.fails, warns: summary.warns })
     setActive({ resumeId: saved.resumeId, title: saved.title })
     router.refresh() // the sidebar's resume list
   }
@@ -300,7 +302,7 @@ function TurnView({ turn, doc, reduce }: { turn: CreateTurn; doc?: ResumeDoc; re
       <div className="flex gap-3">
         <LogoMark className="mt-0.5 size-6 shrink-0" />
         <div className="min-w-0 flex-1">
-          <ol className="relative space-y-3 border-l border-border pl-5">
+          <ol aria-live="polite" aria-label="Progress" className="relative space-y-3 border-l border-border pl-5">
             {visible.map((s) => (
               <motion.li key={s.label} {...appear} className="relative text-sm">
                 <span className="absolute top-0.5 -left-[27px] flex size-3.5 items-center justify-center rounded-full bg-background">
@@ -331,7 +333,7 @@ function ResultCard({ result, reduce }: { result: NonNullable<CreateTurn["result
       </Link>
       <div className="min-w-0 flex-1 space-y-3 text-sm">
         <p className="font-medium">{result.title}</p>
-        <MatchReport match={{ summary: plan.summary, requirements: plan.requirements, reasons: plan.items }} titles={titles} onPage={new Set(titles.keys())} compact />
+        <MatchReport match={{ version: MATCH_REPORT_VERSION, summary: plan.summary, requirements: plan.requirements, reasons: plan.items }} titles={titles} page={pageEvidence(result.doc, result.bulletFacts)} compact />
         <div className="flex flex-wrap items-center gap-3">
           <Button asChild size="sm">
             <Link href={`/resume/${result.resumeId}`}>Open resume <ArrowRight /></Link>
@@ -346,6 +348,7 @@ function ResultCard({ result, reduce }: { result: NonNullable<CreateTurn["result
 // Under the prompt on Free: how many tailored resumes are left, at the moment one is being spent.
 // The server blocks a new tailored resume once Free's allowance is used up; this says so first.
 function TailoredAllowance({ usage }: { usage: PlanUsage }) {
+  if (usage.fastModel) return <p className="mt-3 text-center text-xs text-amber-400">You&apos;ve had a very heavy day, so AI is on the faster model until midnight UTC. Results may be a little less careful; check them as usual.</p>
   if (usage.plan !== "free") return null
   const t = allowanceStates(usage).find((a) => a.key === "tailored")!
   const reason = t.state === "out" ? `You've used all ${t.limit} free tailored resumes this month.` : `You have ${t.left} of ${t.limit} free tailored resumes left this month.`

@@ -40,9 +40,14 @@ const ALIASES: Record<string, string[]> = {
 // tools, or next to words like "services" or "developer". Case-sensitive, never "go to".
 const GO_CONTEXT = /(?:(?:^|[,/(|•·]\s*|\band\s+|\bor\s+|\bin\s+|\bwith\s+|\busing\s+)Go\b(?!\s*(?:-|to\b|ahead|live|beyond|further|getter))|\bGo(?=\s*[,/)|]|\s+(?:and|or)\s|\s+(?:language|lang|developer|engineer|services?|microservices|backend|code|programming|modules|routines)\b))/m
 
-function hasTerm(text: string, term: string): boolean {
+export function hasTerm(text: string, term: string): boolean {
   if (term === "Go") return mentions(text, "Golang") || GO_CONTEXT.test(text)
   return [term, ...(ALIASES[term] ?? [])].some((t) => mentions(text, t))
+}
+
+// The known skills and tools a piece of text names, e.g. a job requirement.
+export function knownTermsIn(text: string): string[] {
+  return KNOWN.filter((k) => hasTerm(text, k))
 }
 
 // Words that look like skills when capitalised but aren't.

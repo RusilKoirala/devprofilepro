@@ -8,7 +8,7 @@ import { toast } from "sonner"
 import { ChecksPanel, ReadinessBadge, useResumeChecks, type CheckTarget } from "@/components/app/checks-panel"
 import { FactChip, type FactView } from "@/components/app/fact-chip"
 import { offerUpgrade } from "@/components/app/upgrade-prompt"
-import { MatchReport, type MatchView } from "@/components/app/match-report"
+import { MatchReport, type MatchView, type PageEvidence } from "@/components/app/match-report"
 import { QuestionCard, type QuestionView } from "@/components/app/questions-panel"
 import { ResumeChat, type ChatMessageView } from "@/components/app/resume-chat"
 import { Badge } from "@/components/ui/badge"
@@ -22,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
-  addBullet, archiveResume, deleteBullet, deleteResume, duplicateResume, editBullet, regenerateItem, renameResume, restoreBullet, restoreCut, setItemOrder, setItemState, setSectionOrder, updateHeader, updateItemDetails, type ActionResult,
+  addBullet, archiveResume, deleteBullet, deleteResume, duplicateResume, editBullet, keepLine, recheckMatch, regenerateItem, renameResume, restoreBullet, restoreCut, setItemOrder, setItemState, setSectionOrder, updateHeader, updateItemDetails, type ActionResult,
 } from "@/lib/record/actions"
 import { REWRITE_LABELS, type RewriteStyle } from "@/lib/record/rewrite-styles"
 import type { ItemType } from "@/lib/record/types"
@@ -90,6 +90,12 @@ export function ResumeEditor({ data }: { data: EditorData }) {
     ? [...data.sections].sort((a, b) => localOrder.types.indexOf(a.type) - localOrder.types.indexOf(b.type))
     : data.sections
   ).map((s) => (itemIndex ? { ...s, entries: [...s.entries].sort((a, b) => (itemIndex.get(a.itemId) ?? 0) - (itemIndex.get(b.itemId) ?? 0)) } : s))
+
+  // What is printed on the page now, for the match report.
+  const page: PageEvidence = {
+    entries: data.sections.flatMap((s) => s.entries.map((e) => ({ itemId: e.itemId, text: [e.title, e.subtitle, e.details.tech, e.details.skills].filter(Boolean).join(", ") }))),
+    lines: data.sections.flatMap((s) => s.entries.flatMap((e) => e.bullets.map((b) => ({ id: b.id, itemId: e.itemId, text: b.text, factIds: b.facts.map((f) => f.id) })))),
+  }
 
   const run: Run = (action, after) => {
     startTransition(async () => {
@@ -454,12 +460,30 @@ export function ResumeEditor({ data }: { data: EditorData }) {
               </div>
             </TabsContent>
             <TabsContent value="checks">
-              <ChecksPanel state={checks} onShow={show} />
+              <ChecksPanel
+                state={checks}
+                onShow={show}
+                busy={pending}
+                onRemoveLine={(bulletId) =>
+                  run(() => deleteBullet(data.resumeId, bulletId), (snapshot) =>
+                    toast("Line removed", { description: "Its facts stay in your Career Record.", action: { label: "Undo", onClick: () => run(() => restoreBullet(data.resumeId, snapshot)) } })
+                  )
+                }
+                onKeepLine={(itemId, bulletId) => run(() => keepLine(data.resumeId, itemId, bulletId), () => toast.success("Kept as it is."))}
+              />
             </TabsContent>
             {data.match && (
               <TabsContent value="match">
                 <div className="rounded-xl border border-border bg-card p-4">
-                  <MatchReport match={data.match} titles={new Map(Object.entries(data.titles))} onPage={new Set(data.sections.flatMap((s) => s.entries.map((e) => e.itemId)))} />
+                  <MatchReport
+                    match={data.match}
+                    titles={new Map(Object.entries(data.titles))}
+                    page={page}
+                    onShow={show}
+                    onAdd={(itemId) => run(() => setItemState(data.resumeId, itemId, { status: "shown" }), () => toast.success(`Added ${data.titles[itemId] ?? "it"}. The page was re-fitted, so something weaker may have moved off.`))}
+                    onRecheck={() => run(() => recheckMatch(data.resumeId), () => toast.success("Re-checked against the job post."))}
+                    rechecking={pending}
+                  />
                 </div>
               </TabsContent>
             )}
@@ -756,6 +780,7 @@ function BulletInput({ initial, disabled, placeholder, onSave, onCancel }: { ini
         rows={2}
         autoFocus
         placeholder={placeholder}
+        aria-label={initial ? "Edit this line" : "New line"}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save() }
           if (e.key === "Escape") onCancel()

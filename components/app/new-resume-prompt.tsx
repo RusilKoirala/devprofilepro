@@ -57,7 +57,7 @@ export function NewResumePrompt({ onSubmit, busy = false, suggestions = true, pl
           className="field-sizing-content block max-h-72 min-h-16 w-full resize-none bg-transparent px-5 pt-4 text-[15px] leading-relaxed outline-none placeholder:text-muted-foreground"
         />
         <div className="flex items-center justify-between gap-3 px-3 pt-1 pb-3">
-          <span className="pl-2 text-xs text-muted-foreground">Built only from your Career Record. Nothing invented.</span>
+          <span className="pl-2 text-xs text-muted-foreground">Picks from your Career Record only, and each line cites its source. Check the match before you send it.</span>
           <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!text.trim() || busy} aria-label="Make this resume">
             {busy ? <Spinner /> : <ArrowUp />}
           </Button>

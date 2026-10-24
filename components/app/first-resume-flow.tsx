@@ -272,7 +272,7 @@ export function FirstResumeFlow({ githubLogin, provider, resume }: { githubLogin
         <>
           <h2 className="text-2xl font-medium tracking-tight">{phase === "reading" ? "Reading your work" : "Writing your resume"}</h2>
           <p className="mt-2 text-muted-foreground">{failed ? "Something went wrong. What's done so far is saved, so trying again picks up from here." : "About a minute. If you leave, we'll pick up from the last finished step."}</p>
-          <ol className="mt-8 space-y-4 rounded-2xl border border-border bg-card p-5">
+          <ol aria-live="polite" aria-label="Build progress" className="mt-8 space-y-4 rounded-2xl border border-border bg-card p-5">
             {steps.map((s) => (
               <li key={s.label} className="flex items-start gap-3 text-sm">
                 <span className="mt-0.5 shrink-0">

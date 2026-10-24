@@ -22,7 +22,7 @@ const FREE_FEATURES = [
   "Unlimited editing, checks and parser view",
   "3 tailored resumes a month",
   "20 AI fixes a month",
-  "1 rebuild and 1 GitHub sync a month",
+  "2 rebuilds or source syncs a month",
 ]
 
 const PRO_FEATURES = [

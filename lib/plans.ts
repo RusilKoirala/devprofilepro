@@ -30,6 +30,8 @@ export interface PlanUsage {
   resetsAt: string
   // A query failed: the numbers (and maybe the plan) can't be trusted, so say so instead of showing 0.
   unavailable?: boolean
+  // Pro only: after a very heavy day of its own use, AI runs on the faster model until midnight UTC.
+  fastModel?: boolean
 }
 
 export interface AllowanceState {

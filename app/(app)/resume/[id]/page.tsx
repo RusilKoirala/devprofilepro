@@ -24,10 +24,11 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
   const report = job?.match_report as Partial<MatchView> | null
   const match: MatchView | null = report
     ? {
+        version: report.version,
         summary: report.summary ?? "",
         description: job?.description ?? undefined,
         reasons: (report.reasons ?? []).map((r) => ({ item_id: r.item_id, reason: r.reason })),
-        requirements: (report.requirements ?? []).map((r) => ({ text: r.text, status: r.status, item_ids: r.item_ids ?? [] })),
+        requirements: (report.requirements ?? []).map((r) => ({ text: r.text, status: r.status, item_ids: r.item_ids ?? [], fact_ids: r.fact_ids ?? [] })),
       }
     : null
 

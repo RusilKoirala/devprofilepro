@@ -13,10 +13,14 @@ export interface CheckResult {
   detail?: string
   // Where on the resume to look, so the editor can take the person there.
   targets?: { itemId: string; bulletId?: string }[]
+  // Lines the person can settle from the checks panel, each on its own: take it off this resume
+  // ("remove"), or also confirm it still holds ("review").
+  lines?: { itemId: string; bulletId: string; text: string }[]
+  fix?: "remove" | "review"
 }
 
 // Warnings serious enough that the resume isn't called ready until they're dealt with.
-const BLOCKING = new Set(["empty", "ownership"])
+const BLOCKING = new Set(["empty", "ownership", "partial_sources"])
 
 export type LinkStatus = "ok" | "broken" | "restricted" | "unchecked"
 
@@ -38,6 +42,8 @@ export async function testLink(url: string): Promise<LinkStatus> {
 // Lines that only repeat what the entry's heading already says, or only give a link.
 const DEPLOY_ONLY = /^(deployed|hosted|live|available|launched|published)\b[^.]{0,40}\b(at|on|to)\b\s*(https?:\/\/|www\.|[a-z0-9-]+\.(?:app|dev|com|io|me|vercel\.app|netlify\.app))/i
 const URL_ONLY = /^\S*(https?:\/\/|www\.)\S+\.?$/i
+// Repo statistics say how much, not what: "17 commits in a solo repo".
+const STATS_ONLY = /\b\d+\s+(commits?|stars?|forks?|pull requests?|PRs?)\b/i
 
 function words(text: string) {
   return text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 2)
@@ -54,6 +60,7 @@ export function contentChecks(doc: ResumeDoc, opts: { openOwnership?: { itemId: 
       .filter((b) => {
         const t = b.text.trim()
         if (DEPLOY_ONLY.test(t) || URL_ONLY.test(t)) return true
+        if (STATS_ONLY.test(t) && words(t).length <= 16) return true
         // Most of the line's words are the title, company and dates already in the heading.
         const heading = new Set(words([e.title, e.subtitle, e.dates].join(" ")))
         const own = words(t)
@@ -91,8 +98,10 @@ export function contentChecks(doc: ResumeDoc, opts: { openOwnership?: { itemId: 
       id: "thin",
       label: "Lines add something new",
       status: thin.length ? "warn" : "pass",
-      detail: thin.length ? `Only repeats the heading or gives a link: ${thin.slice(0, 3).join("; ")}${thin.length > 3 ? ` and ${thin.length - 3} more` : ""}` : undefined,
+      detail: thin.length ? `Only repeats the heading, gives a link or counts commits: ${thin.slice(0, 3).join("; ")}${thin.length > 3 ? ` and ${thin.length - 3} more` : ""}` : undefined,
       targets: thinLines.map(({ itemId, bulletId }) => ({ itemId, bulletId })),
+      lines: thinLines,
+      fix: "remove",
     },
     {
       id: "repeats",
@@ -111,7 +120,10 @@ export function contentChecks(doc: ResumeDoc, opts: { openOwnership?: { itemId: 
   ]
 }
 
-export async function runChecks(doc: ResumeDoc, opts: { pages: number; allBulletsSourced: boolean; openOwnership?: { itemId: string; title: string }[] }): Promise<{ results: CheckResult[]; ready: boolean }> {
+export async function runChecks(
+  doc: ResumeDoc,
+  opts: { pages: number; allBulletsSourced: boolean; openOwnership?: { itemId: string; title: string }[]; reviewLines?: string[] }
+): Promise<{ results: CheckResult[]; ready: boolean }> {
   const results: CheckResult[] = []
 
   results.push({ id: "pages", label: "Fits on one page", status: opts.pages === 1 ? "pass" : "fail", detail: opts.pages === 1 ? undefined : `${opts.pages} pages` })
@@ -175,6 +187,18 @@ export async function runChecks(doc: ResumeDoc, opts: { pages: number; allBullet
   })
 
   results.push({ id: "sources", label: "Every line has a source", status: opts.allBulletsSourced ? "pass" : "fail" })
+  // Lines that kept one source after another they cited was removed.
+  const review = new Set(opts.reviewLines ?? [])
+  const partly = doc.sections.flatMap((s) => s.entries.flatMap((e) => e.bullets.filter((b) => review.has(b.id)).map((b) => ({ itemId: e.item_id, bulletId: b.id, text: b.text }))))
+  results.push({
+    id: "partial_sources",
+    label: "Lines are still fully backed",
+    status: partly.length ? "warn" : "pass",
+    detail: partly.length ? `A source behind part of ${partly.length === 1 ? "this line" : `these ${partly.length} lines`} was removed. Check the whole line is still true, then keep, edit or remove it.` : undefined,
+    targets: partly.map(({ itemId, bulletId }) => ({ itemId, bulletId })),
+    lines: partly,
+    fix: "review",
+  })
   results.push(...contentChecks(doc, opts))
 
   const order: Record<CheckStatus, number> = { fail: 0, warn: 1, not_checked: 2, pass: 3 }

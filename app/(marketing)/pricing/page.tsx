@@ -46,7 +46,7 @@ const faqs = [
   },
   {
     q: "What does unlimited mean on Pro?",
-    a: "As many tailored resumes and AI fixes as a real job search needs. On a very heavy day, far past normal use, Pro switches to a faster model until midnight UTC instead of cutting you off. Only automated or abusive use, many times more than that, is paused for the day.",
+    a: "As many tailored resumes and AI fixes as a real job search needs. On a very heavy day of your own, far past normal use, Pro switches to a faster model until midnight UTC instead of cutting you off, and the app tells you when it has. How busy other people are never changes your model. Only automated or abusive use, many times more than that, is paused for the day.",
   },
   {
     q: "Can I get a refund?",
