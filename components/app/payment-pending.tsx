@@ -50,10 +50,10 @@ export function PaymentPending({ pro }: { pro: boolean }) {
 }
 
 function Banner({ tone, children }: { tone: "ok" | "wait" | "warn"; children: React.ReactNode }) {
-  const color = tone === "ok" ? "border-emerald-400/20 bg-emerald-400/[0.06]" : tone === "warn" ? "border-amber-400/20 bg-amber-400/[0.06]" : "border-border bg-card"
+  const color = tone === "ok" ? "border-emerald-400/20 bg-emerald-400/[0.06]" : tone === "warn" ? "border-signal/20 bg-signal/[0.06]" : "border-border bg-card"
   return (
     <div role="status" className={`flex items-start gap-3 rounded-2xl border px-5 py-4 text-sm ${color}`}>
-      {tone === "wait" ? <Spinner className="mt-0.5 size-4 shrink-0" /> : <Sparkles className={`mt-0.5 size-4 shrink-0 ${tone === "ok" ? "text-emerald-400" : "text-amber-400"}`} />}
+      {tone === "wait" ? <Spinner className="mt-0.5 size-4 shrink-0" /> : <Sparkles className={`mt-0.5 size-4 shrink-0 ${tone === "ok" ? "text-emerald-400" : "text-signal"}`} />}
       <p>{children}</p>
     </div>
   )

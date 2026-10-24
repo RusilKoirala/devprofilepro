@@ -54,7 +54,7 @@ export function UpgradeDialog({ reason, children, open, onOpenChange }: { reason
         </DialogHeader>
 
         {joined ? (
-          <div className="m-6 flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-4 text-sm">
+          <div className="m-6 flex items-start gap-3 rounded-xl bg-card p-4 text-sm">
             <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" />
             <p>
               <span className="font-medium">You&apos;re on the Pro list.</span>{" "}
@@ -79,7 +79,7 @@ export function UpgradeDialog({ reason, children, open, onOpenChange }: { reason
                     <span className="ml-1 text-sm text-muted-foreground">{o.unit}</span>
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">{o.note}</p>
-                  {o.tag && <span className="absolute -top-2 right-3 rounded-full border border-border bg-background px-1.5 text-[11px] text-muted-foreground">{o.tag}</span>}
+                  {o.tag && <span className="absolute -top-2 right-3 rounded-full bg-secondary px-1.5 text-[11px] text-muted-foreground">{o.tag}</span>}
                 </label>
               ))}
             </RadioGroup>

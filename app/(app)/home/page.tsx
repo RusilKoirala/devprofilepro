@@ -143,7 +143,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="space-y-6">
           {/* Next steps */}
-          <section className="rounded-2xl border border-border bg-card">
+          <section className="rounded-3xl bg-card">
             <h3 className="px-5 pt-4 pb-2 text-sm font-medium">Next steps</h3>
             {attention.length ? (
               <ul className="divide-y divide-border">
@@ -188,7 +188,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       </div>
 
       {/* Downloads */}
-      <section id="downloads" className="scroll-mt-20 rounded-2xl border border-border bg-card">
+      <section id="downloads" className="scroll-mt-20 rounded-3xl bg-card">
         <div className="px-5 pt-4 pb-2">
           <h3 className="text-sm font-medium">Downloads</h3>
           <p className="text-sm text-muted-foreground">Every PDF you download is kept exactly as it was. Mark where you sent it, so you know what went where.</p>
@@ -222,7 +222,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
 function Stat({ label, value, detail, href }: { label: string; value: number | string; detail: string; href: string }) {
   return (
-    <Link href={href} className="rounded-2xl border border-border bg-card p-4 transition-colors hover:border-foreground/15">
+    <Link href={href} className="rounded-3xl bg-card p-4 transition-colors hover:border-foreground/15">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
       <p className="mt-0.5 truncate text-xs text-muted-foreground">{detail}</p>

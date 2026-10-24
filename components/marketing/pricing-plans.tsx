@@ -39,7 +39,7 @@ function FeatureList({ items }: { items: string[] }) {
     <ul className="relative mt-8 space-y-3">
       {items.map((item) => (
         <li key={item} className="flex gap-3 text-[15px] leading-snug">
-          <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-white/[0.06] ring-1 ring-white/10">
+          <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-foreground/[0.06] ring-1 ring-foreground/10">
             <Check className="size-3" />
           </span>
           <span className="text-foreground/85">{item}</span>
@@ -59,7 +59,7 @@ export function PricingPlans({ cta }: { cta: { href: string; label: string; proL
     <div>
       <div className="flex justify-center">
         <Tabs value={billing} onValueChange={(v) => setBilling(v as Billing)}>
-          <TabsList className="h-10 rounded-full border border-white/10 bg-white/[0.03] p-1">
+          <TabsList className="h-10 rounded-full border border-foreground/10 bg-foreground/[0.03] p-1">
             <TabsTrigger value="monthly" className="rounded-full px-4">Monthly</TabsTrigger>
             <TabsTrigger value="pass" className="gap-2 rounded-full px-4">
               3-month pass
@@ -70,7 +70,7 @@ export function PricingPlans({ cta }: { cta: { href: string; label: string; proL
       </div>
 
       <div className="mx-auto mt-10 grid max-w-4xl gap-4 md:grid-cols-2">
-        <SpotlightCard spotlightColor="rgba(255, 255, 255, 0.08)" className="flex flex-col rounded-3xl border bg-card/60 p-7 md:p-8">
+        <SpotlightCard spotlightColor="rgba(255, 255, 255, 0.08)" className="flex flex-col rounded-[2rem] bg-card p-7 md:p-8">
           <div className="relative">
             <h3 className="text-lg font-medium">Free</h3>
             <p className="mt-1 text-sm text-muted-foreground">A resume you&apos;re proud of, and a few tailored versions.</p>
@@ -90,12 +90,12 @@ export function PricingPlans({ cta }: { cta: { href: string; label: string; proL
 
         <SpotlightCard
           spotlightColor="rgba(255, 255, 255, 0.14)"
-          className="flex flex-col rounded-3xl border border-white/20 bg-card/80 p-7 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_30px_80px_-30px_rgba(255,255,255,0.25)] md:p-8"
+          className="flex flex-col rounded-3xl border border-foreground/20 bg-card/80 p-7 md:p-8"
         >
           <div className="relative">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-lg font-medium">Pro</h3>
-              <Badge variant="outline" className="rounded-full border-white/15 bg-white/[0.04] font-normal">For active job hunts</Badge>
+              <Badge variant="outline" className="rounded-full border-foreground/15 bg-foreground/[0.04] font-normal">For active job hunts</Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">A tailored resume for every job you apply to.</p>
             <p className="mt-6 flex items-baseline gap-1.5">
@@ -123,7 +123,7 @@ export function PricingPlans({ cta }: { cta: { href: string; label: string; proL
             <Button
               asChild
               size="lg"
-              className="group h-11 w-full rounded-full shadow-[0_0_0_1px_rgba(255,255,255,0.1),0_8px_30px_-6px_rgba(255,255,255,0.35)]"
+              className="group h-11 w-full rounded-full"
             >
               <Link href={cta.href}>
                 {cta.proLabel}

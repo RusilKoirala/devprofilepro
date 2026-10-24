@@ -37,7 +37,7 @@ export function EntryDuplicates({ pairs }: { pairs: DuplicatePairView[] }) {
   const [open, setOpen] = useState<DuplicatePairView | null>(null)
   if (!pairs.length) return null
   return (
-    <div className="divide-y divide-border rounded-xl border border-border bg-card">
+    <div className="divide-y divide-border rounded-2xl bg-card">
       {pairs.map((p) => (
         <div key={`${p.a.id}-${p.b.id}`} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
           <div className="min-w-0 flex-1">
@@ -101,7 +101,7 @@ function MergeDialog({ pair, onClose }: { pair: DuplicatePairView; onClose: () =
 
         <div className="grid grid-cols-2 gap-3 text-sm">
           {[keep, other].map((e) => (
-            <div key={e.id} className="rounded-lg border border-border p-3">
+            <div key={e.id} className="rounded-xl bg-card p-3">
               <p className="font-medium">{e.title}</p>
               <p className="mt-1 text-xs text-muted-foreground">{e.facts} fact{e.facts === 1 ? "" : "s"}{e.sources.length ? ` · from ${e.sources.join("; ")}` : ""}</p>
             </div>
@@ -109,7 +109,7 @@ function MergeDialog({ pair, onClose }: { pair: DuplicatePairView; onClose: () =
         </div>
 
         {differing.length > 0 ? (
-          <div className="divide-y divide-border rounded-lg border border-border">
+          <div className="divide-y divide-border rounded-xl bg-card">
             {differing.map((k) => (
               <RadioGroup key={k} value={choice[k]} onValueChange={(v) => setChoice((c) => ({ ...c, [k]: v as "keep" | "other" }))} className="grid grid-cols-[5rem_1fr_1fr] items-center gap-3 px-3 py-2.5 text-sm" aria-label={LABELS[k] ?? k}>
                 <span className="text-muted-foreground">{LABELS[k] ?? k}</span>

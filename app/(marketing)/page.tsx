@@ -10,6 +10,7 @@ import { Hero } from "@/components/marketing/hero"
 import { HowItWorks } from "@/components/marketing/how-it-works"
 import { StudentSample } from "@/components/marketing/student-sample"
 import { LineLoop } from "@/components/marketing/line-loop"
+import { CompanyStrip } from "@/components/marketing/company-strip"
 import { WaitlistForm } from "@/components/marketing/waitlist-form"
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
@@ -38,7 +39,7 @@ const faqs = [
   },
   {
     q: "What happens to my data?",
-    a: "Your public GitHub data and the files you upload are only used to write your resume. DevProfile never posts anything for you. You can download everything, remove a source, or delete all of it from the Career Record page. See the privacy page for details.",
+    a: "Your public GitHub data and the files you upload are only used to write your resume. DevProfile never posts anything for you. You can remove any source, or delete all of it, from the Career Record page. See the privacy page for details.",
   },
 ]
 
@@ -47,13 +48,14 @@ export default function LandingPage() {
   return (
     <>
       <Hero open={open} />
+      <CompanyStrip />
       <LineLoop />
       <Features />
 
       <HowItWorks />
       <StudentSample />
 
-      <section id="faq" className="border-t">
+      <section id="faq">
         <div className="mx-auto max-w-3xl px-4 py-24 sm:px-6 md:py-32">
           <h2 className="text-center text-4xl font-semibold tracking-[-0.03em] md:text-5xl">Questions</h2>
           <Accordion type="single" collapsible className="mt-12 w-full">
@@ -72,7 +74,7 @@ export default function LandingPage() {
       <section id="waitlist" className="px-4 pb-24 sm:px-6 md:pb-32">
         <SpotlightCard
           spotlightColor="rgba(255, 255, 255, 0.12)"
-          className="mx-auto max-w-5xl rounded-3xl border bg-card/60 px-6 py-16 text-center md:py-24"
+          className="mx-auto max-w-5xl rounded-[2rem] bg-card px-6 py-16 text-center md:py-24"
         >
           <div className="relative">
             {open ? (

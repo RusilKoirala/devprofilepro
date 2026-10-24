@@ -14,7 +14,7 @@ export function PlanCard({ usage }: { usage: PlanUsage }) {
   const resets = new Date(usage.resetsAt).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 
   return (
-    <section className="h-fit overflow-hidden rounded-2xl border border-border bg-card">
+    <section className="h-fit overflow-hidden rounded-3xl bg-card">
       <div className="p-5">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">Your plan</h3>
@@ -22,21 +22,21 @@ export function PlanCard({ usage }: { usage: PlanUsage }) {
         </div>
 
         {usage.unavailable && (
-          <p role="alert" className="mt-3 text-xs text-amber-400">We couldn&apos;t load your plan and usage just now, so these numbers may be wrong. Refresh to try again.</p>
+          <p role="alert" className="mt-3 text-xs text-signal">We couldn&apos;t load your plan and usage just now, so these numbers may be wrong. Refresh to try again.</p>
         )}
         <div className="mt-4 space-y-4">
           {states.map((s) => (
             <div key={s.key}>
               <div className="flex items-baseline justify-between gap-3 text-sm">
                 <span>{ALLOWANCE_LABELS[s.key].title}</span>
-                <span className={`tabular-nums ${s.state === "ok" ? "text-muted-foreground" : "text-amber-400"}`}>
+                <span className={`tabular-nums ${s.state === "ok" ? "text-muted-foreground" : "text-signal"}`}>
                   {s.limit == null ? "Unlimited" : `${Math.min(s.used, s.limit)} / ${s.limit}`}
                 </span>
               </div>
               {s.limit != null && (
                 <Progress
                   value={Math.min(100, (s.used / s.limit) * 100)}
-                  className={`mt-2 h-1.5 ${s.state === "ok" ? "" : "[&>[data-slot=progress-indicator]]:bg-amber-400"}`}
+                  className={`mt-2 h-1.5 ${s.state === "ok" ? "" : "[&>[data-slot=progress-indicator]]:bg-signal"}`}
                 />
               )}
             </div>
@@ -49,7 +49,7 @@ export function PlanCard({ usage }: { usage: PlanUsage }) {
 
       {usage.billing && (
         <div className="border-t border-border p-5">
-          <p className={`flex gap-2 text-sm ${usage.billing.pastDue ? "text-amber-400" : "text-muted-foreground"}`}>
+          <p className={`flex gap-2 text-sm ${usage.billing.pastDue ? "text-signal" : "text-muted-foreground"}`}>
             {usage.billing.pastDue && <AlertTriangle className="mt-0.5 size-4 shrink-0" />} {billingLine(usage.billing)}
           </p>
           <Button asChild variant={usage.billing.pastDue ? "default" : "outline"} className="mt-4 w-full rounded-full">
@@ -59,7 +59,7 @@ export function PlanCard({ usage }: { usage: PlanUsage }) {
       )}
 
       {usage.plan === "free" && (
-        <div className="border-t border-border bg-[radial-gradient(90%_120%_at_100%_0%,rgba(255,255,255,0.07),transparent)] p-5">
+        <div className="border-t border-border p-5">
           <p className="flex items-center gap-2 text-sm font-medium"><Sparkles className="size-4" /> Applying to lots of jobs?</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {reason ?? "Each job deserves its own resume. Pro makes one for every application, in under a minute."}

@@ -56,14 +56,14 @@ export function StudentSample() {
 
           <Step n={3} title="One question later">
             <p className="text-muted-foreground">{sample.question.prompt}</p>
-            <p className="mt-2 rounded-lg border bg-background/60 px-3 py-2">“{sample.question.answer}”</p>
+            <p className="mt-2 rounded-xl bg-card px-3 py-2">“{sample.question.answer}”</p>
             <p className="mt-1 text-xs text-muted-foreground">Example answer, typed by hand.</p>
             <p className="mt-4 flex items-center gap-1.5 font-medium">{sample.after.title} <ArrowRight className="size-3.5 text-muted-foreground" /> rewritten</p>
             <Lines lines={sample.after.lines} />
           </Step>
         </div>
 
-        <div className="mt-4 grid gap-4 rounded-2xl border bg-card/60 p-6 text-sm md:grid-cols-[1fr_auto] md:items-center">
+        <div className="mt-4 grid gap-4 rounded-3xl bg-card p-6 text-sm md:grid-cols-[1fr_auto] md:items-center">
           <div>
             <p className="font-medium">What it still gets wrong</p>
             <ul className="mt-2 list-disc space-y-1 pl-4 text-muted-foreground">
@@ -72,7 +72,7 @@ export function StudentSample() {
               <li>Written by {sample.model}. A different model, or richer READMEs, give different wording.</li>
             </ul>
           </div>
-          <a href="/samples/student-resume.pdf" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 justify-self-start rounded-full border px-4 py-2 transition-colors hover:bg-white/[0.04]">
+          <a href="/samples/student-resume.pdf" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 justify-self-start rounded-full border px-4 py-2 transition-colors hover:bg-foreground/[0.04]">
             <FileText className="size-4" /> Open the {sample.pages}-page PDF
           </a>
         </div>
@@ -83,7 +83,7 @@ export function StudentSample() {
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border bg-card/60 p-6 text-sm">
+    <div className="rounded-3xl bg-card p-6 text-sm">
       <p className="text-xs text-muted-foreground">Step {n}</p>
       <h3 className="mt-1 text-base font-medium">{title}</h3>
       <div className="mt-4">{children}</div>

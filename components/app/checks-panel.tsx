@@ -13,7 +13,7 @@ export type CheckTarget = NonNullable<CheckResult["targets"]>[number]
 
 const ICONS: Record<CheckStatus, React.ReactNode> = {
   pass: <CheckCircle2 className="size-4 text-emerald-400" />,
-  warn: <AlertTriangle className="size-4 text-amber-400" />,
+  warn: <AlertTriangle className="size-4 text-signal" />,
   fail: <XCircle className="size-4 text-destructive" />,
   not_checked: <CircleDashed className="size-4 text-muted-foreground" />,
 }
@@ -120,7 +120,7 @@ export function ChecksPanel({
       <div>
         <h3 className="text-sm font-medium">Parser view</h3>
         <p className="mb-2 text-xs text-muted-foreground">The plain text our parser reads from your actual PDF. Applicant-tracking systems read the file the same way; each may map it to fields a little differently.</p>
-        <pre className="max-h-96 overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap">{state.parserText}</pre>
+        <pre className="max-h-96 overflow-auto rounded-xl bg-card p-3 font-mono text-xs whitespace-pre-wrap">{state.parserText}</pre>
       </div>
     </div>
   )

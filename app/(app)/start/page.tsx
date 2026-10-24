@@ -43,9 +43,9 @@ export default async function StartPage() {
           <Link
             key={p.title}
             href={p.href}
-            className="group flex items-start gap-4 rounded-2xl border border-border bg-card p-5 transition-colors hover:border-foreground/25 hover:bg-muted/30"
+            className="group flex items-start gap-4 rounded-3xl bg-card p-5 transition-colors hover:border-foreground/25 hover:bg-muted/30"
           >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors group-hover:text-foreground [&_svg]:size-5">{p.icon}</span>
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-card text-muted-foreground transition-colors group-hover:text-foreground [&_svg]:size-5">{p.icon}</span>
             <span className="min-w-0 flex-1">
               <span className="block font-medium">{p.title}</span>
               <span className="mt-1 block text-sm text-muted-foreground">{p.body}</span>

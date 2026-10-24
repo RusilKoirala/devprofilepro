@@ -9,7 +9,7 @@ export const metadata = {
   description: "Upload your resume PDF and see if an applicant tracking system can read it: contact details, sections, layout, dates and job-post keywords. Free, no sign-up.",
 }
 
-const textGradient = "bg-gradient-to-b from-white to-white/65 bg-clip-text text-transparent"
+const textGradient = "bg-gradient-to-b from-foreground to-foreground/65 bg-clip-text text-transparent"
 
 const faqs = [
   {
@@ -35,12 +35,12 @@ export default function AtsCheckerPage() {
   return (
     <>
       <section className="relative isolate overflow-hidden">
-        <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[36rem] [mask-image:linear-gradient(to_bottom,black_35%,transparent)]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 hidden h-[36rem] dark:block [mask-image:linear-gradient(to_bottom,black_35%,transparent)]">
           <LightRays raysOrigin="top-center" raysColor="#ffffff" raysSpeed={0.5} lightSpread={0.7} rayLength={1.4} intensity={0.55} glow={0.4} haze={0.2} followMouse mouseInfluence={0.04} cursorShadow={false} clickPulse={false} noiseAmount={0.04} distortion={0.03} />
         </div>
         <div className="mx-auto max-w-7xl px-4 pt-36 pb-24 sm:px-6 md:pt-44">
           <div className="mx-auto max-w-2xl text-center">
-            <Badge variant="outline" className="h-8 gap-2 rounded-full border-white/10 bg-white/[0.03] py-1 pr-3 pl-1 text-sm font-normal shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur">
+            <Badge variant="outline" className="h-8 gap-2 rounded-full border-foreground/10 bg-foreground/[0.03] py-1 pr-3 pl-1 text-sm font-normal backdrop-blur">
               <Badge className="rounded-full px-2.5">Free</Badge>
               <span className="text-muted-foreground">No sign-up, nothing stored</span>
             </Badge>

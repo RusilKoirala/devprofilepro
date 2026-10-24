@@ -80,15 +80,15 @@ export function HowItWorks() {
           <div aria-hidden="true" className="absolute top-[18px] left-[16.666%] hidden h-px w-[66.666%] md:block">
             <div className="absolute inset-0 bg-border" />
             <motion.div
-              className="absolute inset-0 origin-left bg-gradient-to-r from-white/30 via-white/80 to-white"
+              className="absolute inset-0 origin-left bg-gradient-to-r from-foreground/30 via-foreground/80 to-foreground"
               style={{ scaleX: progress }}
             />
             <motion.div
-              className="absolute top-1/2 size-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/20 blur-2xl"
+              className="absolute top-1/2 size-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/10 blur-2xl"
               style={{ left: glowX }}
             />
             <motion.div
-              className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_12px_3px_rgba(255,255,255,0.7)]"
+              className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
               style={{ left: glowX }}
             />
           </div>
@@ -97,7 +97,7 @@ export function HowItWorks() {
           <div aria-hidden="true" className="absolute top-[18px] bottom-10 left-[18px] w-px md:hidden">
             <div className="absolute inset-0 bg-border" />
             <motion.div
-              className="absolute inset-0 origin-top bg-gradient-to-b from-white/30 via-white/80 to-white"
+              className="absolute inset-0 origin-top bg-gradient-to-b from-foreground/30 via-foreground/80 to-foreground"
               style={{ scaleY: progress }}
             />
           </div>
@@ -110,7 +110,7 @@ export function HowItWorks() {
                   className={cn(
                     "absolute top-0 left-0 z-10 grid size-9 place-items-center rounded-full border text-sm tabular-nums transition-all duration-500 md:relative",
                     active
-                      ? "border-white bg-white text-black shadow-[0_0_24px_rgba(255,255,255,0.35)]"
+                      ? "border-foreground bg-foreground text-background"
                       : "border-border bg-background text-muted-foreground"
                   )}
                 >
@@ -127,7 +127,7 @@ export function HowItWorks() {
                   <div
                     className={cn(
                       "mt-6 w-full max-w-sm rounded-2xl border bg-card/50 p-4 text-left transition-all duration-500",
-                      active ? "translate-y-0 border-white/15" : "translate-y-2"
+                      active ? "translate-y-0 border-foreground/15" : "translate-y-2"
                     )}
                   >
                     {step.visual}
@@ -152,7 +152,7 @@ function SourcesVisual() {
   return (
     <div className="grid grid-cols-2 gap-2">
       {items.map(({ icon: Icon, label }) => (
-        <div key={label} className="flex items-center gap-2 rounded-lg border bg-background/60 px-2.5 py-2 text-xs">
+        <div key={label} className="flex items-center gap-2 rounded-xl bg-card px-2.5 py-2 text-xs">
           <Icon className="size-3.5 shrink-0" />
           <span className="truncate text-muted-foreground">{label}</span>
         </div>
@@ -181,7 +181,7 @@ function ResumeVisual() {
 function UpdateVisual() {
   return (
     <div className="space-y-2 font-mono text-[11px]">
-      <div className="truncate rounded-lg border bg-background/60 px-2.5 py-2 text-muted-foreground">
+      <div className="truncate rounded-xl bg-card px-2.5 py-2 text-muted-foreground">
         Sync GitHub
       </div>
       <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.07] px-2.5 py-2 text-emerald-300">

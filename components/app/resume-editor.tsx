@@ -192,8 +192,8 @@ export function ResumeEditor({ data }: { data: EditorData }) {
       const el = document.getElementById(target.bulletId ? `line-${target.bulletId}` : `entry-${target.itemId}`) ?? document.getElementById(`entry-${target.itemId}`)
       if (!el) return void toast("That entry isn't on the page right now.")
       el.scrollIntoView({ behavior: "smooth", block: "center" })
-      el.classList.add("ring-2", "ring-amber-400/70")
-      setTimeout(() => el.classList.remove("ring-2", "ring-amber-400/70"), 1800)
+      el.classList.add("ring-2", "ring-signal/70")
+      setTimeout(() => el.classList.remove("ring-2", "ring-signal/70"), 1800)
     })
   }
 
@@ -258,7 +258,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
         </div>
       </div>
 
-      <div role="group" aria-label="Show the editor or the page" className="grid grid-cols-2 rounded-full border border-border p-0.5 text-sm lg:hidden">
+      <div role="group" aria-label="Show the editor or the page" className="grid grid-cols-2 rounded-full bg-secondary p-0.5 text-sm lg:hidden">
         {(["editor", "page"] as const).map((p) => (
           <button key={p} type="button" aria-pressed={pane === p} onClick={() => setPane(p)} className={`rounded-full px-3 py-1.5 transition-colors ${pane === p ? "bg-foreground text-background" : "text-muted-foreground"}`}>
             {p === "editor" ? (mode === "chat" ? "Ask AI" : "Edit") : improveCount ? `Page · ${improveCount} to improve` : "Page"}
@@ -268,7 +268,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className={`min-w-0 space-y-4 ${pane === "page" ? "max-lg:hidden" : ""} ${mode === "chat" ? "lg:sticky lg:top-20 lg:self-start" : ""}`}>
-        <div role="group" aria-label="Edit or ask AI" className="inline-flex rounded-full border border-border p-0.5 text-xs">
+        <div role="group" aria-label="Edit or ask AI" className="inline-flex rounded-full bg-secondary p-0.5 text-xs">
           {(["edit", "chat"] as const).map((m) => (
             <button
               key={m}
@@ -390,7 +390,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="preview">Preview</TabsTrigger>
-              <TabsTrigger value="improve">Improve{improveCount > 0 && <span className="ml-1 rounded-full bg-amber-400/15 px-1.5 text-[11px] text-amber-400">{improveCount}</span>}</TabsTrigger>
+              <TabsTrigger value="improve">Improve{improveCount > 0 && <span className="ml-1 rounded-full bg-signal/15 px-1.5 text-[11px] text-signal">{improveCount}</span>}</TabsTrigger>
               {data.match && <TabsTrigger value="match">Job match</TabsTrigger>}
             </TabsList>
             <TabsContent value="preview">
@@ -399,11 +399,11 @@ export function ResumeEditor({ data }: { data: EditorData }) {
                   key={data.version}
                   title="Resume preview"
                   src={`/api/pdf/${data.resumeId}?v=${encodeURIComponent(data.version)}#toolbar=0&view=FitH`}
-                  className="aspect-[8.5/11] w-full rounded-xl border border-border bg-white"
+                  className="aspect-[8.5/11] w-full rounded-3xl bg-card bg-white"
                 />
                 {(pending || chatBusy) && (
-                  <div className="absolute inset-0 flex items-start justify-center rounded-xl bg-background/40 pt-6 backdrop-blur-[1px]">
-                    <span className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs"><Spinner /> Updating the page…</span>
+                  <div className="absolute inset-0 flex items-start justify-center rounded-2xl bg-background/40 pt-6 backdrop-blur-[1px]">
+                    <span className="flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5 text-xs"><Spinner /> Updating the page…</span>
                   </div>
                 )}
               </div>
@@ -446,7 +446,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
             </TabsContent>
             {data.match && (
               <TabsContent value="match">
-                <div className="rounded-xl border border-border bg-card p-4">
+                <div className="rounded-2xl bg-card p-4">
                   <MatchReport
                     match={data.match}
                     titles={new Map(Object.entries(data.titles))}
@@ -493,7 +493,7 @@ function DesignMenu({ doc, pending, onPick }: { doc: ResumeDoc; pending: boolean
                 disabled={pending}
                 title={t.blurb}
                 onClick={() => { setOpen(false); if (on) return; setPicked({ from: doc.template, to: t.id }); onPick(t.id) }}
-                className={`group/design min-w-0 rounded-lg border p-1.5 text-left transition-colors disabled:cursor-wait ${on ? "border-foreground bg-muted" : "border-border hover:border-muted-foreground/60 hover:bg-muted/50"}`}
+                className={`group/design min-w-0 rounded-2xl border p-2 text-left transition-colors disabled:cursor-wait ${on ? "border-foreground bg-muted" : "border-border hover:border-muted-foreground/60 hover:bg-muted/50"}`}
               >
                 <FluidThumbnail doc={doc} template={t.id} />
                 <div className={`mt-1.5 truncate text-xs ${on ? "font-medium text-foreground" : "text-muted-foreground group-hover/design:text-foreground"}`}>{t.name}</div>
@@ -516,7 +516,7 @@ function FluidThumbnail({ doc, template }: { doc: ResumeDoc; template: TemplateI
     ref.current.observe(el)
   }, [])
   return (
-    <div ref={measure} className="aspect-[8.5/11] overflow-hidden rounded-sm border border-border/60 bg-white">
+    <div ref={measure} className="aspect-[8.5/11] overflow-hidden rounded-lg border border-border/60 bg-white">
       {width > 0 && <ResumeThumbnail doc={doc} template={template} width={width} />}
     </div>
   )
@@ -553,14 +553,14 @@ function HeaderCard({ resumeId, header, pending, run }: { resumeId: string; head
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="rounded-2xl bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-lg font-semibold">{header.name || <span className="text-muted-foreground">Your name</span>}</div>
           {header.headline && <div className="text-sm">{header.headline}</div>}
           <div className="mt-1 text-sm break-words text-muted-foreground [overflow-wrap:anywhere]">{contact.join(" · ") || "No contact details yet"}</div>
           {header.targetRole && <div className="mt-2 text-xs text-muted-foreground">Aimed at: <span className="text-foreground">{header.targetRole}</span></div>}
-          {missing.length > 0 && <div className="mt-2 text-xs text-amber-400">Add {missing.join(", ")} so recruiters can reach you.</div>}
+          {missing.length > 0 && <div className="mt-2 text-xs text-signal">Add {missing.join(", ")} so recruiters can reach you.</div>}
         </div>
         <Button size="sm" variant={missing.length ? "secondary" : "ghost"} className={`shrink-0 ${missing.length ? "" : "text-muted-foreground"}`} disabled={pending} onClick={() => setOpen(true)}><Pencil /> Edit</Button>
       </div>
@@ -631,7 +631,7 @@ function EntryCard({ resumeId, type, entry, position, allBullets, pending, run, 
   }
 
   return (
-    <div id={`entry-${entry.itemId}`} className="group/entry relative scroll-mt-24 rounded-xl border border-border bg-card p-4 transition hover:border-foreground/15">
+    <div id={`entry-${entry.itemId}`} className="group/entry relative scroll-mt-24 rounded-2xl bg-card p-4 transition hover:border-foreground/15">
       {handle && (
         <div
           {...handle}
@@ -795,7 +795,7 @@ function BulletInput({ initial, disabled, placeholder, onSave, onCancel }: { ini
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={disabled || !text.trim()} onClick={save}>Save</Button>
         <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <span className={`ml-auto text-xs ${words > 22 ? "text-amber-400" : "text-muted-foreground"}`}>{words} words · Enter to save</span>
+        <span className={`ml-auto text-xs ${words > 22 ? "text-signal" : "text-muted-foreground"}`}>{words} words · Enter to save</span>
       </div>
     </div>
   )
@@ -839,7 +839,7 @@ function BulletRow({ bullet, hint, disabled, onSave, onDelete }: {
         {hint && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button type="button" onClick={() => setEditing(true)} aria-label={hint.kind === "no_result" ? "Add a result?" : "Polish"} className="mt-0.5 size-6 rounded-md text-amber-400 hover:bg-amber-400/10 [&_svg]:mx-auto [&_svg]:size-3.5">
+              <button type="button" onClick={() => setEditing(true)} aria-label={hint.kind === "no_result" ? "Add a result?" : "Polish"} className="mt-0.5 size-6 rounded-md text-signal hover:bg-signal/10 [&_svg]:mx-auto [&_svg]:size-3.5">
                 <Lightbulb />
               </button>
             </TooltipTrigger>

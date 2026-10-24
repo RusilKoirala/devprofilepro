@@ -3,8 +3,9 @@
 import Link from "next/link"
 import { useState } from "react"
 import { usePathname } from "next/navigation"
-import { UserButton, useUser } from "@clerk/nextjs"
+import { useUser } from "@clerk/nextjs"
 import { ChevronRight, CreditCard, FileText, LayoutDashboard, Library, Plus, Sparkles } from "lucide-react"
+import { AccountButton } from "@/components/app/account-button"
 import { LogoMark } from "@/components/marketing/logo"
 import { UpgradeDialog } from "@/components/app/upgrade-dialog"
 import { Button } from "@/components/ui/button"
@@ -89,7 +90,7 @@ export function AppSidebar({ resumes, usage }: { resumes: ResumeLink[]; usage: P
               <Link href="/billing">
                 <CreditCard />
                 <span>Plan & billing</span>
-                {usage?.billing?.pastDue && <span className="ml-auto size-2 rounded-full bg-amber-400" aria-label="Payment due" />}
+                {usage?.billing?.pastDue && <span className="ml-auto size-2 rounded-full bg-signal" aria-label="Payment due" />}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -110,16 +111,16 @@ function UpgradeCard({ usage }: { usage: PlanUsage }) {
       : `You have ${tailored.left} of ${tailored.limit} free tailored resumes left this month.`
   return (
     <>
-      <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/40 p-3 group-data-[collapsible=icon]:hidden">
+      <div className="rounded-2xl bg-background p-3.5 shadow-[0_1px_2px_var(--shadow-color)] ring-1 ring-sidebar-border group-data-[collapsible=icon]:hidden">
         <div className="flex items-center justify-between text-xs">
           <span className="font-medium">Free plan</span>
-          <span className={tailored.state === "ok" ? "text-sidebar-foreground/60" : "text-amber-400"}>
+          <span className={tailored.state === "ok" ? "text-sidebar-foreground/60" : "text-signal"}>
             {tailored.left} of {tailored.limit} tailored left
           </span>
         </div>
         <Progress
           value={((tailored.limit! - tailored.left!) / tailored.limit!) * 100}
-          className={`mt-2 h-1 ${tailored.state === "ok" ? "" : "[&>[data-slot=progress-indicator]]:bg-amber-400"}`}
+          className={`mt-2 h-1 ${tailored.state === "ok" ? "" : "[&>[data-slot=progress-indicator]]:bg-signal"}`}
         />
         <p className="mt-2.5 text-xs leading-relaxed text-sidebar-foreground/60">Applying a lot? Pro tailors a resume for every job.</p>
         <UpgradeDialog reason={reason}>
@@ -141,8 +142,8 @@ function UserRow() {
   const { user } = useUser()
   return (
     <div className="flex items-center gap-2.5 rounded-md p-1 group-data-[collapsible=icon]:p-0">
-      <UserButton />
-      <span className="truncate text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
+      <AccountButton />
+      <span className="min-w-0 flex-1 truncate text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
         {user?.primaryEmailAddress?.emailAddress ?? ""}
       </span>
     </div>

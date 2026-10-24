@@ -78,7 +78,7 @@ export function ResumeChat({ resumeId, initial, onBusy }: { resumeId: string; in
   }
 
   return (
-    <div className="flex h-[calc(100svh-9.5rem)] min-h-[28rem] flex-col rounded-xl border border-border bg-card">
+    <div className="flex h-[calc(100svh-9.5rem)] min-h-[28rem] flex-col rounded-2xl bg-card">
       <div className="flex-1 space-y-5 overflow-y-auto p-4">
         {messages.length > 0 && !busy && (
           <div className="flex justify-end">
@@ -94,7 +94,7 @@ export function ResumeChat({ resumeId, initial, onBusy }: { resumeId: string; in
             </div>
             <div className="flex max-w-md flex-wrap justify-center gap-2">
               {SUGGESTIONS.map((s) => (
-                <button key={s} type="button" onClick={() => send(s)} className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <button key={s} type="button" onClick={() => send(s)} className="rounded-full bg-secondary px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                   {s}
                 </button>
               ))}
@@ -128,7 +128,7 @@ export function ResumeChat({ resumeId, initial, onBusy }: { resumeId: string; in
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); send(text) }} className="border-t border-border p-3">
-        <div className="flex items-end gap-2 rounded-xl border border-border bg-background px-3 py-2 transition-colors focus-within:border-foreground/25">
+        <div className="flex items-end gap-2 rounded-2xl bg-card px-3 py-2 transition-colors focus-within:border-foreground/25">
           <textarea
             ref={inputRef}
             value={text}

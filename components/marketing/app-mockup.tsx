@@ -1,7 +1,8 @@
 import { Download, ExternalLink, FileText, GitPullRequest, RefreshCw, Sparkles } from "lucide-react"
+import { motion } from "motion/react"
+import TextType from "@/components/TextType"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Item,
   ItemActions,
@@ -27,21 +28,21 @@ const sources = [
 const changes = [
   {
     kind: "Added",
-    tone: "text-emerald-400",
+    tone: "text-emerald-600 dark:text-emerald-400",
     text: "Shipped offline sync for 40k weekly users; cut cold start from 2.1s to 0.6s",
     from: "GitHub sync of tidepool/mobile",
     when: "2m",
   },
   {
     kind: "Updated",
-    tone: "text-sky-400",
+    tone: "text-sky-600 dark:text-sky-400",
     text: "tidal: 1.9k → 2.3k stars",
     from: "GitHub stars",
     when: "3d",
   },
   {
     kind: "Trimmed",
-    tone: "text-amber-400",
+    tone: "text-signal",
     text: "Shortened the 2019 internship to keep the page at one",
     from: "page fit",
     when: "3d",
@@ -99,7 +100,17 @@ export function AppMockup() {
           <Separator />
           <div className="space-y-2 px-1">
             <Label className="text-xs text-muted-foreground">Target role</Label>
-            <Input readOnly value="Senior Mobile Engineer" className="h-8 text-[13px]" />
+            <div className="flex h-8 items-center rounded-xl bg-input px-3 text-[13px]">
+              <TextType
+                text={["Senior Mobile Engineer", "Backend Intern at Stripe", "Founding Engineer", "Staff Platform Engineer"]}
+                typingSpeed={55}
+                deletingSpeed={30}
+                pauseDuration={2200}
+                cursorCharacter="|"
+                cursorClassName="text-signal"
+                startOnVisible
+              />
+            </div>
           </div>
           <div className="flex items-center justify-between rounded-lg border px-3 py-2 text-[13px]">
             <span>Sync GitHub</span>
@@ -119,8 +130,9 @@ export function AppMockup() {
             <Sparkles className="size-3.5 text-muted-foreground" />
           </div>
           <ItemGroup className="gap-2">
-            {changes.map((change) => (
-              <Item key={change.text} variant="outline" size="sm" className="flex-col items-start gap-1.5 rounded-lg px-3 py-2.5">
+            {changes.map((change, i) => (
+              <motion.div key={change.text} initial={{ opacity: 0, x: 14 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.6 + i * 0.35, ease: [0.22, 1, 0.36, 1] }}>
+              <Item variant="outline" size="sm" className="flex-col items-start gap-1.5 rounded-xl border-transparent bg-card px-3 py-2.5">
                 <div className="flex w-full items-center justify-between text-xs">
                   <span className={change.tone}>{change.kind}</span>
                   <span className="text-muted-foreground">{change.when}</span>
@@ -128,6 +140,7 @@ export function AppMockup() {
                 <ItemTitle className="text-[13px] leading-snug font-normal">{change.text}</ItemTitle>
                 <ItemDescription className="text-xs">from {change.from}</ItemDescription>
               </Item>
+              </motion.div>
             ))}
           </ItemGroup>
           <div className="mt-auto space-y-2 rounded-lg border p-3">

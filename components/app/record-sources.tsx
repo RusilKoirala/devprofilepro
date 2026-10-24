@@ -135,7 +135,7 @@ export function RecordSources({ view }: { view: SourcesView }) {
         </Button>
       </div>
 
-      <div className="divide-y divide-border rounded-2xl border border-border bg-card">
+      <div className="divide-y divide-border rounded-3xl bg-card">
         <SourceRow icon={<Github />} title="GitHub" status={githubStatus}>
           {view.github || view.githubLogin ? (
             <div className="flex gap-2">
@@ -180,7 +180,7 @@ export function RecordSources({ view }: { view: SourcesView }) {
       </div>
 
       {steps && (
-        <div className="space-y-4 rounded-2xl border border-border bg-card p-4">
+        <div className="space-y-4 rounded-3xl bg-card p-4">
           <ol aria-live="polite" aria-label="Update progress" className="space-y-3">
             {steps.map((s) => (
               <li key={s.label} className="flex items-start gap-3 text-sm">
@@ -225,14 +225,14 @@ export function RecordSources({ view }: { view: SourcesView }) {
             <DialogDescription>LinkedIn doesn&apos;t let apps read profiles, so bring one of its own exports. Either works:</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2 text-sm sm:grid-cols-2">
-            <div className="space-y-2 rounded-xl border border-border p-3">
+            <div className="space-y-2 rounded-2xl bg-card p-3">
               <p className="flex items-center gap-2 font-medium"><FileText className="size-4 text-muted-foreground" /> Profile PDF</p>
               <p className="text-muted-foreground">Instant. On your profile: <b>More</b> → <b>Save to PDF</b>.</p>
               <Button size="sm" variant="secondary" asChild>
                 <a href={view.linkedin.url || "https://www.linkedin.com/in/me/"} target="_blank" rel="noreferrer">Open profile <ExternalLink /></a>
               </Button>
             </div>
-            <div className="space-y-2 rounded-xl border border-border p-3">
+            <div className="space-y-2 rounded-2xl bg-card p-3">
               <p className="flex items-center gap-2 font-medium"><FileArchive className="size-4 text-muted-foreground" /> Data export ZIP</p>
               <p className="text-muted-foreground">Most detail. Pick <b>the works</b> or the fast file; LinkedIn emails it in about 10 minutes.</p>
               <Button size="sm" variant="secondary" asChild>
@@ -275,7 +275,7 @@ export function RecordSources({ view }: { view: SourcesView }) {
 function SourceRow({ icon, title, status, children }: { icon: React.ReactNode; title: string; status: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-3 p-4">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground [&_svg]:size-4">{icon}</span>
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-card text-muted-foreground [&_svg]:size-4">{icon}</span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">{title}</p>
         <p className="truncate text-sm text-muted-foreground">{status}</p>
@@ -291,7 +291,7 @@ export function MergeDuplicates({ count }: { count: number }) {
   const [busy, setBusy] = useState(false)
   if (!count) return null
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-card px-4 py-3 text-sm">
       <Sparkles className="size-4 shrink-0" />
       <p className="min-w-0 flex-1">
         <span className="font-medium">{plural(count, "repeated fact")}.</span>{" "}

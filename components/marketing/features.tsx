@@ -1,11 +1,13 @@
 import { FileText, GitCommitHorizontal, GitPullRequest, Link2, Ruler, Target } from "lucide-react"
 import SpotlightCard from "@/components/SpotlightCard"
+import { Reveal } from "./reveal"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
 import { GitHubIcon, LinkedInIcon } from "./brand-icons"
 
 function Feature({
+  order = 0,
   title,
   body,
   children,
@@ -15,16 +17,19 @@ function Feature({
   body: string
   children?: React.ReactNode
   className?: string
+  order?: number
 }) {
   return (
+    <Reveal order={order} className={cn("flex", className)}>
     <SpotlightCard
       spotlightColor="rgba(255, 255, 255, 0.10)"
-      className={cn("flex flex-col rounded-2xl border bg-card/60 p-6 md:p-7", className)}
+      className="flex w-full flex-col rounded-3xl bg-card p-6 md:p-7"
     >
       <div className="relative flex min-h-36 flex-1 items-center">{children}</div>
       <h3 className="relative mt-6 text-lg font-medium tracking-tight">{title}</h3>
       <p className="relative mt-1.5 leading-relaxed text-pretty text-muted-foreground">{body}</p>
     </SpotlightCard>
+    </Reveal>
   )
 }
 
@@ -49,14 +54,14 @@ export function Features() {
       </div>
 
       <div className="mt-16 grid gap-4 md:grid-cols-3">
-        <Feature
+        <Feature order={0}
           className="md:col-span-2"
           title="Reads everything you've already written"
           body="Repos and READMEs, your LinkedIn export, an old PDF, merged pull requests, or notes you paste. Use one source or all of them."
         >
           <div className="grid w-full gap-2 sm:grid-cols-2">
             {sourceRows.map(({ icon: Icon, label, meta }) => (
-              <div key={label} className="flex items-center gap-3 rounded-xl border bg-background/60 px-3 py-2.5">
+              <div key={label} className="flex items-center gap-3 rounded-2xl bg-card px-3 py-2.5">
                 <span className="grid size-8 place-items-center rounded-lg bg-accent">
                   <Icon className="size-4" />
                 </span>
@@ -69,12 +74,12 @@ export function Features() {
           </div>
         </Feature>
 
-        <Feature
+        <Feature order={1}
           title="Nothing made up"
           body="Every line points back to a repo, a role or a sentence you wrote. If it isn't in your sources, it isn't on the page."
         >
           <div className="w-full space-y-2 text-sm">
-            <p className="rounded-xl border bg-background/60 px-3 py-2.5">
+            <p className="rounded-2xl bg-card px-3 py-2.5">
               Cut p95 load time 48% with cursor pagination
             </p>
             <p className="flex items-center gap-1.5 pl-3 text-xs text-muted-foreground">
@@ -83,11 +88,11 @@ export function Features() {
           </div>
         </Feature>
 
-        <Feature
+        <Feature order={2}
           title="Always one page"
           body="When something new goes on, the weakest line comes off. No 6pt fonts, no second page."
         >
-          <div className="w-full space-y-3 rounded-xl border bg-background/60 p-4">
+          <div className="w-full space-y-3 rounded-2xl bg-card p-4">
             <div className="flex items-center justify-between text-sm">
               <span className="flex items-center gap-2 text-muted-foreground">
                 <Ruler className="size-4" /> Page fill
@@ -98,13 +103,13 @@ export function Features() {
           </div>
         </Feature>
 
-        <Feature
+        <Feature order={3}
           className="md:col-span-2"
           title="One click to catch up after you ship"
           body="Sync GitHub when you've shipped something. A new project or a big milestone becomes a new line, and you get a fresh PDF."
         >
           <div className="w-full space-y-2 font-mono text-[13px]">
-            <div className="flex items-center gap-3 rounded-xl border bg-background/60 px-3 py-2.5 text-muted-foreground">
+            <div className="flex items-center gap-3 rounded-2xl bg-card px-3 py-2.5 text-muted-foreground">
               <GitCommitHorizontal className="size-4 shrink-0" />
               <span className="truncate">feat: offline sync for the mobile app</span>
               <Badge variant="outline" className="ml-auto font-sans font-normal">
@@ -117,18 +122,18 @@ export function Features() {
           </div>
         </Feature>
 
-        <Feature
+        <Feature order={4}
           title="Real LaTeX you own"
           body="Download the PDF, or take the .tex and open it in Overleaf to edit by hand."
         >
-          <pre className="w-full overflow-hidden rounded-xl border bg-background/60 p-4 font-mono text-[12px] leading-relaxed text-muted-foreground">
+          <pre className="w-full overflow-hidden rounded-2xl bg-card p-4 font-mono text-[12px] leading-relaxed text-muted-foreground">
             <span className="text-foreground">\section</span>{"{Experience}\n"}
             <span className="text-foreground">\textbf</span>{"{Tidepool Health}\n"}
             <span className="text-foreground">\hfill</span>{" Mar 2023 -- Present"}
           </pre>
         </Feature>
 
-        <Feature
+        <Feature order={5}
           className="md:col-span-2"
           title="Aimed at the job you want"
           body="Tell it the role and it leads with the work that fits. Same facts, different emphasis."

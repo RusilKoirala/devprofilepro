@@ -175,7 +175,7 @@ export function ResumeHome({ firstName, resumes, usage }: { firstName: string; r
         >
           {active && (
             <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card py-1 pr-1 pl-3">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary py-1 pr-1 pl-3">
                 Editing <span className="max-w-56 truncate text-foreground">{active.title}</span>
                 <button type="button" onClick={() => setActive(null)} disabled={busy} aria-label="Stop editing this resume and make a new one" className="rounded-full p-0.5 hover:bg-muted hover:text-foreground">
                   <X className="size-3.5" />
@@ -223,7 +223,7 @@ function ResumeLibrary({ resumes }: { resumes: ResumeCard[] }) {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-xs font-medium tracking-wider text-muted-foreground uppercase">Your resumes</h3>
         <div className="flex flex-wrap items-center gap-2">
-          <div role="group" aria-label="Show" className="inline-flex rounded-full border border-border p-0.5 text-xs">
+          <div role="group" aria-label="Show" className="inline-flex rounded-full bg-secondary p-0.5 text-xs">
             {filters.map(([f, label]) => (
               <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)} className={`rounded-full px-3 py-1 transition-colors ${filter === f ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}>
                 {label}
@@ -252,7 +252,7 @@ function ResumeTile({ card }: { card: ResumeCard }) {
   return (
     <div className="group relative">
       <Link href={`/resume/${card.id}`} className="block">
-        <div className="overflow-hidden rounded-lg border border-border shadow-sm ring-foreground/20 transition group-hover:-translate-y-0.5 group-hover:ring-2 group-has-[a:focus-visible]:ring-2">
+        <div className="overflow-hidden rounded-3xl bg-card shadow-sm ring-foreground/20 transition group-hover:-translate-y-0.5 group-hover:ring-2 group-has-[a:focus-visible]:ring-2">
           <ResumeThumbnail doc={card.doc} />
         </div>
         <p className="mt-2.5 truncate pr-7 text-sm font-medium">{card.title}</p>
@@ -341,7 +341,7 @@ function ResultCard({ result, reduce }: { result: NonNullable<CreateTurn["result
   return (
     <motion.div
       {...(reduce ? {} : { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, delay: 0.1 } })}
-      className="mt-5 flex flex-col gap-5 rounded-2xl border border-border bg-card p-4 sm:flex-row"
+      className="mt-5 flex flex-col gap-5 rounded-3xl bg-card p-4 sm:flex-row"
     >
       <Link href={`/resume/${result.resumeId}`} className="shrink-0 self-start overflow-hidden rounded-md border border-border transition hover:ring-2 hover:ring-foreground/20">
         <ResumeThumbnail doc={result.doc} width={150} />
@@ -363,12 +363,12 @@ function ResultCard({ result, reduce }: { result: NonNullable<CreateTurn["result
 // Under the prompt on Free: how many tailored resumes are left, at the moment one is being spent.
 // The server blocks a new tailored resume once Free's allowance is used up; this says so first.
 function TailoredAllowance({ usage }: { usage: PlanUsage }) {
-  if (usage.fastModel) return <p className="mt-3 text-center text-xs text-amber-400">You&apos;ve had a very heavy day, so AI is on the faster model until midnight UTC. Results may be a little less careful; check them as usual.</p>
+  if (usage.fastModel) return <p className="mt-3 text-center text-xs text-signal">You&apos;ve had a very heavy day, so AI is on the faster model until midnight UTC. Results may be a little less careful; check them as usual.</p>
   if (usage.plan !== "free") return null
   const t = allowanceStates(usage).find((a) => a.key === "tailored")!
   const reason = t.state === "out" ? `You've used all ${t.limit} free tailored resumes this month.` : `You have ${t.left} of ${t.limit} free tailored resumes left this month.`
   return (
-    <p className={`mt-3 text-center text-xs ${t.state === "ok" ? "text-muted-foreground" : "text-amber-400"}`}>
+    <p className={`mt-3 text-center text-xs ${t.state === "ok" ? "text-muted-foreground" : "text-signal"}`}>
       {t.state === "out"
         ? `You've used this month's ${t.limit} free tailored resumes. You can still edit the ones you have.`
         : `${t.left} of ${t.limit} free tailored resumes left this month.`}{" "}
