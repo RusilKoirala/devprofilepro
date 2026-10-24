@@ -102,7 +102,7 @@ export function UpgradeDialog({ reason, children }: { reason?: string; children:
                 </p>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                {billing === "pass" ? "One payment. Ends after 90 days and never renews." : "Renews monthly. Cancel anytime in one click."} Lower prices in many countries.
+                {billing === "pass" ? "One payment. Ends after 90 days and never renews." : "Renews monthly. Cancel anytime in one click."}
               </p>
               <Button size="lg" className="mt-5 h-11 w-full rounded-full" onClick={upgrade} disabled={busy}>
                 {busy ? <Spinner /> : <Sparkles />} Upgrade to Pro

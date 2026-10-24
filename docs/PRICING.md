@@ -15,7 +15,7 @@
 | **Free** | $0 | Everyone. Build a great base resume, download it, tailor a few times |
 | **Pro** | **$12 / month**, or **$29 for 3 months** (one payment, does **not** auto-renew) | People actively applying to many jobs |
 
-Regional prices (section 6) make Pro about $5/month in lower-income countries.
+One price everywhere: $12 a month or $29 for the pass (decided 24 October 2026; regional pricing turned off).
 
 ---
 
@@ -149,7 +149,10 @@ Three layers. Users only ever see layer 1.
 
 **$29 for 3 months** is the best-value option and the honest one: it matches a job search and doesn't renew. Expect most Pro buyers to pick it.
 
-### Regional pricing
+### Regional pricing (turned off 24 October 2026)
+
+Tried with Dodo's purchasing power parity: Nepal paid about $3.60 a month. Turned off so every country pays $12 / $29. The tiers below are kept for if we try it again.
+
 
 Charge by country purchasing power, as Kickresume does. A $12 subscription is a week's groceries in some of our biggest developer markets.
 
@@ -193,8 +196,8 @@ A later option, if the business grows: a US entity (for example through Stripe A
 
 Code: `lib/billing/` (Dodo client and the event rules), `app/api/webhooks/dodo/route.ts`, `lib/plan-actions.ts` (checkout and billing portal), migration `0003_billing.sql`.
 
-1. **Products** (created in test mode): Pro monthly, $12 recurring, and the 3-month pass, $29 one-time. Both have purchasing power parity switched on. Put their ids in `DODO_PRO_MONTHLY_PRODUCT_ID` / `DODO_PRO_PASS_PRODUCT_ID`.
-2. **Purchasing power parity:** switch it on once for the business in Dodo's settings. Product-level PPP does nothing until it's on.
+1. **Products** (created in test mode): Pro monthly, $12 recurring, and the 3-month pass, $29 one-time. Purchasing power parity is off on both (one price everywhere). Put their ids in `DODO_PRO_MONTHLY_PRODUCT_ID` / `DODO_PRO_PASS_PRODUCT_ID`.
+2. **Purchasing power parity:** off. Also switch it off in the business settings so new products don't inherit it.
 3. **Webhook:** Developer → Webhooks → add `https://<your-domain>/api/webhooks/dodo` with the `subscription.*`, `payment.succeeded` and `refund.succeeded` events. Its secret goes in `DODO_PAYMENTS_WEBHOOK_KEY`. For local testing, expose port 3000 through a tunnel (e.g. `cloudflared tunnel --url http://localhost:3000`) and register that URL instead.
 4. **Supabase:** apply `0003_billing.sql`, and set `SUPABASE_SECRET_KEY` (server only), which the webhook uses to write `subscriptions`.
 5. **Going live:** create the same two products in live mode, then switch to the live API key, the live webhook secret and `DODO_PAYMENTS_ENVIRONMENT=live_mode`, and set `NEXT_PUBLIC_APP_URL`.
