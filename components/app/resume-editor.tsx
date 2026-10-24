@@ -40,6 +40,8 @@ export interface EditorData {
   version: string
   // Tailored from a job post or request: what it asked for and how this resume covers it.
   match: MatchView | null
+  // What the PDF prints now, for the match report (lib/record/evidence.ts).
+  page: PageEvidence
   titles: Record<string, string>
   chat: ChatMessageView[]
   header: { name: string; headline: string; targetRole: string; email: string; phone: string; location: string; website: string; github: string; linkedin: string }
@@ -90,12 +92,6 @@ export function ResumeEditor({ data }: { data: EditorData }) {
     ? [...data.sections].sort((a, b) => localOrder.types.indexOf(a.type) - localOrder.types.indexOf(b.type))
     : data.sections
   ).map((s) => (itemIndex ? { ...s, entries: [...s.entries].sort((a, b) => (itemIndex.get(a.itemId) ?? 0) - (itemIndex.get(b.itemId) ?? 0)) } : s))
-
-  // What is printed on the page now, for the match report.
-  const page: PageEvidence = {
-    entries: data.sections.flatMap((s) => s.entries.map((e) => ({ itemId: e.itemId, text: [e.title, e.subtitle, e.details.tech, e.details.skills].filter(Boolean).join(", ") }))),
-    lines: data.sections.flatMap((s) => s.entries.flatMap((e) => e.bullets.map((b) => ({ id: b.id, itemId: e.itemId, text: b.text, factIds: b.facts.map((f) => f.id) })))),
-  }
 
   const run: Run = (action, after) => {
     startTransition(async () => {
@@ -478,7 +474,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
                   <MatchReport
                     match={data.match}
                     titles={new Map(Object.entries(data.titles))}
-                    page={page}
+                    page={data.page}
                     onShow={show}
                     onAdd={(itemId) => run(() => setItemState(data.resumeId, itemId, { status: "shown" }), () => toast.success(`Added ${data.titles[itemId] ?? "it"}. The page was re-fitted, so something weaker may have moved off.`))}
                     onRecheck={() => run(() => recheckMatch(data.resumeId), () => toast.success("Re-checked against the job post."))}

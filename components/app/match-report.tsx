@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { requirementOnPage, type PageEvidence } from "@/lib/record/evidence"
 
-export type { PageEvidence }
+export { pageEvidence, type PageEvidence } from "@/lib/record/evidence"
 
 export interface MatchView {
   // Unset for reports made before the evidence checks (lib/ai/tailor-check.ts MATCH_REPORT_VERSION).
@@ -93,7 +93,7 @@ export function MatchReport({
                     <span className="text-muted-foreground">
                       {shown.state === "missing" && " · not in your record yet"}
                       {shown.state === "cut" && ` · shown by ${names(shown.itemIds)}, which isn't on this page now`}
-                      {shown.state === "lines_cut" && ` · the lines in ${names(shown.itemIds)} that showed this aren't on the page now`}
+                      {shown.state === "lines_cut" && ` · cited from ${names(shown.itemIds)}, but nothing printed there names it now`}
                       {shown.state === "elsewhere" && ` · in your record (${names(shown.itemIds)}), not on this resume`}
                       {(shown.state === "covered" || shown.state === "partial") && ` · ${shown.state === "partial" ? "partly shown" : "shown"} by ${names(shown.itemIds)}`}
                     </span>
@@ -141,13 +141,4 @@ export function MatchReport({
 
 function clip(text: string) {
   return text.length > 110 ? `${text.slice(0, 107)}…` : text
-}
-
-// Page evidence from a rendered resume and the facts each line cites.
-export function pageEvidence(doc: { sections: { entries: { item_id: string; title: string; subtitle: string; tech: string[]; bullets: { id: string; text: string }[] }[] }[] }, bulletFacts: Record<string, string[]>): PageEvidence {
-  const entries = doc.sections.flatMap((s) => s.entries)
-  return {
-    entries: entries.map((e) => ({ itemId: e.item_id, text: [e.title, e.subtitle, ...e.tech].filter(Boolean).join(", ") })),
-    lines: entries.flatMap((e) => e.bullets.map((b) => ({ id: b.id, itemId: e.item_id, text: b.text, factIds: bulletFacts[b.id] ?? [] }))),
-  }
 }

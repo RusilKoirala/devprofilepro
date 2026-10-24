@@ -48,3 +48,22 @@ test("an entry from elsewhere in the record counts once it's on the page", () =>
   const added: PageEvidence = { entries: [{ itemId: "pulse", text: "PulseOps, express, postgres" }], lines: [] }
   assert.equal(requirementOnPage(req, added, false).state, "covered")
 })
+
+test("only what the templates print counts: tech stored on a skills group or job doesn't", async () => {
+  const { pageEvidence } = await import("./evidence.ts")
+  const entry = (item_id: string, title: string, subtitle: string, tech: string[]) => ({ item_id, title, subtitle, tech, location: "", dates: "", url: "", bullets: [] })
+  const page = pageEvidence({
+    sections: [
+      { type: "skills", title: "Skills", entries: [entry("sk", "Languages", "JavaScript, Go", ["PostgreSQL", "Docker"])] },
+      { type: "job", title: "Experience", entries: [entry("job", "Developer", "Acme", ["Kubernetes"])] },
+      { type: "project", title: "Projects", entries: [entry("pulse", "PulseOps", "", ["Express", "Postgres"])] },
+    ],
+  }, {})
+  const req = (text: string, item: string) => requirementOnPage({ text, status: "covered", item_ids: [item], fact_ids: [] }, page, false).state
+  // The audit's case: "shown by Skills" although the printed Skills list has neither.
+  assert.equal(req("Experience with PostgreSQL", "sk"), "lines_cut")
+  assert.equal(req("Docker", "sk"), "lines_cut")
+  assert.equal(req("Kubernetes", "job"), "lines_cut")
+  assert.equal(req("Go", "sk"), "covered")
+  assert.equal(req("Experience with PostgreSQL", "pulse"), "covered")
+})
