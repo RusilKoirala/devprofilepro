@@ -1,35 +1,60 @@
-import { currentUser } from "@clerk/nextjs/server"
-import { StartForm } from "@/components/app/start-form"
+import Link from "next/link"
+import { ArrowRight, Briefcase, FilePen, Sparkles } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
-import { aiProvider } from "@/lib/ai/model"
 
-export const metadata = { title: "Add sources · DevProfile" }
-// Building a resume runs several Claude calls in one server action.
-export const maxDuration = 300
+export const metadata = { title: "Get started · DevProfile" }
 
+// Three people arrive here: someone with no resume, someone with an outdated one, and someone
+// applying to a job today. Each gets their own path instead of one form with every option.
 export default async function StartPage() {
-  const [user, supabase] = await Promise.all([currentUser(), createClient()])
-  const githubLogin = user?.externalAccounts.find((a) => a.provider.includes("github"))?.username ?? null
-  const [{ data: sources, error: sourcesError }, { count, error: itemsError }, { data: base }] = await Promise.all([
-    supabase.from("sources").select("id,kind,label,status,fetched_at").order("fetched_at", { ascending: false }),
-    supabase.from("items").select("id", { count: "exact", head: true }),
-    supabase.from("resumes").select("layout").eq("kind", "base").maybeSingle(),
-  ])
-  if (sourcesError || itemsError) throw new Error(sourcesError?.message ?? itemsError?.message)
-  const provider = aiProvider() === "openai" ? "OpenAI" : aiProvider() === "anthropic" ? "Anthropic (Claude)" : "your configured AI provider"
+  const supabase = await createClient()
+  const { data: base } = await supabase.from("resumes").select("id").eq("kind", "base").maybeSingle()
+
+  const paths = [
+    {
+      href: "/start/new",
+      icon: <Sparkles />,
+      title: "I don't have a resume yet",
+      body: "Connect GitHub, answer a few quick questions, and get a one-page resume built from your real work.",
+      meta: "About 3 minutes",
+    },
+    {
+      href: "/start/sources",
+      icon: <FilePen />,
+      title: "I have a resume to update",
+      body: "Upload your current resume. We keep what's good, sharpen the rest, and add what's new on GitHub.",
+      meta: "Upload a PDF",
+    },
+    {
+      href: base ? "/resume" : "/start/new",
+      icon: <Briefcase />,
+      title: "I'm applying for a job",
+      body: base ? "Paste the job post and get a version of your resume aimed at it. Every line stays true." : "Paste the job post and get a version aimed at it. We'll build your resume first, then tailor it.",
+      meta: base ? "Under a minute" : "Starts with your resume",
+    },
+  ]
 
   return (
-    <div className="mx-auto max-w-3xl pt-4">
-      <h2 className="text-lg font-medium">{count ? "Add more, then update" : "Give us what you have"}</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {count
-          ? "New sources are merged into your Career Record. Bullets you edited are never overwritten."
-          : "No forms to fill in. We read what you already have, write a one-page resume, and every line links back to where it came from."}
-      </p>
-      <StartForm githubLogin={githubLogin} sources={sources ?? []} hasRecord={Boolean(count)} targetRole={base?.layout?.target_role ?? ""} />
-      <p className="mt-8 text-xs text-muted-foreground">
-        Your files are processed by {provider} to extract facts. Everything is private in your account.
-      </p>
+    <div className="mx-auto max-w-3xl pt-10">
+      <h2 className="text-2xl font-medium tracking-tight">Where are you starting?</h2>
+      <p className="mt-2 text-muted-foreground">Pick the one that sounds like you. You can do the others later.</p>
+      <div className="mt-8 grid gap-3">
+        {paths.map((p) => (
+          <Link
+            key={p.title}
+            href={p.href}
+            className="group flex items-start gap-4 rounded-2xl border border-border bg-card p-5 transition-colors hover:border-foreground/25 hover:bg-muted/30"
+          >
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors group-hover:text-foreground [&_svg]:size-5">{p.icon}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium">{p.title}</span>
+              <span className="mt-1 block text-sm text-muted-foreground">{p.body}</span>
+              <span className="mt-3 block text-xs text-muted-foreground/80">{p.meta}</span>
+            </span>
+            <ArrowRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+          </Link>
+        ))}
+      </div>
     </div>
   )
 }

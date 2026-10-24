@@ -7,7 +7,9 @@ const TITLES: [prefix: string, title: string][] = [
   ["/resume/", "Resume"],
   ["/resume", "Resumes"],
   ["/record", "Career Record"],
-  ["/start", "Add sources"],
+  ["/start/sources", "Add sources"],
+  ["/start/new", "Your first resume"],
+  ["/start", "Get started"],
 ]
 
 export function PageTitle() {

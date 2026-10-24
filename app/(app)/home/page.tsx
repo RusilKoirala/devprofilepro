@@ -1,16 +1,18 @@
+import { redirect } from "next/navigation"
 import Link from "next/link"
 import { currentUser } from "@clerk/nextjs/server"
-import { AlertTriangle, ArrowRight, CircleCheck, Copy, Download, FileText, Github, Linkedin, Mail, Plus, RefreshCw, Sparkles } from "lucide-react"
+import { ArrowRight, CircleCheck, Copy, Download, FileText, Github, Linkedin, Mail, Plus, RefreshCw, Sparkles } from "lucide-react"
 import { ExportsTable, type ExportView } from "@/components/app/exports-table"
+import { PlanCard } from "@/components/app/plan-card"
 import { ResumeThumbnail } from "@/components/app/resume-thumbnail"
 import { Button } from "@/components/ui/button"
-import { USER_DAILY } from "@/lib/ai/budget"
-import { summarizeUsage } from "@/lib/credits"
+import { allowanceStates } from "@/lib/plans"
 import { loadRecord } from "@/lib/record/db"
 import { findDuplicateFacts } from "@/lib/record/dedupe"
 import type { ResumeLayout } from "@/lib/record/types"
 import { buildResume } from "@/lib/resume/build"
 import { createClient } from "@/lib/supabase/server"
+import { loadPlanUsage } from "@/lib/usage"
 
 export const metadata = { title: "Dashboard · DevProfile" }
 
@@ -28,10 +30,6 @@ function since(date: string) {
   return Date.now() - new Date(date).getTime()
 }
 
-function daysAgoIso(days: number) {
-  return new Date(Date.now() - days * DAY).toISOString()
-}
-
 function plural(n: number, one: string, many = `${one}s`) {
   return `${n} ${n === 1 ? one : many}`
 }
@@ -43,20 +41,22 @@ interface Attention {
   action: string
 }
 
-// One page that answers: where does my resume stand, what should I do next, and how many credits are left.
-export default async function HomePage() {
+// One page that answers: where does my resume stand, what should I do next, and what's left on the plan.
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ upgraded?: string }> }) {
+  const { upgraded } = await searchParams
   const supabase = await createClient()
-  const weekAgo = daysAgoIso(7)
-  const [user, record, { data: resumes }, { data: exports }, { data: runs }] = await Promise.all([
+  const [user, record, { data: resumes }, { data: exports }, usage] = await Promise.all([
     currentUser(),
     loadRecord(supabase),
     supabase.from("resumes").select("id,kind,title,layout,updated_at").order("kind").order("updated_at", { ascending: false }),
     supabase.from("exports").select("id,filename,sent_at,created_at,resumes(title)").order("created_at", { ascending: false }).limit(20),
-    supabase.from("ai_runs").select("step,created_at,meta").gte("created_at", weekAgo),
+    loadPlanUsage(supabase),
   ])
+  // Nothing yet: the first screen is "Where are you starting?", not an empty dashboard.
+  if (!resumes?.length && !record.sources.length && !record.items.length) redirect("/start")
   const base = resumes?.find((r) => r.kind === "base")
   const tailored = (resumes ?? []).filter((r) => r.kind === "tailored")
-  const credits = summarizeUsage(runs ?? [], USER_DAILY)
+  const tailoredLeft = allowanceStates(usage).find((a) => a.key === "tailored")!
 
   const contact = record.items.find((i) => i.type === "contact")?.data ?? {}
   const firstName = user?.firstName || (contact.name ?? "").split(/\s+/)[0] || ""
@@ -71,13 +71,19 @@ export default async function HomePage() {
 
   // Worst first; only things the person can act on from here.
   const candidates: (Attention | false | null | undefined | "" | 0)[] = [
-    !base && { icon: <FileText />, text: record.sources.length ? "Your sources are in. Build your first resume from them." : "Add your GitHub, an old resume or some notes to build your first resume.", href: "/start", action: "Start" },
+    !base && { icon: <FileText />, text: "Your sources are in. Build your first resume from them.", href: "/start/new", action: "Start" },
     base && (!contact.name || !contact.email) && { icon: <Mail />, text: `Add your ${!contact.name ? "name" : "email"} so recruiters can reach you.`, href: baseHref, action: "Fix" },
     openQuestions > 0 && { icon: <Sparkles />, text: `${plural(openQuestions, "quick question")} would make your resume more specific.`, href: baseHref, action: "Answer" },
     duplicates > 0 && { icon: <Copy />, text: `${plural(duplicates, "repeated fact")} in your Career Record.`, href: "/record", action: "Merge" },
     base && !github && { icon: <Github />, text: "Connect GitHub so new projects show up with one click.", href: "/record", action: "Connect" },
     github && since(github.fetched_at) > 14 * DAY && { icon: <Github />, text: `GitHub was last synced ${ago(github.fetched_at)}.`, href: "/record", action: "Sync" },
     base && !linkedin && { icon: <Linkedin />, text: "Import your LinkedIn PDF to bring in roles and dates.", href: "/record", action: "Import" },
+    base && tailoredLeft.state !== "ok" && {
+      icon: <Sparkles />,
+      text: tailoredLeft.state === "out" ? "You've used this month's free tailored resumes. Pro makes them unlimited." : `${plural(tailoredLeft.left!, "free tailored resume")} left this month.`,
+      href: "/pricing",
+      action: "See Pro",
+    },
     base && !(exports ?? []).length && { icon: <Download />, text: "Download your first PDF. It's free, and we keep the exact file you sent.", href: baseHref, action: "Open" },
   ]
   const attention = candidates.filter((a): a is Attention => !!a).slice(0, 5)
@@ -90,8 +96,6 @@ export default async function HomePage() {
     sentAt: e.sent_at,
   }))
 
-  const leftShare = credits.limit ? credits.left / credits.limit : 0
-  const low = leftShare < 0.2
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 pt-4">
@@ -105,6 +109,19 @@ export default async function HomePage() {
           <Button asChild><Link href={base ? "/resume" : "/start"}><Plus /> New resume</Link></Button>
         </div>
       </div>
+
+      {upgraded && (
+        <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] px-5 py-4 text-sm">
+          <Sparkles className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+          <p>
+            {usage.plan === "pro" ? (
+              <><span className="font-medium">You&apos;re on Pro.</span> <span className="text-muted-foreground">Tailor a resume for every job you apply to.</span></>
+            ) : (
+              <><span className="font-medium">Payment received, thank you.</span> <span className="text-muted-foreground">Pro switches on within a minute. Refresh if it hasn&apos;t yet.</span></>
+            )}
+          </p>
+        </div>
+      )}
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -158,52 +175,7 @@ export default async function HomePage() {
           )}
         </div>
 
-        {/* Credits */}
-        <section className="h-fit rounded-2xl border border-border bg-card p-5">
-          <div className="flex items-baseline justify-between">
-            <h3 className="text-sm font-medium">Credits</h3>
-            <span className="text-xs text-muted-foreground">Refills in {credits.resetsInHours} h</span>
-          </div>
-          <p className="mt-3 flex items-baseline gap-1.5">
-            <span className="text-4xl font-semibold tracking-tight tabular-nums">{credits.left}</span>
-            <span className="text-sm text-muted-foreground">of {credits.limit} left today</span>
-          </p>
-          <div
-            className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"
-            role="meter"
-            aria-label="Credits left today"
-            aria-valuemin={0}
-            aria-valuemax={credits.limit}
-            aria-valuenow={credits.left}
-          >
-            <div className={`h-full rounded-full ${low ? "bg-amber-400" : "bg-foreground"}`} style={{ width: `${Math.round(leftShare * 100)}%` }} />
-          </div>
-          {low && <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-400"><AlertTriangle className="size-3.5" /> Running low. Editing and downloads still work.</p>}
-
-          <div className="mt-5 border-t border-border pt-4">
-            <p className="mb-2 text-xs text-muted-foreground">Last 7 days</p>
-            {credits.week.length ? (
-              <table className="w-full text-sm">
-                <tbody>
-                  {credits.week.map((w) => (
-                    <tr key={w.activity}>
-                      <td className="py-1">{w.activity}</td>
-                      <td className="py-1 text-right text-muted-foreground tabular-nums">{plural(w.runs, "run")}</td>
-                      <td className="w-12 py-1 text-right tabular-nums">{w.credits}</td>
-                    </tr>
-                  ))}
-                  <tr className="border-t border-border">
-                    <td className="pt-2 text-muted-foreground" colSpan={2}>Total credits</td>
-                    <td className="pt-2 text-right font-medium tabular-nums">{credits.weekTotal}</td>
-                  </tr>
-                </tbody>
-              </table>
-            ) : (
-              <p className="text-sm text-muted-foreground">No AI used yet this week.</p>
-            )}
-          </div>
-          <p className="mt-4 text-xs text-muted-foreground">AI steps use credits. Editing, checks and PDF downloads are always free.</p>
-        </section>
+        <PlanCard usage={usage} />
       </div>
 
       {/* Downloads */}

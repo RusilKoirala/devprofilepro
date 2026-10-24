@@ -32,8 +32,10 @@ interface GenerateOptions<T> {
   maxTokens?: number
   // Extra checks in plain code. Returned strings are sent back for one retry.
   check?: (data: T) => string[]
-  // Return the last attempt even if `check` still fails; the caller repairs it (e.g. A3 falls back to fact text).
+  // Return the last attempt even if `check` still fails; the caller repairs it (e.g. A3 repairs only the failing lines).
   acceptOnLastAttempt?: boolean
+  // 2 by default: a failed check is sent back for one retry. 1 when the caller does a cheaper targeted repair.
+  attempts?: number
   // Extra numbers to log on ai_runs (e.g. facts dropped by the quote check).
   logMeta?: (data: T) => Record<string, unknown>
 }
@@ -122,7 +124,8 @@ export async function generate<T>(opts: GenerateOptions<T>): Promise<T> {
 
   let content = opts.content
   let lastErrors: string[] = []
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const attempts = opts.attempts ?? 2
+  for (let attempt = 0; attempt < attempts; attempt++) {
     const started = Date.now()
     let result: CallResult<T>
     try {
@@ -152,7 +155,7 @@ export async function generate<T>(opts: GenerateOptions<T>): Promise<T> {
 
     const data = result.data
     lastErrors = data == null ? ["Output did not match the schema."] : (opts.check?.(data) ?? [])
-    if (data != null && (lastErrors.length === 0 || (attempt === 1 && opts.acceptOnLastAttempt))) {
+    if (data != null && (lastErrors.length === 0 || (attempt === attempts - 1 && opts.acceptOnLastAttempt))) {
       await logRun(opts.step, provider, { ...usage, ok: lastErrors.length === 0, meta: { ...opts.logMeta?.(data), check_errors: lastErrors.length, cost_usd: cost } })
       return data
     }

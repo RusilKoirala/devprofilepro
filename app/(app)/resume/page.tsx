@@ -5,6 +5,7 @@ import { loadRecord } from "@/lib/record/db"
 import type { ResumeLayout } from "@/lib/record/types"
 import { buildResume } from "@/lib/resume/build"
 import { createClient } from "@/lib/supabase/server"
+import { loadPlanUsage } from "@/lib/usage"
 
 export const metadata = { title: "Resumes · DevProfile" }
 // Making a new resume runs an AI step from this page.
@@ -19,10 +20,11 @@ function ago(date: string) {
 
 export default async function ResumesPage() {
   const supabase = await createClient()
-  const [user, record, { data: resumes, error }] = await Promise.all([
+  const [user, record, { data: resumes, error }, usage] = await Promise.all([
     currentUser(),
     loadRecord(supabase),
     supabase.from("resumes").select("id,kind,title,layout,updated_at").order("kind").order("updated_at", { ascending: false }),
+    loadPlanUsage(supabase),
   ])
   if (error) throw new Error(error.message)
   if (!resumes?.length) redirect("/start")
@@ -33,6 +35,7 @@ export default async function ResumesPage() {
   return (
     <ResumeHome
       firstName={firstName}
+      usage={usage}
       resumes={resumes.map((r) => ({
         id: r.id,
         title: r.kind === "base" ? "Base resume" : r.title,

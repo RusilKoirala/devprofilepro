@@ -7,6 +7,8 @@ import { PageTitle } from "@/components/app/page-title"
 import { SetupNotice } from "@/components/app/setup-notice"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server"
+import { loadPlanUsage } from "@/lib/usage"
+import type { PlanUsage } from "@/lib/plans"
 
 // The layout persists across navigations, so this query runs once, not on every click.
 // router.refresh() after creating or renaming a resume re-runs it.
@@ -21,16 +23,26 @@ async function listResumes(): Promise<ResumeLink[]> {
   }
 }
 
+// For the sidebar's upgrade card. A failure just hides the card.
+async function planUsage(): Promise<PlanUsage | null> {
+  if (!isSupabaseConfigured()) return null
+  try {
+    return await loadPlanUsage(await createClient())
+  } catch {
+    return null
+  }
+}
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   if (!isAppEnabled()) notFound()
-  const [cookieStore, resumes] = await Promise.all([cookies(), listResumes()])
+  const [cookieStore, resumes, usage] = await Promise.all([cookies(), listResumes(), planUsage()])
   // Read the saved sidebar state on the server so it renders open/collapsed without a flash.
   const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false"
 
   return (
     <AppClerkProvider>
       <SidebarProvider defaultOpen={defaultOpen}>
-        <AppSidebar resumes={resumes} />
+        <AppSidebar resumes={resumes} usage={usage} />
         <SidebarInset className="bg-background">
           <header className="flex h-14 shrink-0 items-center gap-2 px-4">
             <SidebarTrigger className="-ml-1 text-muted-foreground" />

@@ -1,20 +1,21 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { useState } from "react"
-import { ArrowRight, CheckCircle2, Circle, ExternalLink, FileText, Github, Linkedin, RefreshCw, Sparkles, XCircle } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { useEffect, useRef, useState } from "react"
+import { ArrowRight, CheckCircle2, Circle, ExternalLink, FileArchive, FileText, Github, Linkedin, RefreshCw, Sparkles, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
+import { useConnectGitHub } from "@/hooks/use-connect-github"
 import { addSources, mergeDuplicateFacts, stageExtract, stageFit, stageWrite, type ActionResult } from "@/lib/record/actions"
 
 export interface SourcesView {
   github: { login: string; repos: number; synced: string } | null
-  githubLogin: string | null // from a GitHub sign-in, when there's no GitHub source yet
-  linkedin: { url: string | null; imported: string | null }
+  githubLogin: string | null // from a connected GitHub account (sign-in or Connect), when there is one
+  linkedin: { url: string | null; imported: string | null; format: "pdf" | "zip" | null }
   files: { pdfs: number; notes: number; prs: number }
   baseResumeId: string | null
 }
@@ -40,15 +41,20 @@ export function RecordSources({ view }: { view: SourcesView }) {
   const router = useRouter()
   const [steps, setSteps] = useState<Step[] | null>(null)
   const [outcome, setOutcome] = useState<Outcome | null>(null)
-  const [username, setUsername] = useState(view.githubLogin ?? "")
+  const [username, setUsername] = useState("")
+  const [byUsername, setByUsername] = useState(false)
   const [linkedinOpen, setLinkedinOpen] = useState(false)
   const [pdf, setPdf] = useState<File | null>(null)
   const running = steps?.some((s) => s.state === "running") ?? false
-  const login = view.github?.login ?? null
+  const login = view.github?.login ?? view.githubLogin
+  const { connect: connectGitHub, connecting, ready, failureReason } = useConnectGitHub("/record")
+  const params = useSearchParams()
+  const autoImported = useRef(false)
 
   // Each stage is its own server call, so the list shows where the update really is.
   async function update(opts: { github?: string | null; pdf?: File | null }) {
-    const fetchLabel = opts.github && opts.pdf ? "Fetching GitHub and reading your PDF" : opts.github ? `Fetching GitHub (@${opts.github})` : opts.pdf ? "Reading your LinkedIn PDF" : null
+    const file = opts.pdf && /\.zip$/i.test(opts.pdf.name) ? "LinkedIn data export" : "LinkedIn PDF"
+    const fetchLabel = opts.github && opts.pdf ? `Fetching GitHub and reading your ${file}` : opts.github ? `Fetching GitHub (@${opts.github})` : opts.pdf ? `Reading your ${file}` : null
     const labels = [fetchLabel, "Finding what's new", "Writing lines for new entries", "Fitting your base resume on one page"].filter((l): l is string => !!l)
     setOutcome(null)
     setSteps(labels.map((label) => ({ label, state: "pending" })))
@@ -89,6 +95,22 @@ export function RecordSources({ view }: { view: SourcesView }) {
     router.refresh()
   }
 
+  // Back from GitHub: import straight away, once, then drop the flag from the URL.
+  useEffect(() => {
+    if (params.get("github") !== "connected" || autoImported.current || !ready) return
+    autoImported.current = true
+    router.replace("/record", { scroll: false })
+    if (view.githubLogin) return void update({ github: view.githubLogin })
+    toast.error(failureReason() ?? "GitHub wasn't connected. Try again?", { duration: 10000 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, view.githubLogin, ready])
+
+  const githubStatus = view.github
+    ? `@${view.github.login} · ${plural(view.github.repos, "repo")} · synced ${view.github.synced}${view.githubLogin ? "" : " · public data only"}`
+    : view.githubLogin
+      ? `Connected as @${view.githubLogin} · not imported yet`
+      : "Not connected"
+
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -102,21 +124,36 @@ export function RecordSources({ view }: { view: SourcesView }) {
       </div>
 
       <div className="divide-y divide-border rounded-2xl border border-border bg-card">
-        <SourceRow icon={<Github />} title="GitHub" status={view.github ? `@${view.github.login} · ${plural(view.github.repos, "repo")} · synced ${view.github.synced}` : "Not connected"}>
-          {view.github ? (
-            <Button size="sm" variant="secondary" disabled={running} onClick={() => update({ github: view.github!.login })}><RefreshCw /> Sync</Button>
-          ) : (
+        <SourceRow icon={<Github />} title="GitHub" status={githubStatus}>
+          {view.github || view.githubLogin ? (
+            <div className="flex gap-2">
+              {!view.githubLogin && (
+                <Button size="sm" variant="ghost" disabled={running || connecting} onClick={connectGitHub}>{connecting && <Spinner />} Connect account</Button>
+              )}
+              <Button size="sm" variant="secondary" disabled={running} onClick={() => update({ github: login })}>
+                <RefreshCw /> {view.github ? "Sync" : "Import"}
+              </Button>
+            </div>
+          ) : byUsername ? (
             <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (username.trim()) update({ github: username.trim() }) }}>
-              <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="GitHub username" className="h-8 w-40" autoComplete="off" />
-              <Button size="sm" type="submit" disabled={running || !username.trim()}>Connect</Button>
+              <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="GitHub username" className="h-8 w-40" autoComplete="off" autoFocus />
+              <Button size="sm" type="submit" disabled={running || !username.trim()}>Import</Button>
+              <Button size="sm" type="button" variant="ghost" onClick={() => setByUsername(false)}>Cancel</Button>
             </form>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="ghost" disabled={running} onClick={() => setByUsername(true)}>Use a username</Button>
+              <Button size="sm" disabled={running || connecting || !ready} onClick={connectGitHub}>
+                {connecting ? <Spinner /> : <Github />} Connect GitHub
+              </Button>
+            </div>
           )}
         </SourceRow>
 
         <SourceRow
           icon={<Linkedin />}
           title="LinkedIn"
-          status={view.linkedin.imported ? `Imported ${view.linkedin.imported}` : view.linkedin.url ? "Profile linked, not imported yet" : "Not added"}
+          status={view.linkedin.imported ? `${view.linkedin.format === "zip" ? "Data export" : "Profile PDF"} imported ${view.linkedin.imported}` : view.linkedin.url ? "Profile linked, not imported yet" : "Not added"}
         >
           <Button size="sm" variant="secondary" disabled={running} onClick={() => setLinkedinOpen(true)}>{view.linkedin.imported ? "Update" : "Import"}</Button>
         </SourceRow>
@@ -126,7 +163,7 @@ export function RecordSources({ view }: { view: SourcesView }) {
           title="Files and notes"
           status={[view.files.pdfs && plural(view.files.pdfs, "PDF"), view.files.notes && plural(view.files.notes, "note"), view.files.prs && plural(view.files.prs, "pull request")].filter(Boolean).join(" · ") || "None yet"}
         >
-          <Button size="sm" variant="ghost" asChild><Link href="/start">Add more</Link></Button>
+          <Button size="sm" variant="ghost" asChild><Link href="/start/sources">Add more</Link></Button>
         </SourceRow>
       </div>
 
@@ -172,24 +209,30 @@ export function RecordSources({ view }: { view: SourcesView }) {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Update from LinkedIn</DialogTitle>
-            <DialogDescription>LinkedIn doesn&apos;t let apps read profiles, but its own PDF export has everything. Two steps:</DialogDescription>
+            <DialogDescription>LinkedIn doesn&apos;t let apps read profiles, so bring one of its own exports. Either works:</DialogDescription>
           </DialogHeader>
-          <ol className="space-y-4 text-sm">
-            <li className="space-y-2">
-              <p><span className="text-muted-foreground">1.</span> Open your profile, click <b>More</b> (or <b>Resources</b>), then <b>Save to PDF</b>.</p>
+          <div className="grid gap-2 text-sm sm:grid-cols-2">
+            <div className="space-y-2 rounded-xl border border-border p-3">
+              <p className="flex items-center gap-2 font-medium"><FileText className="size-4 text-muted-foreground" /> Profile PDF</p>
+              <p className="text-muted-foreground">Instant. On your profile: <b>More</b> → <b>Save to PDF</b>.</p>
               <Button size="sm" variant="secondary" asChild>
-                <a href={view.linkedin.url || "https://www.linkedin.com/in/me/"} target="_blank" rel="noreferrer">Open my LinkedIn profile <ExternalLink /></a>
+                <a href={view.linkedin.url || "https://www.linkedin.com/in/me/"} target="_blank" rel="noreferrer">Open profile <ExternalLink /></a>
               </Button>
-            </li>
-            <li className="space-y-2">
-              <p><span className="text-muted-foreground">2.</span> Drop the downloaded PDF here.</p>
-              <label className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed border-border px-4 py-6 text-center text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground">
-                <FileText className="size-5" />
-                <span>{pdf ? pdf.name : "Choose the PDF, or drop it here"}</span>
-                <input type="file" accept="application/pdf" className="sr-only" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} />
-              </label>
-            </li>
-          </ol>
+            </div>
+            <div className="space-y-2 rounded-xl border border-border p-3">
+              <p className="flex items-center gap-2 font-medium"><FileArchive className="size-4 text-muted-foreground" /> Data export ZIP</p>
+              <p className="text-muted-foreground">Most detail. Pick <b>the works</b> or the fast file; LinkedIn emails it in about 10 minutes.</p>
+              <Button size="sm" variant="secondary" asChild>
+                <a href="https://www.linkedin.com/mypreferences/d/download-my-data" target="_blank" rel="noreferrer">Request export <ExternalLink /></a>
+              </Button>
+            </div>
+          </div>
+          <label className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground">
+            {pdf && /\.zip$/i.test(pdf.name) ? <FileArchive className="size-5" /> : <FileText className="size-5" />}
+            <span>{pdf ? pdf.name : "Choose the PDF or ZIP, or drop it here"}</span>
+            <span className="text-xs">From the ZIP we only read jobs, education, projects and skills. Messages and connections are never opened.</span>
+            <input type="file" accept="application/pdf,.zip,application/zip" className="sr-only" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} />
+          </label>
           <DialogFooter>
             <Button
               disabled={!pdf || running}

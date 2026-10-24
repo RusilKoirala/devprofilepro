@@ -8,11 +8,12 @@ import { BudgetError } from "@/lib/ai/budget"
 import { ingestGitHub, GitHubError } from "@/lib/ingest/github"
 import { ingestPullRequests } from "@/lib/ingest/github-pr"
 import { ingestPaste } from "@/lib/ingest/paste"
+import { ingestLinkedInZip } from "@/lib/ingest/linkedin-zip"
 import { ingestPdf } from "@/lib/ingest/pdf"
 import type { IngestedSource } from "@/lib/ingest/types"
 import { RateLimitedError } from "@/lib/ratelimit"
 import { loadRecord, loadResume, saveSources } from "@/lib/record/db"
-import { buildRecord, refreshQuestions, relayoutResume, writeBase, writeItems } from "@/lib/record/pipeline"
+import { buildRecord, queueInterview, refreshQuestions, relayoutResume, writeBase, writeItems, type InterviewCard } from "@/lib/record/pipeline"
 import { ItemDataSchema, ITEM_TYPES, type ItemType, type ResumeLayout } from "@/lib/record/types"
 import { planTailoredResume, TailorSchema, type TailorPlan } from "@/lib/ai/tailor"
 import { chatTurn, resumeForChat, type ChatMessage } from "@/lib/ai/chat"
@@ -75,6 +76,16 @@ export async function addSources(formData: FormData): Promise<ActionResult<Cover
 
     const files = formData.getAll("pdfs").filter((f): f is File => f instanceof File && f.size > 0).slice(0, 2)
     for (const file of files) {
+      if (/\.zip$/i.test(file.name) || file.type.includes("zip")) {
+        try {
+          const src = await ingestLinkedInZip(file)
+          sources.push(src)
+          coverage.push({ label: file.name, ok: true, detail: `LinkedIn data export: ${(src.meta?.sections as string[]).join(", ")}` })
+        } catch (err) {
+          coverage.push({ label: file.name, ok: false, detail: err instanceof Error ? err.message : "Couldn't read this ZIP" })
+        }
+        continue
+      }
       try {
         const src = await ingestPdf(userId, file)
         sources.push(src)
@@ -134,11 +145,42 @@ export async function stageExtract(): Promise<ActionResult<{ counts: Partial<Rec
 }
 
 // ⑤ Write bullets and save the base resume's layout.
-export async function stageWrite(targetRole?: string): Promise<ActionResult<{ resumeId: string; written: number }>> {
+export async function stageWrite(targetRole?: string, answeredItemIds: string[] = []): Promise<ActionResult<{ resumeId: string; written: number }>> {
   try {
     const { userId, supabase } = await session()
     const role = z.string().trim().max(120).optional().parse(targetRole)
-    return { ok: true, data: await writeBase(supabase, userId, role) }
+    const answered = z.array(z.string().uuid()).max(50).parse(answeredItemIds)
+    return { ok: true, data: await writeBase(supabase, userId, role, answered) }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+// ④ Interview before writing. Best effort: if it fails, the resume is written from the sources alone.
+export async function stageInterview(): Promise<ActionResult<InterviewCard[]>> {
+  try {
+    const { userId, supabase } = await session()
+    return { ok: true, data: await queueInterview(supabase, userId) }
+  } catch (err) {
+    if (err instanceof RateLimitedError || err instanceof BudgetError) return fail(err)
+    console.error(err)
+    return { ok: true, data: [] }
+  }
+}
+
+const InterviewAnswers = z.array(z.object({ id: z.string().uuid(), answer: z.string().trim().max(1000).nullable() })).max(20)
+
+// Saves every interview answer as a "You told us" fact in one go, without rewriting after each
+// one; stageWrite then writes the resume once. Returns the entries that gained a fact.
+export async function submitInterview(answers: { id: string; answer: string | null }[]): Promise<ActionResult<{ itemIds: string[] }>> {
+  try {
+    const { supabase } = await session()
+    const itemIds = new Set<string>()
+    for (const { id, answer } of InterviewAnswers.parse(answers)) {
+      const itemId = await saveAnswer(supabase, id, answer)
+      if (itemId) itemIds.add(itemId)
+    }
+    return { ok: true, data: { itemIds: [...itemIds] } }
   } catch (err) {
     return fail(err)
   }
@@ -257,33 +299,40 @@ export async function restoreCut(resumeId: string, itemId: string): Promise<Acti
   return setItemState(resumeId, itemId, { pinned: true, status: "shown" })
 }
 
+// Records one answer. A useful answer becomes a "You told us" fact (ranges stay ranges), and
+// confirms ownership of a team project. Returns the item that gained a fact, if any.
+async function saveAnswer(supabase: Awaited<ReturnType<typeof createClient>>, questionId: string, answer: string | null): Promise<string | null> {
+  const { data: q, error: questionError } = await supabase.from("questions").select("id,item_id,prompt,kind,status").eq("id", questionId).single()
+  if (questionError) throw new Error(questionError.message)
+  if (!q || q.status !== "open") return null
+  const factText = questionFact(q, answer)
+  if (!factText) {
+    const { error } = await supabase.from("questions").update({ status: answer?.trim() ? "answered" : "skipped", answer }).eq("id", questionId)
+    if (error) throw new Error(error.message)
+    return null
+  }
+  const { error: factError } = await supabase.from("facts").insert({ item_id: q.item_id, text: factText, label: "user", approx: RANGE.test(factText) })
+  if (factError) throw new Error(factError.message)
+  const { error } = await supabase.from("questions").update({ status: "answered", answer }).eq("id", questionId)
+  if (error) throw new Error(error.message)
+  if ((q.kind === "ownership" || q.kind === "built") && answer?.trim().toLowerCase() !== "no") {
+    const { data: item, error: itemError } = await supabase.from("items").select("data").eq("id", q.item_id).single()
+    if (itemError) throw new Error(itemError.message)
+    const { error: updateError } = await supabase.from("items").update({ data: { ...item.data, ownership_confirmed: true }, updated_at: new Date().toISOString() }).eq("id", q.item_id)
+    if (updateError) throw new Error(updateError.message)
+  }
+  return q.item_id as string
+}
+
 export async function answerQuestion(resumeId: string | null, questionId: string, answer: string | null): Promise<ActionResult> {
   try {
     const { userId, supabase } = await session()
-    const { data: q, error: questionError } = await supabase.from("questions").select("id,item_id,prompt,kind,status").eq("id", questionId).single()
-    if (questionError) throw new Error(questionError.message)
-    if (!q) return { ok: false, error: "Question not found" }
-    if (q.status !== "open") return { ok: true, data: undefined }
-    const factText = questionFact(q, answer)
-    if (!factText) {
-      const { error } = await supabase.from("questions").update({ status: answer?.trim() ? "answered" : "skipped", answer }).eq("id", questionId)
-      if (error) throw new Error(error.message)
-    } else {
-      // The answer is saved as a fact the user told us; ranges stay ranges.
-      const { error: factError } = await supabase.from("facts").insert({ item_id: q.item_id, text: factText, label: "user", approx: RANGE.test(factText) })
-      if (factError) throw new Error(factError.message)
-      const { error } = await supabase.from("questions").update({ status: "answered", answer }).eq("id", questionId)
-      if (error) throw new Error(error.message)
-      if (q.kind === "ownership" && answer?.trim().toLowerCase() !== "no") {
-        const { data: item, error: itemError } = await supabase.from("items").select("data").eq("id", q.item_id).single()
-        if (itemError) throw new Error(itemError.message)
-        const { error: updateError } = await supabase.from("items").update({ data: { ...item.data, ownership_confirmed: true }, updated_at: new Date().toISOString() }).eq("id", q.item_id)
-        if (updateError) throw new Error(updateError.message)
-      }
+    const itemId = await saveAnswer(supabase, questionId, answer)
+    if (itemId) {
       // Rewrite only the affected item.
       const record = await loadRecord(supabase)
       const resume = resumeId ? await loadResume(supabase, resumeId) : null
-      await writeItems(supabase, userId, record, { itemIds: [q.item_id], targetRole: resume?.layout.target_role })
+      await writeItems(supabase, userId, record, { itemIds: [itemId], targetRole: resume?.layout.target_role })
     }
     if (resumeId) await relayout(resumeId)
     return { ok: true, data: undefined }
@@ -292,13 +341,12 @@ export async function answerQuestion(resumeId: string | null, questionId: string
   }
 }
 
-
 export async function regenerateItem(resumeId: string, itemId: string, style: RewriteStyle = "default"): Promise<ActionResult> {
   try {
     const { userId, supabase } = await session()
     const instruction = REWRITE_STYLES[z.enum(Object.keys(REWRITE_STYLES) as [RewriteStyle]).parse(style)]
     const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
-    await writeItems(supabase, userId, record, { itemIds: [itemId], releaseEdits: true, targetRole: resume?.layout.target_role, instruction })
+    await writeItems(supabase, userId, record, { itemIds: [itemId], releaseEdits: true, targetRole: resume?.layout.target_role, instruction, purpose: "fix" })
     await relayout(resumeId)
     return { ok: true, data: undefined }
   } catch (err) {
