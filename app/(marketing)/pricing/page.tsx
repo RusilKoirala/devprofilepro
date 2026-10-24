@@ -20,7 +20,7 @@ const promises = [
   { icon: FileDown, title: "Your PDF is never paywalled", body: "Download free, no watermark, as often as you like." },
   { icon: CalendarCheck, title: "The pass never renews", body: "3 months, one payment, then it simply ends." },
   { icon: CircleSlash, title: "Cancel in one click", body: "Right from your dashboard. You keep Pro until the month you paid for ends." },
-  { icon: Globe, title: "Priced for your country", body: "Checkout adjusts the price to where you live." },
+  { icon: Globe, title: "One price everywhere", body: "$12 a month or $29 for 3 months, in any country. Taxes included." },
 ]
 
 const faqs = [
@@ -51,10 +51,6 @@ const faqs = [
   {
     q: "Can I get a refund?",
     a: "No. Payments aren't refunded, so try Free first: it has everything except the volume. You can cancel monthly anytime in one click and keep Pro until the end of the month you paid for. The 3-month pass simply ends after 90 days.",
-  },
-  {
-    q: "Why is the price lower in my country?",
-    a: "We price by country so Pro is fair everywhere. At checkout the price adjusts to where you live, down to $5 a month.",
   },
   {
     q: "Can I take my data with me?",
@@ -115,7 +111,7 @@ export default function PricingPage() {
 
           <p className="mt-8 flex items-center justify-center gap-2 text-center text-sm text-muted-foreground">
             <Globe className="size-4 shrink-0" />
-            Prices in USD. At checkout they adjust to your country, down to $5 a month.
+            Prices in USD. Your bank may convert to your currency at checkout.
           </p>
         </div>
       </section>
