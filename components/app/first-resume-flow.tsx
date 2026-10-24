@@ -189,7 +189,7 @@ export function FirstResumeFlow({ githubLogin, provider, resume }: { githubLogin
           <p className="mt-2 text-muted-foreground">We read your GitHub, ask you a few quick questions about what you built, and write a one-page resume. Every line comes from your work or your answers.</p>
 
           <div className="mt-8 space-y-3">
-            <section className="rounded-2xl border border-border bg-card p-5">
+            <section className="rounded-3xl bg-card p-5">
               <div className="flex items-start gap-3">
                 <Github className="mt-0.5 size-5 shrink-0" />
                 <div className="min-w-0 flex-1">
@@ -218,7 +218,7 @@ export function FirstResumeFlow({ githubLogin, provider, resume }: { githubLogin
               </div>
             </section>
 
-            <section className="rounded-2xl border border-border bg-card p-5">
+            <section className="rounded-3xl bg-card p-5">
               <div className="flex items-start gap-3">
                 <GraduationCap className="mt-0.5 size-5 shrink-0" />
                 <div className="min-w-0 flex-1">
@@ -229,7 +229,7 @@ export function FirstResumeFlow({ githubLogin, provider, resume }: { githubLogin
               <Input id="school" className="mt-4" value={school} onChange={(e) => setSchool(e.target.value)} maxLength={300} placeholder="e.g. BSc Computer Science, Tribhuvan University, 2023–2027" autoComplete="off" />
             </section>
 
-            <Collapsible className="rounded-2xl border border-border bg-card">
+            <Collapsible className="rounded-3xl bg-card">
               <CollapsibleTrigger className="group flex w-full items-center gap-3 p-5 text-left">
                 <Plus className="size-5 shrink-0" />
                 <span className="min-w-0 flex-1">
@@ -272,7 +272,7 @@ export function FirstResumeFlow({ githubLogin, provider, resume }: { githubLogin
         <>
           <h2 className="text-2xl font-medium tracking-tight">{phase === "reading" ? "Reading your work" : "Writing your resume"}</h2>
           <p className="mt-2 text-muted-foreground">{failed ? "Something went wrong. What's done so far is saved, so trying again picks up from here." : "About a minute. If you leave, we'll pick up from the last finished step."}</p>
-          <ol aria-live="polite" aria-label="Build progress" className="mt-8 space-y-4 rounded-2xl border border-border bg-card p-5">
+          <ol aria-live="polite" aria-label="Build progress" className="mt-8 space-y-4 rounded-3xl bg-card p-5">
             {steps.map((s) => (
               <li key={s.label} className="flex items-start gap-3 text-sm">
                 <span className="mt-0.5 shrink-0">

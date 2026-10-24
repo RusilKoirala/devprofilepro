@@ -41,7 +41,7 @@ export function NewResumePrompt({ onSubmit, busy = false, suggestions = true, pl
     <div className="w-full">
       <form
         onSubmit={(e) => { e.preventDefault(); submit() }}
-        className="rounded-2xl border border-border bg-card shadow-sm transition-colors focus-within:border-foreground/25"
+        className="rounded-3xl bg-card shadow-sm transition-colors focus-within:border-foreground/25"
       >
         <textarea
           ref={ref}
@@ -70,7 +70,7 @@ export function NewResumePrompt({ onSubmit, busy = false, suggestions = true, pl
               key={label}
               type="button"
               onClick={() => suggest(value)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Icon className="size-3.5" /> {label}
             </button>

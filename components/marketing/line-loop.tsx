@@ -13,8 +13,8 @@ const lines = [
 
 const items: LogoItem[] = lines.map((line) => ({
   node: (
-    <span className="inline-flex items-center gap-2 rounded-full border bg-card/60 px-4 py-2 text-sm whitespace-nowrap text-muted-foreground">
-      <span className="size-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
+    <span className="inline-flex items-center gap-2 rounded-full bg-card px-4 py-2 text-sm whitespace-nowrap text-muted-foreground">
+      <span className="size-1.5 rounded-full bg-foreground/30" aria-hidden="true" />
       {line}
     </span>
   ),
@@ -23,7 +23,7 @@ const items: LogoItem[] = lines.map((line) => ({
 
 export function LineLoop() {
   return (
-    <div className="border-y py-8">
+    <div className="py-10">
       <p className="mb-6 text-center text-sm text-muted-foreground">The kind of lines it writes, from your own work</p>
       <LogoLoop
         logos={items}
@@ -32,7 +32,7 @@ export function LineLoop() {
         logoHeight={40}
         pauseOnHover
         fadeOut
-        fadeOutColor="oklch(0.13 0 0)"
+        fadeOutColor="var(--background)"
         intro={false}
         ariaLabel="Example resume lines"
       />

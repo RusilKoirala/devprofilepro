@@ -59,7 +59,7 @@ export function DataControls({ sources }: { sources: SourceListItem[] }) {
           What you gave us is used only to write your resumes. See <Link href="/privacy" className="underline underline-offset-4">how we handle it</Link>.
         </p>
       </div>
-      <div className="divide-y divide-border rounded-2xl border border-border bg-card">
+      <div className="divide-y divide-border rounded-3xl bg-card">
         <Collapsible>
           <CollapsibleTrigger className="flex w-full items-center justify-between p-4 text-left text-sm">
             <span><span className="font-medium">Sources</span> <span className="text-muted-foreground">· {sources.length} read so far</span></span>

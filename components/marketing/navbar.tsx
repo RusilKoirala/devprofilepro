@@ -54,7 +54,7 @@ export function Navbar({ auth }: { auth?: React.ReactNode }) {
               asChild
               variant="ghost"
               size="sm"
-              className="rounded-full text-foreground/70 hover:bg-white/[0.06] hover:text-foreground"
+              className="rounded-full text-foreground/70 hover:bg-foreground/[0.06] hover:text-foreground"
             >
               <Link href={link.href}>{link.label}</Link>
             </Button>

@@ -138,7 +138,8 @@ export function Hero({ open }: { open: boolean }) {
                   className="h-8 gap-2 rounded-full border-white/10 bg-white/[0.03] py-1 pr-3 pl-1 text-sm font-normal shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur transition-colors group-hover:bg-white/[0.06]"
                 >
                   <Badge className="rounded-full px-2.5">{open ? "Free" : "Soon"}</Badge>
-                  <ShinyText text={open ? "Check your resume against an ATS, no sign-up" : "Early access is opening in batches"} color="#a1a1a1" shineColor="#ffffff" speed={3} />
+                  <ShinyText text={open ? "Check your resume against an ATS, no sign-up" : "Early access is opening in batches"} color="#a1a1a1" shineColor="#ffffff" speed={3} className="max-sm:hidden" />
+                  <span className="text-muted-foreground sm:hidden">{open ? "ATS check, no sign-up" : "Early access soon"}</span>
                   <ArrowRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
                 </Badge>
               </Link>

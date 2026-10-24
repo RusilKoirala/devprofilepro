@@ -60,7 +60,7 @@ export function SyncReview({ updatedIds, changes }: { updatedIds: string[]; chan
       {open.length > 0 && (
         <div className="space-y-2">
           <p className="text-sm font-medium">Details that changed</p>
-          <div className="divide-y divide-border rounded-lg border border-border">
+          <div className="divide-y divide-border rounded-xl bg-card">
             {open.map((c) => {
               const key = `${c.item_id}:${c.field}`
               return (
@@ -90,7 +90,7 @@ export function SyncReview({ updatedIds, changes }: { updatedIds: string[]; chan
       )}
 
       {openProposals.map((p) => (
-        <div key={p.itemId} className="rounded-lg border border-border">
+        <div key={p.itemId} className="rounded-xl bg-card">
           <p className="border-b border-border px-3 py-2 text-sm font-medium">{p.title}</p>
           <div className="grid gap-px bg-border text-sm sm:grid-cols-2">
             <Lines label="Now" lines={p.before} muted />

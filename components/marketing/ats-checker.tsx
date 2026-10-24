@@ -19,7 +19,7 @@ type Result = AtsReport & { keywords: KeywordMatch | null; fileName: string; che
 
 const ICON: Record<AtsStatus, React.ReactNode> = {
   pass: <CheckCircle2 className="size-5 text-emerald-400" />,
-  warn: <AlertTriangle className="size-5 text-amber-400" />,
+  warn: <AlertTriangle className="size-5 text-signal" />,
   fail: <XCircle className="size-5 text-red-400" />,
 }
 
@@ -81,7 +81,7 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <SpotlightCard spotlightColor="rgba(255, 255, 255, 0.08)" className="rounded-3xl border bg-card/60 p-5 md:p-7">
+      <SpotlightCard spotlightColor="rgba(255, 255, 255, 0.08)" className="rounded-[2rem] bg-card p-5 md:p-7">
         <div className="relative space-y-4">
           <button
             type="button"
@@ -91,10 +91,10 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
             onDrop={(e) => { e.preventDefault(); setDragging(false); pick(e.dataTransfer.files?.[0]) }}
             className={cn(
               "flex w-full flex-col items-center gap-3 rounded-2xl border border-dashed px-6 py-10 text-center transition-colors",
-              dragging ? "border-foreground/40 bg-white/[0.04]" : "border-border hover:border-foreground/25 hover:bg-white/[0.02]"
+              dragging ? "border-foreground/40 bg-foreground/[0.04]" : "border-border hover:border-foreground/25 hover:bg-foreground/[0.02]"
             )}
           >
-            <span className="grid size-12 place-items-center rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
+            <span className="grid size-12 place-items-center rounded-2xl bg-foreground/[0.05] ring-1 ring-foreground/10">
               {file ? <FileText className="size-5" /> : <Upload className="size-5" />}
             </span>
             {file ? (
@@ -125,7 +125,7 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
           <div aria-live="polite" className="sr-only">{busy ? "Checking your resume" : result ? `Report ready for ${result.fileName}` : ""}</div>
           {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
 
-          <Button size="lg" onClick={check} disabled={busy} className="group h-11 w-full rounded-full text-[15px] shadow-[0_0_0_1px_rgba(255,255,255,0.1),0_8px_30px_-6px_rgba(255,255,255,0.35)]">
+          <Button size="lg" onClick={check} disabled={busy} className="group h-11 w-full rounded-full text-[15px]">
             {busy ? <Spinner /> : <ScanText />} {busy ? "Checking…" : "Check my resume"}
           </Button>
           <p className="text-center text-xs text-muted-foreground">Free, no sign-up. Your file is read once and never stored.</p>
@@ -154,10 +154,10 @@ function Report({ result, onReset, cta }: { result: Result; onReset: () => void;
       <p className="text-sm text-muted-foreground">
         Report for <span className="text-foreground">{result.fileName}</span>, checked at {new Date(result.checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
       </p>
-      <div className={cn("flex flex-wrap items-center gap-6 rounded-3xl border p-6 md:p-8", good ? "border-emerald-400/20 bg-emerald-400/[0.04]" : passed ? "border-amber-400/20 bg-amber-400/[0.04]" : "border-red-400/20 bg-red-400/[0.04]")}>
+      <div className={cn("flex flex-wrap items-center gap-6 rounded-3xl border p-6 md:p-8", good ? "border-emerald-400/20 bg-emerald-400/[0.04]" : passed ? "border-signal/20 bg-signal/[0.04]" : "border-red-400/20 bg-red-400/[0.04]")}>
         <ScoreRing score={result.score} passed={good} />
         <div className="min-w-0 flex-1">
-          <Badge variant="outline" className={cn("rounded-full font-normal", good ? "border-emerald-400/30 text-emerald-300" : passed ? "border-amber-400/30 text-amber-300" : "border-red-400/30 text-red-300")}>
+          <Badge variant="outline" className={cn("rounded-full font-normal", good ? "border-emerald-400/30 text-emerald-300" : passed ? "border-signal/30 text-signal" : "border-red-400/30 text-red-300")}>
             {passed ? "Text extracts cleanly" : "Almost no text extracted"}
           </Badge>
           <h2 className="mt-3 text-2xl font-semibold tracking-tight">
@@ -180,7 +180,7 @@ function Report({ result, onReset, cta }: { result: Result; onReset: () => void;
         </div>
       </div>
 
-      <div className="divide-y divide-border overflow-hidden rounded-3xl border bg-card/60">
+      <div className="divide-y divide-border overflow-hidden rounded-[2rem] bg-card">
         {result.checks.map((c) => (
           <div key={c.id} className="flex gap-4 p-5">
             <span className="mt-0.5 shrink-0">{ICON[c.status]}</span>
@@ -194,7 +194,7 @@ function Report({ result, onReset, cta }: { result: Result; onReset: () => void;
       </div>
 
       {result.keywords && (
-        <div className="rounded-3xl border bg-card/60 p-6">
+        <div className="rounded-[2rem] bg-card p-6">
           <div className="flex items-baseline justify-between gap-3">
             <h3 className="font-medium">Job post keywords</h3>
             <span className="text-sm tabular-nums text-muted-foreground">{result.keywords.found.length} of {result.keywords.found.length + result.keywords.missing.length} · {result.keywords.percent}%</span>
@@ -209,7 +209,7 @@ function Report({ result, onReset, cta }: { result: Result; onReset: () => void;
         </div>
       )}
 
-      <Collapsible className="rounded-3xl border bg-card/60">
+      <Collapsible className="rounded-[2rem] bg-card">
         <CollapsibleTrigger className="group flex w-full items-center justify-between p-6 text-left">
           <span>
             <span className="block font-medium">What an ATS reads</span>
@@ -222,7 +222,7 @@ function Report({ result, onReset, cta }: { result: Result; onReset: () => void;
         </CollapsibleContent>
       </Collapsible>
 
-      <SpotlightCard spotlightColor="rgba(255, 255, 255, 0.12)" className="rounded-3xl border bg-card/60 p-6 text-center md:p-10">
+      <SpotlightCard spotlightColor="rgba(255, 255, 255, 0.12)" className="rounded-[2rem] bg-card p-6 text-center md:p-10">
         <div className="relative">
           <h3 className="text-2xl font-semibold tracking-tight md:text-3xl">{passed && !fixes ? "Now make it say more" : "Get a resume that passes, from your real work"}</h3>
           <p className="mx-auto mt-2 max-w-lg text-muted-foreground">DevProfile writes a clean, single-column resume from your GitHub and old resume, in a format every ATS reads. Free to build and download.</p>
@@ -244,7 +244,7 @@ function ScoreRing({ score, passed }: { score: number; passed: boolean }) {
   return (
     <div className="relative grid size-24 shrink-0 place-items-center">
       <svg viewBox="0 0 80 80" className="absolute inset-0 -rotate-90">
-        <circle cx="40" cy="40" r={r} fill="none" strokeWidth="6" className="stroke-white/10" />
+        <circle cx="40" cy="40" r={r} fill="none" strokeWidth="6" className="stroke-foreground/10" />
         <motion.circle
           cx="40" cy="40" r={r} fill="none" strokeWidth="6" strokeLinecap="round"
           className={passed ? "stroke-emerald-400" : "stroke-red-400"}

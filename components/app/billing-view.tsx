@@ -45,10 +45,10 @@ export function BillingView({ usage, email, upgraded }: { usage: PlanUsage; emai
         <div className="mt-6 space-y-3">
           {upgraded && <PaymentPending pro={pro} />}
           {usage.unavailable && (
-            <p role="alert" className="text-sm text-amber-400">We couldn&apos;t load your plan just now, so this page may be out of date. Refresh to try again.</p>
+            <p role="alert" className="text-sm text-signal">We couldn&apos;t load your plan just now, so this page may be out of date. Refresh to try again.</p>
           )}
           {usage.fastModel && (
-            <p className="text-sm text-amber-400">You&apos;ve used far more AI than usual today, so it&apos;s running on the faster model until midnight UTC. Everything still works; results may be a little less careful.</p>
+            <p className="text-sm text-signal">You&apos;ve used far more AI than usual today, so it&apos;s running on the faster model until midnight UTC. Everything still works; results may be a little less careful.</p>
           )}
         </div>
       )}
@@ -56,15 +56,15 @@ export function BillingView({ usage, email, upgraded }: { usage: PlanUsage; emai
       <Separator className="my-8" />
 
       <Row title="Plan" description="What you're on and what it costs.">
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="overflow-hidden rounded-2xl bg-card">
           <div className="flex items-start justify-between gap-4 p-5">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-base font-medium">{pro ? (b?.source === "pass" ? "Pro · 3-month pass" : "Pro · Monthly") : PLANS.free.name}</p>
-                {b?.pastDue && <Badge variant="outline" className="rounded-full border-amber-400/30 font-normal text-amber-400">Payment failed</Badge>}
+                {b?.pastDue && <Badge variant="outline" className="rounded-full border-signal/30 font-normal text-signal">Payment failed</Badge>}
                 {b?.cancelAtPeriodEnd && <Badge variant="outline" className="rounded-full font-normal text-muted-foreground">Cancelled</Badge>}
               </div>
-              <p className={`mt-1 text-sm ${b?.pastDue ? "text-amber-400" : "text-muted-foreground"}`}>
+              <p className={`mt-1 text-sm ${b?.pastDue ? "text-signal" : "text-muted-foreground"}`}>
                 {b ? status(b) : `${PLANS.free.limits.tailored} tailored resumes, ${PLANS.free.limits.fixes} AI fixes and ${PLANS.free.limits.updates} syncs each month.`}
               </p>
             </div>
@@ -89,17 +89,17 @@ export function BillingView({ usage, email, upgraded }: { usage: PlanUsage; emai
       <Separator className="my-8" />
 
       <Row title="Usage" description={pro ? "Unlimited on Pro. Shown so you know what you've used." : `Refills on ${date(usage.resetsAt, false)}. Only AI work that succeeded is counted.`}>
-        <div className="divide-y divide-border rounded-xl border border-border bg-card">
+        <div className="divide-y divide-border rounded-2xl bg-card">
           {states.map((s) => (
             <div key={s.key} className="px-5 py-4">
               <div className="flex items-baseline justify-between gap-3 text-sm">
                 <span>{ALLOWANCE_LABELS[s.key].title}</span>
-                <span className={`tabular-nums ${s.state === "out" ? "text-amber-400" : "text-muted-foreground"}`}>
+                <span className={`tabular-nums ${s.state === "out" ? "text-signal" : "text-muted-foreground"}`}>
                   {s.limit == null ? `${s.used} used` : `${Math.min(s.used, s.limit)} of ${s.limit}`}
                 </span>
               </div>
               {s.limit != null && (
-                <Progress value={Math.min(100, (s.used / s.limit) * 100)} className={`mt-2.5 h-1 ${s.state === "out" ? "[&>[data-slot=progress-indicator]]:bg-amber-400" : ""}`} />
+                <Progress value={Math.min(100, (s.used / s.limit) * 100)} className={`mt-2.5 h-1 ${s.state === "out" ? "[&>[data-slot=progress-indicator]]:bg-signal" : ""}`} />
               )}
             </div>
           ))}
@@ -110,7 +110,7 @@ export function BillingView({ usage, email, upgraded }: { usage: PlanUsage; emai
         <>
           <Separator className="my-8" />
           <Row title="Compare plans" description="Editing, checks and downloads are free on both, always.">
-            <div className="overflow-hidden rounded-xl border border-border bg-card text-sm">
+            <div className="overflow-hidden rounded-2xl bg-card text-sm">
               <div className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-x-3 border-b border-border px-5 py-2.5 text-xs text-muted-foreground">
                 <span />
                 <span className="text-right">Free</span>
@@ -131,7 +131,7 @@ export function BillingView({ usage, email, upgraded }: { usage: PlanUsage; emai
       <Separator className="my-8" />
 
       <Row title="Good to know" description="The terms, in plain words.">
-        <dl className="divide-y divide-border rounded-xl border border-border bg-card text-sm">
+        <dl className="divide-y divide-border rounded-2xl bg-card text-sm">
           <Term label="Cancelling">Monthly cancels in one click here. You keep Pro until the end of the month you paid for. The pass just ends.</Term>
           <Term label="Your work">Going back to Free never deletes anything. Every resume and downloaded PDF stays.</Term>
           <Term label="Payments">Handled by Dodo Payments. We never see or store your card.</Term>

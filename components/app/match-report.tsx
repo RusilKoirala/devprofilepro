@@ -20,9 +20,9 @@ export interface MatchView {
 
 const ICON = {
   covered: <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-400" />,
-  partial: <CircleHelp className="mt-0.5 size-3.5 shrink-0 text-amber-400" />,
-  cut: <Scissors className="mt-0.5 size-3.5 shrink-0 text-amber-400" />,
-  lines_cut: <Scissors className="mt-0.5 size-3.5 shrink-0 text-amber-400" />,
+  partial: <CircleHelp className="mt-0.5 size-3.5 shrink-0 text-signal" />,
+  cut: <Scissors className="mt-0.5 size-3.5 shrink-0 text-signal" />,
+  lines_cut: <Scissors className="mt-0.5 size-3.5 shrink-0 text-signal" />,
   elsewhere: <CirclePlus className="mt-0.5 size-3.5 shrink-0 text-sky-400" />,
   missing: <CircleDashed className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />,
 }
@@ -60,7 +60,7 @@ export function MatchReport({
   return (
     <div className="space-y-4 text-sm">
       {legacy && (
-        <div className="rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 text-xs">
+        <div className="rounded-lg border border-signal/30 bg-signal/5 p-3 text-xs">
           <p className="text-foreground/90">This report was made before the current evidence checks.</p>
           <p className="mt-1 text-muted-foreground">Its explanations are hidden because they weren&apos;t checked against your facts, and its coverage is only approximate.</p>
           {onRecheck && (
@@ -127,7 +127,7 @@ export function MatchReport({
           <button type="button" onClick={() => setShowPost((s) => !s)} className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" aria-expanded={showPost}>
             {showPost ? "Hide the job post" : "Show the job post"}
           </button>
-          {showPost && <p className="mt-2 max-h-96 overflow-y-auto rounded-lg border border-border p-3 text-xs whitespace-pre-wrap text-muted-foreground">{match.description}</p>}
+          {showPost && <p className="mt-2 max-h-96 overflow-y-auto rounded-xl bg-card p-3 text-xs whitespace-pre-wrap text-muted-foreground">{match.description}</p>}
         </div>
       )}
       <p className="text-xs text-muted-foreground">

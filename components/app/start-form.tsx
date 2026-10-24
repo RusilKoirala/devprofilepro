@@ -127,7 +127,7 @@ export function StartForm({ githubLogin, sources, hasRecord, targetRole }: { git
 
   return (
     <form ref={formRef} onSubmit={onBuild} className="mt-8 space-y-6">
-      <fieldset disabled={running} className="space-y-2 rounded-2xl border border-border bg-card p-2">
+      <fieldset disabled={running} className="space-y-2 rounded-3xl bg-card p-2">
         <SourceRow icon={<Github />} title="GitHub" hint="Public repos, read-only. We read READMEs, languages and dependencies.">
           {githubLogin ? (
             <div className="flex items-center justify-between gap-4">
@@ -170,7 +170,7 @@ export function StartForm({ githubLogin, sources, hasRecord, targetRole }: { git
         </div>
 
         {stages && (
-          <ol aria-live="polite" aria-label="Build progress" className="space-y-3 rounded-2xl border border-border bg-card p-4">
+          <ol aria-live="polite" aria-label="Build progress" className="space-y-3 rounded-3xl bg-card p-4">
             {stages.map((s) => (
               <li key={s.label} className="flex items-start gap-3 text-sm">
                 <span className="mt-0.5 shrink-0">

@@ -13,7 +13,7 @@ export const metadata = {
   description: "Free to build and download your resume. Pro is $12 a month, or $29 for 3 months with no auto-renew.",
 }
 
-const textGradient = "bg-gradient-to-b from-white to-white/65 bg-clip-text text-transparent"
+const textGradient = "bg-gradient-to-b from-foreground to-foreground/65 bg-clip-text text-transparent"
 
 // The rules from docs/PRICING.md section 8, said plainly where people decide to pay.
 const promises = [
@@ -66,7 +66,7 @@ export default function PricingPage() {
   return (
     <>
       <section className="relative isolate overflow-hidden">
-        <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[40rem] [mask-image:linear-gradient(to_bottom,black_35%,transparent)]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 hidden h-[40rem] dark:block [mask-image:linear-gradient(to_bottom,black_35%,transparent)]">
           <LightRays
             raysOrigin="top-center"
             raysColor="#ffffff"
@@ -89,7 +89,7 @@ export default function PricingPage() {
           <div className="mx-auto max-w-2xl text-center">
             <Badge
               variant="outline"
-              className="h-8 gap-2 rounded-full border-white/10 bg-white/[0.03] py-1 pr-3 pl-1 text-sm font-normal shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur"
+              className="h-8 gap-2 rounded-full border-foreground/10 bg-foreground/[0.03] py-1 pr-3 pl-1 text-sm font-normal backdrop-blur"
             >
               <Badge className="rounded-full px-2.5">Free</Badge>
               <span className="text-muted-foreground">Build and download your resume at no cost</span>
@@ -120,7 +120,7 @@ export default function PricingPage() {
         <div className="mx-auto grid max-w-6xl px-4 py-16 sm:grid-cols-2 sm:px-6 md:py-20 lg:grid-cols-4">
           {promises.map(({ icon: Icon, title, body }) => (
             <div key={title} className="p-5">
-              <span className="grid size-9 place-items-center rounded-xl bg-white/[0.05] ring-1 ring-white/10">
+              <span className="grid size-9 place-items-center rounded-xl bg-foreground/[0.05] ring-1 ring-foreground/10">
                 <Icon className="size-4" />
               </span>
               <h2 className="mt-4 font-medium tracking-tight">{title}</h2>
@@ -153,7 +153,7 @@ export default function PricingPage() {
       <section className="px-4 pb-24 sm:px-6 md:pb-32">
         <SpotlightCard
           spotlightColor="rgba(255, 255, 255, 0.12)"
-          className="mx-auto max-w-5xl rounded-3xl border bg-card/60 px-6 py-16 text-center md:py-24"
+          className="mx-auto max-w-5xl rounded-[2rem] bg-card px-6 py-16 text-center md:py-24"
         >
           <div className="relative">
             <h2 className="mx-auto max-w-2xl text-4xl font-semibold tracking-[-0.03em] text-balance md:text-5xl">
@@ -165,7 +165,7 @@ export default function PricingPage() {
             <Button
               asChild
               size="lg"
-              className="group mt-10 h-11 rounded-full px-6 text-[15px] shadow-[0_0_0_1px_rgba(255,255,255,0.1),0_8px_30px_-6px_rgba(255,255,255,0.35)]"
+              className="group mt-10 h-11 rounded-full px-6 text-[15px]"
             >
               <Link href={cta.href}>
                 {cta.label}
