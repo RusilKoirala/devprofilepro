@@ -7,15 +7,16 @@ const columns = [
   {
     title: "Product",
     links: [
-      { href: "#product", label: "Product" },
-      { href: "#features", label: "Features" },
-      { href: "#how-it-works", label: "How it works" },
+      { href: "/#product", label: "Product" },
+      { href: "/#features", label: "Features" },
+      { href: "/#how-it-works", label: "How it works" },
+      { href: "/pricing", label: "Pricing" },
     ],
   },
   {
     title: "Company",
     links: [
-      { href: "#faq", label: "FAQ" },
+      { href: "/#faq", label: "FAQ" },
       { href: "mailto:dev@rusil.me", label: "Contact" },
     ],
   },

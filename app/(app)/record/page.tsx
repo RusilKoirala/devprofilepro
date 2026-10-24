@@ -29,8 +29,12 @@ export default async function RecordPage() {
     github: profile
       ? { login: profile.label.replace("GitHub profile: ", ""), repos: record.sources.filter((s) => s.kind === "github" && s.meta?.repo_id).length, synced: ago(profile.fetched_at) }
       : null,
-    githubLogin: user?.externalAccounts.find((a) => a.provider.includes("github"))?.username ?? null,
-    linkedin: { url: record.items.find((i) => i.type === "contact")?.data.linkedin ?? null, imported: linkedinPdf ? ago(linkedinPdf.fetched_at) : null },
+    githubLogin: user?.externalAccounts.find((a) => a.provider.includes("github") && a.verification?.status === "verified")?.username ?? null,
+    linkedin: {
+      url: record.items.find((i) => i.type === "contact")?.data.linkedin ?? null,
+      imported: linkedinPdf ? ago(linkedinPdf.fetched_at) : null,
+      format: linkedinPdf ? (linkedinPdf.meta?.format === "zip" ? "zip" : "pdf") : null,
+    },
     files: {
       pdfs: record.sources.filter((s) => s.kind === "resume_pdf").length,
       notes: record.sources.filter((s) => s.kind === "paste").length,

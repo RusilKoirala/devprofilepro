@@ -1,6 +1,7 @@
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { extractRecord } from "@/lib/ai/extract"
+import { generateInterview, interviewItems } from "@/lib/ai/interview"
 import { generateQuestions, MAX_QUESTIONS } from "@/lib/ai/questions"
 import { writeBullets } from "@/lib/ai/write"
 import { loadRecord, loadResume, type CareerRecord } from "@/lib/record/db"
@@ -155,21 +156,68 @@ export async function refreshQuestions(supabase: SupabaseClient, userId: string)
   }
 }
 
+export interface InterviewCard {
+  id: string
+  item_id: string
+  item_title: string
+  kind: string
+  prompt: string
+  options: string[]
+}
+
+// ④ Interview (before writing): a few tappable questions about what the person built and what
+// changed, on their strongest entries. Bare ownership questions from the import are upgraded in
+// place (with options) rather than asked twice. Returns every open question on those entries.
+export async function queueInterview(supabase: SupabaseClient, userId: string): Promise<InterviewCard[]> {
+  const record = await loadRecord(supabase)
+  const picked = interviewItems(record.items)
+  const pickedIds = new Set(picked.map((i) => i.id))
+  const openOwnership = new Map(record.questions.filter((q) => q.status === "open" && q.kind === "ownership").map((q) => [q.item_id, q]))
+  const asked = record.questions.filter((q) => !(q.status === "open" && q.kind === "ownership"))
+  const fresh = await generateInterview(userId, record.items, record.facts, asked)
+
+  const known = new Set(record.questions.map((q) => q.prompt.toLowerCase()))
+  const inserts: { item_id: string; prompt: string; kind: string; options: string[] }[] = []
+  for (const q of fresh) {
+    const existing = (q.kind === "ownership" || q.kind === "built") && openOwnership.get(q.item_id)
+    if (existing) {
+      const { error } = await supabase.from("questions").update({ prompt: q.prompt, options: q.options }).eq("id", existing.id)
+      if (error) throw new Error(error.message)
+      openOwnership.delete(q.item_id)
+    } else if (!known.has(q.prompt.toLowerCase())) {
+      inserts.push(q)
+      known.add(q.prompt.toLowerCase())
+    }
+  }
+  if (inserts.length) {
+    const { error } = await supabase.from("questions").insert(inserts)
+    if (error) throw new Error(error.message)
+  }
+
+  const after = await loadRecord(supabase)
+  const titles = new Map(after.items.map((i) => [i.id, itemTitle(i)]))
+  const order = new Map(picked.map((i, n) => [i.id, n]))
+  return after.questions
+    .filter((q) => q.status === "open" && pickedIds.has(q.item_id))
+    .sort((a, b) => order.get(a.item_id)! - order.get(b.item_id)!)
+    .map((q) => ({ id: q.id, item_id: q.item_id, item_title: titles.get(q.item_id) ?? "", kind: q.kind ?? "", prompt: q.prompt, options: q.options ?? [] }))
+}
+
 // ⑤ Write (A3) for some or all shown items, replacing bullets the user didn't edit.
 export async function writeItems(
   supabase: SupabaseClient,
   userId: string,
   record: CareerRecord,
-  opts: { itemIds?: string[]; targetRole?: string; releaseEdits?: boolean; instruction?: string } = {}
+  opts: { itemIds?: string[]; targetRole?: string; releaseEdits?: boolean; instruction?: string; purpose?: "fix" } = {}
 ) {
-  const { itemIds, targetRole, releaseEdits = false, instruction } = opts
+  const { itemIds, targetRole, releaseEdits = false, instruction, purpose } = opts
   const items = record.items.filter((i) => i.status !== "hidden" && (!itemIds || itemIds.includes(i.id)))
   const keep = record.bullets.filter((b) => b.user_edited)
   const keepItems = new Set(keep.map((b) => b.item_id))
   // Rebuilding writes only newly imported items. Existing wording changes only
   // when the user answers a question or explicitly requests regeneration.
   const toWrite = items.filter((i) => (releaseEdits || !keepItems.has(i.id)) && (itemIds || !record.bullets.some((b) => b.item_id === i.id)))
-  const { headline, bullets } = await writeBullets({ userId, items: toWrite, facts: record.facts, keep: releaseEdits ? [] : keep, targetRole, instruction })
+  const { headline, bullets } = await writeBullets({ userId, items: toWrite, facts: record.facts, keep: releaseEdits ? [] : keep, targetRole, instruction, purpose })
 
   const writtenIds = [...new Set(bullets.map((b) => b.item_id))]
   if (writtenIds.length) {
@@ -225,13 +273,17 @@ export async function fitAndSave(supabase: SupabaseClient, resumeId: string, lay
 // extract (buildRecord) → write (writeBase) → questions (refreshQuestions) → fit (fitBase).
 
 // ⑤ Write bullets for new items and create/update the base resume's layout.
-export async function writeBase(supabase: SupabaseClient, userId: string, targetRole?: string): Promise<{ resumeId: string; written: number }> {
+export async function writeBase(supabase: SupabaseClient, userId: string, targetRole?: string, answeredItemIds: string[] = []): Promise<{ resumeId: string; written: number }> {
   const record = await loadRecord(supabase)
   if (!record.items.length) throw new Error("We couldn't verify any facts. Add clearer notes or another source and try again.")
   const { data: existing, error: existingError } = await supabase.from("resumes").select("id,layout").eq("kind", "base").maybeSingle()
   if (existingError) throw new Error(existingError.message)
   const role = targetRole?.trim() || existing?.layout?.target_role || undefined
-  const { headline, written } = await writeItems(supabase, userId, record, { targetRole: role })
+  const { headline, written: writtenNew } = await writeItems(supabase, userId, record, { targetRole: role })
+  // Entries that already had bullets are rewritten only when the interview added something to them.
+  let written = writtenNew
+  const answered = answeredItemIds.filter((id) => record.bullets.some((b) => b.item_id === id))
+  if (answered.length) written += (await writeItems(supabase, userId, await loadRecord(supabase), { itemIds: answered, targetRole: role })).written
   const fresh = await loadRecord(supabase)
   const base = defaultLayout(fresh, existing?.layout?.headline || headline)
   const itemOrder = existing?.layout?.item_order as string[] | undefined

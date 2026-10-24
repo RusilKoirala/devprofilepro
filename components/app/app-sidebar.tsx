@@ -4,8 +4,12 @@ import Link from "next/link"
 import { useState } from "react"
 import { usePathname } from "next/navigation"
 import { UserButton, useUser } from "@clerk/nextjs"
-import { ChevronRight, Download, FileText, LayoutDashboard, Library, Plus } from "lucide-react"
+import { ChevronRight, Download, FileText, LayoutDashboard, Library, Plus, Sparkles } from "lucide-react"
 import { LogoMark } from "@/components/marketing/logo"
+import { UpgradeDialog } from "@/components/app/upgrade-dialog"
+import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
+import { allowanceStates, type PlanUsage } from "@/lib/plans"
 import {
   Sidebar,
   SidebarContent,
@@ -31,7 +35,7 @@ export interface ResumeLink {
   kind: "base" | "tailored"
 }
 
-export function AppSidebar({ resumes }: { resumes: ResumeLink[] }) {
+export function AppSidebar({ resumes, usage }: { resumes: ResumeLink[]; usage: PlanUsage | null }) {
   const pathname = usePathname()
 
   return (
@@ -65,8 +69,8 @@ export function AppSidebar({ resumes }: { resumes: ResumeLink[] }) {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname === "/start"} tooltip="Add sources">
-                  <Link href="/start">
+                <SidebarMenuButton asChild isActive={pathname === "/start/sources"} tooltip="Add sources">
+                  <Link href="/start/sources">
                     <Plus />
                     <span>Add sources</span>
                   </Link>
@@ -86,10 +90,47 @@ export function AppSidebar({ resumes }: { resumes: ResumeLink[] }) {
       </SidebarContent>
 
       <SidebarFooter>
+        {usage?.plan === "free" && <UpgradeCard usage={usage} />}
         <UserRow />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  )
+}
+
+// Always in view on Free: how many tailored resumes are left, and one click to Pro.
+function UpgradeCard({ usage }: { usage: PlanUsage }) {
+  const tailored = allowanceStates(usage).find((a) => a.key === "tailored")!
+  const reason =
+    tailored.state === "out"
+      ? `You've used all ${tailored.limit} free tailored resumes this month.`
+      : `You have ${tailored.left} of ${tailored.limit} free tailored resumes left this month.`
+  return (
+    <>
+      <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/40 p-3 group-data-[collapsible=icon]:hidden">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-medium">Free plan</span>
+          <span className={tailored.state === "ok" ? "text-sidebar-foreground/60" : "text-amber-400"}>
+            {tailored.left} of {tailored.limit} tailored left
+          </span>
+        </div>
+        <Progress
+          value={((tailored.limit! - tailored.left!) / tailored.limit!) * 100}
+          className={`mt-2 h-1 ${tailored.state === "ok" ? "" : "[&>[data-slot=progress-indicator]]:bg-amber-400"}`}
+        />
+        <p className="mt-2.5 text-xs leading-relaxed text-sidebar-foreground/60">Applying a lot? Pro tailors a resume for every job.</p>
+        <UpgradeDialog reason={reason}>
+          <Button size="sm" className="mt-3 h-8 w-full rounded-full"><Sparkles /> Upgrade to Pro</Button>
+        </UpgradeDialog>
+      </div>
+      <SidebarMenu className="hidden group-data-[collapsible=icon]:flex">
+        <SidebarMenuItem>
+          <UpgradeDialog reason={reason}>
+            <SidebarMenuButton tooltip="Upgrade to Pro"><Sparkles /></SidebarMenuButton>
+          </UpgradeDialog>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </>
   )
 }
 

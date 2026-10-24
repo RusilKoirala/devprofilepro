@@ -131,8 +131,8 @@ export function StartForm({ githubLogin, sources, hasRecord, targetRole }: { git
             <Input name="github" placeholder="GitHub username or profile URL" autoComplete="off" />
           )}
         </SourceRow>
-        <SourceRow icon={<FileText />} title="Resume or LinkedIn PDF" hint="Up to 2 PDFs, 5 MB each. LinkedIn: More → Save to PDF.">
-          <Input name="pdfs" type="file" accept="application/pdf" multiple />
+        <SourceRow icon={<FileText />} title="Resume or LinkedIn" hint="Up to 2 files: a resume PDF, LinkedIn's Save to PDF, or its data export ZIP (Settings → Data privacy → Get a copy of your data).">
+          <Input name="pdfs" type="file" accept="application/pdf,.zip,application/zip" multiple />
         </SourceRow>
         <SourceRow icon={<StickyNote />} title="Paste anything" hint="Portfolio text, project notes, courses, a job you did that isn't online.">
           <Textarea name="paste" rows={3} maxLength={20000} placeholder="Paste text here" />

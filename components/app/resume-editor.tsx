@@ -214,7 +214,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
               <DropdownMenuItem asChild><a href={`/api/tex/${data.resumeId}`}>Download .tex</a></DropdownMenuItem>
               <DropdownMenuItem onSelect={openInOverleaf}>Open in Overleaf</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild><Link href="/start">Add sources and update</Link></DropdownMenuItem>
+              <DropdownMenuItem asChild><Link href="/start/sources">Add sources and update</Link></DropdownMenuItem>
               <DropdownMenuItem asChild><a href="/api/data">Download my data (JSON)</a></DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

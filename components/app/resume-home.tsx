@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { ArrowRight, CheckCircle2, CircleDashed, CircleHelp, X, XCircle } from "lucide-react"
 import { NewResumePrompt } from "@/components/app/new-resume-prompt"
+import { UpgradeDialog } from "@/components/app/upgrade-dialog"
+import { allowanceStates, type PlanUsage } from "@/lib/plans"
 import { EditList, forModel } from "@/components/app/resume-chat"
 import { ResumeThumbnail } from "@/components/app/resume-thumbnail"
 import { LogoMark } from "@/components/marketing/logo"
@@ -52,7 +54,7 @@ type Turn = CreateTurn | EditTurn
 const STEPS = ["Matching your Career Record to the request", "Building the resume", "Fitting it on one page", "Checking it"]
 
 // /resume: a prompt to start a new resume, then a conversation-style timeline of what was done.
-export function ResumeHome({ firstName, resumes }: { firstName: string; resumes: ResumeCard[] }) {
+export function ResumeHome({ firstName, resumes, usage }: { firstName: string; resumes: ResumeCard[]; usage: PlanUsage }) {
   const router = useRouter()
   const { setOpen, isMobile, setOpenMobile } = useSidebar()
   const reduce = useReducedMotion()
@@ -176,6 +178,7 @@ export function ResumeHome({ firstName, resumes }: { firstName: string; resumes:
             suggestions={!chatting}
             placeholder={active ? `Ask for changes to “${active.title}”…` : chatting ? "Describe another resume to make…" : undefined}
           />
+          {!active && <TailoredAllowance usage={usage} />}
         </motion.div>
 
         <AnimatePresence initial={false}>
@@ -317,5 +320,23 @@ function ResultCard({ result, reduce }: { result: NonNullable<CreateTurn["result
         </div>
       </div>
     </motion.div>
+  )
+}
+
+// Under the prompt on Free: how many tailored resumes are left, at the moment one is being spent.
+// Limits aren't enforced during early access, so running out says so instead of blocking.
+function TailoredAllowance({ usage }: { usage: PlanUsage }) {
+  if (usage.plan !== "free") return null
+  const t = allowanceStates(usage).find((a) => a.key === "tailored")!
+  const reason = t.state === "out" ? `You've used all ${t.limit} free tailored resumes this month.` : `You have ${t.left} of ${t.limit} free tailored resumes left this month.`
+  return (
+    <p className={`mt-3 text-center text-xs ${t.state === "ok" ? "text-muted-foreground" : "text-amber-400"}`}>
+      {t.state === "out"
+        ? `You've used this month's ${t.limit} free tailored resumes. You can keep going during early access.`
+        : `${t.left} of ${t.limit} free tailored resumes left this month.`}{" "}
+      <UpgradeDialog reason={reason}>
+        <button type="button" className="font-medium text-foreground underline-offset-4 hover:underline">Unlimited with Pro</button>
+      </UpgradeDialog>
+    </p>
   )
 }

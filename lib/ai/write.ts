@@ -25,29 +25,39 @@ function flatten(out: z.infer<typeof WriteSchema>): WrittenBullet[] {
   return out.items.flatMap((i) => i.bullets.map((b) => ({ item_id: i.item_id, ...b })))
 }
 
-const MAX_WORDS = 28
-const WEAK_OPENER = /^(worked on|working on|responsible for|helped|assisted|involved in|participated in|tasked with)\b/i
+const MAX_WORDS = 30
+const WEAK_OPENER = /^(worked on|working on|responsible for|helped|assisted|involved in|participated in|tasked with|utilized)\b/i
 
-const SYSTEM = `You write resume bullets for a software developer from their Career Record, the way a senior engineer who reviews resumes would. Each <item> and <fact> has an id. Write bullets for every item in the budget list, grouped under that item's exact id, and cite the exact ids of the facts each bullet is built from. Never invent ids.
+const SYSTEM = `You write resume bullets for a software developer from their Career Record, the way a senior engineer who hires would want to read them. Each <item> and <fact> has an id. Write bullets for every item in the budget list, grouped under that item's exact id, and cite the exact ids of the facts each bullet is built from. Never invent ids.
 
 ${UNTRUSTED_NOTE}
 
-How a strong bullet reads: [past-tense verb] [what was built or changed] [with which technologies] [the result or scale, only if a cited fact gives one].
+Where the good material is:
+- Facts labelled "user" are the person's own answers ("What did you build in X: auth, payments", "How many people used X: 100-1k"). They say what THIS person did and what changed. Build the first bullet of an item on them whenever they exist.
+- Facts labelled "github" or "document" say what the project is and what it uses. Use them for the concrete technologies and scope, not as the whole bullet.
+
+A strong bullet: [specific past-tense verb] [the thing they built or changed] [with which technologies] [the result or scale, only if a cited fact gives one].
+  Weak (restates the README): "A web app that lets users track their expenses, built with React and Firebase."
+  Strong: "Built expense tracking with React and Firebase Auth, adding receipt photo upload and monthly budget alerts."
   Weak: "Worked on the backend of the app using various technologies."
-  Strong: "Built a FastAPI service with PostgreSQL that handles sign-up and billing for ~200 paying users."
+  Strong: "Designed a FastAPI and PostgreSQL billing service that handles sign-up and payments for 100-1k users."
+  With an answer "Hardest problem you solved in X: race conditions when two users edit the same doc": "Fixed conflicting edits between simultaneous users by adding version checks to the Socket.IO sync layer."
 
 Rules:
-- Start with a specific past-tense verb (Built, Shipped, Designed, Cut, Migrated, Automated, Wrote, Added, Replaced…). Never start with "Worked on", "Responsible for", "Helped", "Assisted", "Involved in" or "Participated in".
-- Aim for 14-22 words. One idea per bullet. Don't repeat a fact across bullets, and don't restate the item's name.
-- Put the strongest, most specific bullet first in each item. Combine small related facts into one bullet rather than writing thin ones.
-- Name the concrete technologies from the facts inside the sentence, not as a trailing list.
-- Vary the opening verb: no two bullets on the whole resume should start with the same word when you can avoid it.
-- Only say what the cited facts say. No number unless a cited fact has that number. Keep ranges and "~" exactly as in the fact (e.g. "100-1k users" stays "100-1k").
-- No filler: "various", "multiple features", "etc.", "successfully", "robust", "scalable" (unless a fact shows scale).
+- Start with a specific past-tense verb (Built, Shipped, Designed, Cut, Migrated, Automated, Wrote, Added, Replaced, Fixed…). Never "Worked on", "Responsible for", "Helped", "Assisted", "Involved in", "Participated in", "Utilized".
+- 12-24 words. One idea per bullet. Don't repeat a fact across bullets and don't restate the item's name.
+- Strongest, most specific bullet first. Merge thin related facts into one bullet rather than writing two weak ones. Fewer strong bullets beat the full budget of weak ones.
+- Technologies go inside the sentence, not as a trailing list.
+- Vary the opening verb across the whole resume.
+- Only say what the cited facts say. No number unless a cited fact has that number. Keep ranges and "~" exactly as in the fact ("100-1k users" stays "100-1k").
+- On team work, claim only the parts the user's answers say were theirs.
+- No filler: "various", "multiple features", "etc.", "successfully", "robust", "scalable" (unless a fact shows scale), "seamless", "user-friendly".
 - Never use: ${BANNED_WORDS.join(", ")}.
 - Bullets marked "keep" were written by the user: don't output new bullets for those items unless asked.
 - If a target role is given, lead each item with the facts most relevant to it. Never add skills or claims the facts don't contain.
 - headline: a title the person has actually held (from a job item), or "Software Developer". Never invent a title.`
+
+const REPAIR_NOTE = "Some bullets you wrote failed the checks below. Rewrite only those items: output each listed item with its full set of bullets. Fix every problem named; keep what was good."
 
 function rangesIn(text: string): string[] {
   return (text.match(/\d[\d,.]*\s*[kKmM]?\s*[-–—]\s*\d[\d,.]*\s*[kKmM+]?/g) ?? []).map((r) => r.replace(/[\s,]/g, "").replace(/[–—]/g, "-").toLowerCase())
@@ -82,6 +92,8 @@ export async function writeBullets(opts: {
   targetRole?: string
   // A one-off direction from the user, e.g. "shorter" or "lead with impact".
   instruction?: string
+  // "fix" marks a rewrite the user asked for; it counts toward the plan's monthly AI fixes.
+  purpose?: "fix"
 }): Promise<{ headline: string; bullets: WrittenBullet[]; fallbacks: number }> {
   // A shared README describes the project, not this person's contribution.
   // Show its metadata in the partial draft, but wait for their answer to write
@@ -97,7 +109,6 @@ export async function writeBullets(opts: {
     factsByItem.get(f.item_id)!.set(f.id, f)
   }
   const ids = new Set(items.map((i) => i.id))
-  const budgetText = items.map((i) => `${i.id}: up to ${opts.budget?.get(i.id) ?? (i.type === "job" ? 4 : 3)} bullets`).join("\n")
 
   const check = (out: z.infer<typeof WriteSchema>) =>
     [
@@ -105,42 +116,56 @@ export async function writeBullets(opts: {
       ...flatten(out).flatMap((b) => (ids.has(b.item_id) ? checkBullet(b, factsByItem.get(b.item_id) ?? new Map()) : [`Unknown item_id ${b.item_id}`])),
     ]
 
-  const out = await generate({
-    step: "write",
-    userId: opts.userId,
-    schema: WriteSchema,
-    effort: "high",
-    maxTokens: 32000,
-    system: SYSTEM,
-    content: [
-      { type: "text", text: recordForPrompt(items, writingFacts, opts.keep ?? []) },
-      {
-        type: "text",
-        text: `Bullet budget per item:\n${budgetText}${opts.targetRole ? `\n\nTarget role: ${opts.targetRole}` : ""}${opts.instruction ? `\n\nThe user asked for this rewrite: ${opts.instruction}` : ""}`,
-      },
-    ],
-    check,
-    acceptOnLastAttempt: true,
-  })
+  const prompt = (budgetItems: Item[]) => [
+    { type: "text" as const, text: recordForPrompt(budgetItems, writingFacts, opts.keep ?? []) },
+    {
+      type: "text" as const,
+      text: `Bullet budget per item:\n${budgetItems.map((i) => `${i.id}: up to ${opts.budget?.get(i.id) ?? (i.type === "job" ? 4 : 3)} bullets`).join("\n")}${opts.targetRole ? `\n\nTarget role: ${opts.targetRole}` : ""}${opts.instruction ? `\n\nThe user asked for this rewrite: ${opts.instruction}` : ""}`,
+    },
+  ]
 
-  // Anything still failing falls back to the plain fact text, which is true by construction.
+  // One full draft, then one small call that rewrites only the items with failing lines.
+  const out = await generate({ step: "write", userId: opts.userId, schema: WriteSchema, effort: "high", maxTokens: 32000, system: SYSTEM, content: prompt(items), check, attempts: 1, acceptOnLastAttempt: true, logMeta: () => (opts.purpose ? { purpose: opts.purpose } : {}) })
+  const passing = (b: WrittenBullet) => ids.has(b.item_id) && !checkBullet(b, factsByItem.get(b.item_id) ?? new Map()).length
+  let drafted = flatten(out).filter((b) => ids.has(b.item_id))
+  const broken = items.filter((i) => !drafted.some((b) => b.item_id === i.id) || drafted.some((b) => b.item_id === i.id && !passing(b)))
+  let headline = out.headline
+  if (broken.length) {
+    const brokenIds = new Set(broken.map((i) => i.id))
+    const problems = check(out).filter((e) => broken.some((i) => e.includes(i.id)) || drafted.some((b) => brokenIds.has(b.item_id) && e.includes(b.text)))
+    try {
+      const repaired = await generate({
+        step: "write",
+        userId: opts.userId,
+        schema: WriteSchema,
+        effort: "high",
+        maxTokens: 16000,
+        system: SYSTEM,
+        content: [...prompt(broken), { type: "text", text: `${REPAIR_NOTE}\n- ${problems.join("\n- ")}` }],
+        check: (r) => flatten(r).filter((b) => brokenIds.has(b.item_id)).flatMap((b) => checkBullet(b, factsByItem.get(b.item_id) ?? new Map())),
+        attempts: 1,
+        acceptOnLastAttempt: true,
+      })
+      // Keep the better version of each broken item: whichever has more passing lines.
+      for (const id of brokenIds) {
+        const before = drafted.filter((b) => b.item_id === id)
+        const after = flatten(repaired).filter((b) => b.item_id === id)
+        if (after.filter(passing).length >= before.filter(passing).length && after.length) drafted = [...drafted.filter((b) => b.item_id !== id), ...after]
+      }
+      headline ||= repaired.headline
+    } catch {
+      // The repair is best effort; the fallbacks below keep a truthful draft.
+    }
+  }
+
+  // Failing lines are dropped. Only an item left with no line at all falls back to its strongest
+  // fact's plain text, which is true by construction.
   let fallbacks = 0
-  const bullets = flatten(out)
-    .filter((b) => ids.has(b.item_id))
-    .map((b) => {
-      const facts = factsByItem.get(b.item_id) ?? new Map<string, Fact>()
-      if (!checkBullet(b, facts).length) return b
-      fallbacks++
-      const first = b.fact_ids.map((id) => facts.get(id)).find(Boolean) ?? [...facts.values()][0]
-      return first ? { item_id: b.item_id, text: first.text, fact_ids: [first.id] } : null
-    })
-    .filter((b): b is WrittenBullet => b != null)
-
-  // The last model attempt may omit an item altogether. Preserve a truthful
-  // draft for it rather than silently dropping all of its evidence.
+  const bullets = drafted.filter(passing)
   for (const item of items) {
     if (bullets.some((b) => b.item_id === item.id)) continue
-    const first = factsByItem.get(item.id)?.values().next().value
+    const facts = [...(factsByItem.get(item.id)?.values() ?? [])]
+    const first = facts.find((f) => f.label === "user") ?? facts[0]
     if (first) {
       bullets.push({ item_id: item.id, text: first.text, fact_ids: [first.id] })
       fallbacks++
@@ -148,6 +173,6 @@ export async function writeBullets(opts: {
   }
 
   const jobTitles = opts.items.filter((i) => i.type === "job").map((i) => i.data.role?.toLowerCase())
-  const headline = jobTitles.includes(out.headline.toLowerCase()) ? out.headline : "Software Developer"
+  headline = jobTitles.includes(headline.toLowerCase()) ? headline : "Software Developer"
   return { headline, bullets, fallbacks }
 }

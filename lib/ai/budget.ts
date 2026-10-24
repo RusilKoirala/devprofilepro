@@ -1,5 +1,4 @@
 import "server-only"
-import { usdToCredits } from "@/lib/credits"
 import { createClient } from "@/lib/supabase/server"
 
 // Spend guards, on top of whatever hard limit is set in the provider's billing dashboard.
@@ -38,6 +37,6 @@ export async function checkBudget() {
     return // no session (e.g. evals): the server-wide cap still applies
   }
   if (spent >= USER_DAILY) {
-    throw new BudgetError(`You've used today's ${usdToCredits(USER_DAILY)} credits. Editing and downloads still work; credits refill at midnight UTC.`)
+    throw new BudgetError("You've hit today's AI limit. Editing and downloads still work, and it resets at midnight UTC.")
   }
 }

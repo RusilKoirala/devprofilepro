@@ -17,10 +17,11 @@ import { cn } from "@/lib/utils"
 import { Logo } from "./logo"
 
 const links = [
-  { href: "#product", label: "Product" },
-  { href: "#features", label: "Features" },
-  { href: "#how-it-works", label: "How it works" },
-  { href: "#faq", label: "FAQ" },
+  { href: "/#product", label: "Product" },
+  { href: "/#features", label: "Features" },
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/#faq", label: "FAQ" },
 ]
 
 // `auth` holds the Clerk sign-in / dashboard controls; absent when Clerk isn't configured.
@@ -64,7 +65,7 @@ export function Navbar({ auth }: { auth?: React.ReactNode }) {
             <div className="hidden items-center gap-2 sm:flex">{auth}</div>
           ) : (
             <Button asChild size="sm" variant="secondary" className="hidden rounded-full px-4 sm:inline-flex">
-              <Link href="#waitlist">Join the waitlist</Link>
+              <Link href="/#waitlist">Join the waitlist</Link>
             </Button>
           )}
 
@@ -98,7 +99,7 @@ export function Navbar({ auth }: { auth?: React.ReactNode }) {
                   <div className="flex items-center gap-2">{auth}</div>
                 ) : (
                   <Button asChild className="rounded-full" onClick={() => setOpen(false)}>
-                    <Link href="#waitlist">Join the waitlist</Link>
+                    <Link href="/#waitlist">Join the waitlist</Link>
                   </Button>
                 )}
               </nav>

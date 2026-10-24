@@ -2,8 +2,9 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server"
 import { isAppEnabled, PUBLIC_PATHS } from "@/lib/access"
 
-// Everything is private except the landing page, auth pages and the waitlist API.
-const isPublic = createRouteMatcher(["/", "/sign-in(.*)", "/sign-up(.*)", "/api/waitlist"])
+// Everything is private except the landing and pricing pages, auth pages, the waitlist API and the
+// Dodo webhook (it checks its own signature).
+const isPublic = createRouteMatcher(["/", "/pricing", "/sign-in(.*)", "/sign-up(.*)", "/api/waitlist", "/api/webhooks/dodo"])
 
 const clerk = clerkMiddleware(
   async (auth, request) => {
@@ -14,7 +15,7 @@ const clerk = clerkMiddleware(
 )
 
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
-  // Early access lock: nothing but the landing page and waitlist until APP_ENABLED=true.
+  // Early access lock: nothing but the landing page, pricing and waitlist until APP_ENABLED=true.
   if (!isAppEnabled()) {
     if (PUBLIC_PATHS.has(request.nextUrl.pathname)) return NextResponse.next()
     return new NextResponse("Not found", { status: 404 })
