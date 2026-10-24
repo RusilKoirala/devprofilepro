@@ -121,6 +121,7 @@ export interface ResumeRow {
   layout: ResumeLayout
   cut_log: CutEntry[]
   updated_at: string
+  archived_at?: string | null
 }
 
 export function itemTitle(item: Pick<Item, "type" | "data">): string {

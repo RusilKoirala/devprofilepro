@@ -34,7 +34,7 @@ export async function loadRecord(supabase: SupabaseClient): Promise<CareerRecord
 }
 
 export async function loadResume(supabase: SupabaseClient, id: string): Promise<ResumeRow | null> {
-  const { data } = await supabase.from("resumes").select("id,kind,job_id,title,layout,cut_log,updated_at").eq("id", id).maybeSingle()
+  const { data } = await supabase.from("resumes").select("id,kind,job_id,title,layout,cut_log,updated_at,archived_at").eq("id", id).maybeSingle()
   return data as ResumeRow | null
 }
 

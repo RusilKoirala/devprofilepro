@@ -1,0 +1,361 @@
+{
+  "name": "Tailoring a long record (audit F01: evidence on the wrong item)",
+  "sources": [],
+  "tailor": {
+    "brief": "Backend Engineer at Hamro Pay. We build payment APIs in Go and Node.js on PostgreSQL. You will design and ship REST APIs, write tests, and run services in Docker. Nice to have: Kubernetes, monitoring and alerting experience.",
+    "items": [
+      {
+        "id": "contact",
+        "type": "contact",
+        "data": {
+          "name": "Sam Thapa",
+          "email": "sam@example.com",
+          "github": "https://github.com/samt"
+        },
+        "rank": 100,
+        "status": "shown"
+      },
+      {
+        "id": "freelance",
+        "type": "job",
+        "data": {
+          "role": "Full Stack Developer",
+          "company": "Freelance",
+          "start": "Jan 2023",
+          "end": "Present"
+        },
+        "rank": 70,
+        "status": "shown"
+      },
+      {
+        "id": "layer5",
+        "type": "job",
+        "data": {
+          "role": "Open Source Contributor",
+          "company": "Layer5",
+          "start": "Jun 2024",
+          "end": "Aug 2024"
+        },
+        "rank": 65,
+        "status": "shown"
+      },
+      {
+        "id": "pulseops",
+        "type": "project",
+        "data": {
+          "name": "PulseOps",
+          "tech": [
+            "Express",
+            "PostgreSQL",
+            "Docker"
+          ]
+        },
+        "rank": 80,
+        "status": "shown"
+      },
+      {
+        "id": "studentapi",
+        "type": "project",
+        "data": {
+          "name": "Student API",
+          "tech": [
+            "Go",
+            "Docker"
+          ]
+        },
+        "rank": 40,
+        "status": "shown"
+      },
+      {
+        "id": "studybuddy",
+        "type": "project",
+        "data": {
+          "name": "study-buddy",
+          "tech": [
+            "TypeScript",
+            "Next.js",
+            "Supabase"
+          ]
+        },
+        "rank": 60,
+        "status": "shown"
+      },
+      {
+        "id": "rustray",
+        "type": "project",
+        "data": {
+          "name": "rust-ray",
+          "tech": [
+            "Rust"
+          ]
+        },
+        "rank": 35,
+        "status": "shown"
+      },
+      {
+        "id": "chatapp",
+        "type": "project",
+        "data": {
+          "name": "campus-chat",
+          "tech": [
+            "Node.js",
+            "Socket.IO"
+          ]
+        },
+        "rank": 45,
+        "status": "shown"
+      },
+      {
+        "id": "portfolio",
+        "type": "project",
+        "data": {
+          "name": "Portfolio site",
+          "tech": [
+            "Astro"
+          ]
+        },
+        "rank": 20,
+        "status": "shown"
+      },
+      {
+        "id": "discord",
+        "type": "project",
+        "data": {
+          "name": "study-bot",
+          "tech": [
+            "Python"
+          ]
+        },
+        "rank": 30,
+        "status": "shown"
+      },
+      {
+        "id": "ml",
+        "type": "project",
+        "data": {
+          "name": "housing-prices",
+          "tech": [
+            "Python",
+            "pandas"
+          ]
+        },
+        "rank": 25,
+        "status": "shown"
+      },
+      {
+        "id": "todo",
+        "type": "project",
+        "data": {
+          "name": "todo-app",
+          "tech": [
+            "JavaScript"
+          ]
+        },
+        "rank": 5,
+        "status": "hidden"
+      },
+      {
+        "id": "edu",
+        "type": "education",
+        "data": {
+          "school": "Tribhuvan University",
+          "degree": "BSc Computer Science",
+          "start": "2022",
+          "end": "2026"
+        },
+        "rank": 50,
+        "status": "shown"
+      },
+      {
+        "id": "langs",
+        "type": "skills",
+        "data": {
+          "category": "Languages",
+          "skills": [
+            "Go",
+            "TypeScript",
+            "Python",
+            "Rust",
+            "SQL"
+          ]
+        },
+        "rank": 50,
+        "status": "shown"
+      },
+      {
+        "id": "tools",
+        "type": "skills",
+        "data": {
+          "category": "Tools",
+          "skills": [
+            "Docker",
+            "PostgreSQL",
+            "Node.js",
+            "Kubernetes",
+            "Git"
+          ]
+        },
+        "rank": 50,
+        "status": "shown"
+      },
+      {
+        "id": "hack",
+        "type": "award",
+        "data": {
+          "name": "HackKTM 2024, 2nd place"
+        },
+        "rank": 30,
+        "status": "shown"
+      }
+    ],
+    "facts": [
+      {
+        "id": "freelance-f0",
+        "item_id": "freelance",
+        "text": "Built Next.js marketing sites for 3 small-business clients"
+      },
+      {
+        "id": "freelance-f1",
+        "item_id": "freelance",
+        "text": "Added Stripe checkout to a client's booking site"
+      },
+      {
+        "id": "freelance-f2",
+        "item_id": "freelance",
+        "text": "Designed PostgreSQL schemas for client booking and invoicing data"
+      },
+      {
+        "id": "layer5-f0",
+        "item_id": "layer5",
+        "text": "Added role-based logging to the Meshery server, written in Go"
+      },
+      {
+        "id": "layer5-f1",
+        "item_id": "layer5",
+        "text": "Fixed permission handling in the Kubernetes adapter"
+      },
+      {
+        "id": "layer5-f2",
+        "item_id": "layer5",
+        "text": "Merged 6 pull requests reviewed by maintainers"
+      },
+      {
+        "id": "pulseops-f0",
+        "item_id": "pulseops",
+        "text": "Uptime monitoring platform built with Express and PostgreSQL"
+      },
+      {
+        "id": "pulseops-f1",
+        "item_id": "pulseops",
+        "text": "Sends alerts to Slack and email through webhooks when a check fails"
+      },
+      {
+        "id": "pulseops-f2",
+        "item_id": "pulseops",
+        "text": "Runs with Docker Compose for local development"
+      },
+      {
+        "id": "studentapi-f0",
+        "item_id": "studentapi",
+        "text": "REST API for course enrolment written in Go"
+      },
+      {
+        "id": "studentapi-f1",
+        "item_id": "studentapi",
+        "text": "Ships with a Dockerfile and is deployed on Fly.io"
+      },
+      {
+        "id": "studentapi-f2",
+        "item_id": "studentapi",
+        "text": "Unit tests with go test cover the enrolment handlers"
+      },
+      {
+        "id": "studybuddy-f0",
+        "item_id": "studybuddy",
+        "text": "Flashcard app with SM-2 spaced repetition"
+      },
+      {
+        "id": "studybuddy-f1",
+        "item_id": "studybuddy",
+        "text": "Google sign-in and CSV deck import"
+      },
+      {
+        "id": "rustray-f0",
+        "item_id": "rustray",
+        "text": "Ray tracer following Ray Tracing in One Weekend"
+      },
+      {
+        "id": "rustray-f1",
+        "item_id": "rustray",
+        "text": "Multithreaded rendering with rayon"
+      },
+      {
+        "id": "chatapp-f0",
+        "item_id": "chatapp",
+        "text": "Real-time chat rooms for campus clubs with Socket.IO"
+      },
+      {
+        "id": "chatapp-f1",
+        "item_id": "chatapp",
+        "text": "Message history stored in MongoDB"
+      },
+      {
+        "id": "portfolio-f0",
+        "item_id": "portfolio",
+        "text": "Personal site built with Astro"
+      },
+      {
+        "id": "discord-f0",
+        "item_id": "discord",
+        "text": "Discord bot in Python that posts daily study reminders"
+      },
+      {
+        "id": "ml-f0",
+        "item_id": "ml",
+        "text": "Notebook predicting housing prices with pandas and scikit-learn"
+      },
+      {
+        "id": "todo-f0",
+        "item_id": "todo",
+        "text": "Tutorial todo app from create-react-app"
+      },
+      {
+        "id": "edu-f0",
+        "item_id": "edu",
+        "text": "BSc Computer Science, expected 2026"
+      },
+      {
+        "id": "langs-f0",
+        "item_id": "langs",
+        "text": "Languages: Go, TypeScript, Python, Rust, SQL"
+      },
+      {
+        "id": "tools-f0",
+        "item_id": "tools",
+        "text": "Tools: Docker, PostgreSQL, Node.js, Kubernetes, Git"
+      },
+      {
+        "id": "hack-f0",
+        "item_id": "hack",
+        "text": "Second place at HackKTM 2024 with a bus-tracking app"
+      }
+    ],
+    "expect": {
+      "include": [
+        "studentapi",
+        "pulseops",
+        "edu"
+      ],
+      "requirement_from": {
+        "Go": [
+          "studentapi",
+          "layer5",
+          "langs"
+        ],
+        "monitoring": [
+          "pulseops"
+        ]
+      }
+    }
+  }
+}

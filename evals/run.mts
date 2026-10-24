@@ -11,12 +11,21 @@ import { join } from "node:path"
 import { extractRecord } from "@/lib/ai/extract"
 import { generateQuestions } from "@/lib/ai/questions"
 import { checkBullet, writeBullets } from "@/lib/ai/write"
+import { draftTailorPlan } from "@/lib/ai/tailor"
+import { checkTailorPlan } from "@/lib/ai/tailor-check"
 import { bannedWordsIn, groundItemData, verifyFacts } from "@/lib/record/verify"
 import { itemTitle, type Fact, type Item, type ItemType, type SourceRow } from "@/lib/record/types"
 
 interface Fixture {
   name: string
   sources: Omit<SourceRow, "url" | "status" | "fetched_at">[]
+  // Tailoring evals start from a saved Career Record instead of sources.
+  tailor?: {
+    brief: string
+    items: Pick<Item, "id" | "type" | "data" | "rank" | "status">[]
+    facts: { id: string; item_id: string; text: string }[]
+    expect: { include?: string[]; requirement_from?: Record<string, string[]> }
+  }
   expect: {
     no_item_types?: ItemType[]
     item_types?: ItemType[]
@@ -40,6 +49,11 @@ let failures = 0
 for (const file of files) {
   const fx = JSON.parse(readFileSync(join(dir, file), "utf8")) as Fixture
   console.log(`\n▶ ${fx.name} (${file})`)
+  if (fx.tailor) {
+    if (dryRun) console.log(`  ${fx.tailor.items.length} items, ${fx.tailor.facts.length} facts, ${Object.keys(fx.tailor.expect).length} expectations`)
+    else failures += await tailorEval(fx.tailor)
+    continue
+  }
   if (dryRun) {
     console.log(`  ${fx.sources.length} sources, ${Object.keys(fx.expect).length} expectations`)
     continue
@@ -106,6 +120,32 @@ for (const file of files) {
     console.log(`  ${ok ? "✓" : "✗"} ${label}`)
     if (!ok) failures++
   }
+}
+
+// The model's own plan, before code repairs it: every reason and covered requirement must cite
+// facts of the item it names, and the summary must name only what was chosen.
+async function tailorEval(t: NonNullable<Fixture["tailor"]>): Promise<number> {
+  const items: Item[] = t.items.map((i) => ({ ...i, reason: null, pinned: false }))
+  const facts: Fact[] = t.facts.map((f) => ({ ...f, label: "document", source_id: "s", quote: f.text, approx: false }))
+  const usable = items.filter((i) => i.type !== "contact")
+  const plan = await draftTailorPlan("eval", t.brief, usable, facts, [])
+  const errors = checkTailorPlan(plan, usable, facts)
+  const factItem = new Map(facts.map((f) => [f.id, f.item_id]))
+  const chosen = new Set(plan.items.map((i) => i.item_id))
+  const results: [string, boolean][] = [["no evidence cited on the wrong item, no stray names", errors.length === 0]]
+  for (const id of t.expect.include ?? []) results.push([`includes ${id}`, chosen.has(id)])
+  for (const [term, allowed] of Object.entries(t.expect.requirement_from ?? {})) {
+    const reqs = plan.requirements.filter((r) => r.text.toLowerCase().includes(term.toLowerCase()) && r.status !== "not_found")
+    results.push([`"${term}" evidence comes only from ${allowed.join("/")}`, reqs.length > 0 && reqs.every((r) => r.fact_ids.length > 0 && r.fact_ids.every((f) => allowed.includes(factItem.get(f) ?? "")))])
+  }
+  console.log(`  picked: ${plan.items.map((i) => i.item_id).join(", ")}`)
+  for (const e of errors.slice(0, 5)) console.log(`  ! ${e}`)
+  let failed = 0
+  for (const [label, ok] of results) {
+    console.log(`  ${ok ? "✓" : "✗"} ${label}`)
+    if (!ok) failed++
+  }
+  return failed
 }
 
 console.log(failures ? `\n${failures} expectation(s) failed` : "\nAll expectations passed")

@@ -19,6 +19,7 @@ const columns = [
     links: [
       { href: "/#faq", label: "FAQ" },
       { href: "/privacy", label: "Privacy" },
+      { href: "/terms", label: "Terms" },
       { href: "mailto:dev@rusil.me", label: "Contact" },
     ],
   },

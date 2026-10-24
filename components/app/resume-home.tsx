@@ -14,6 +14,7 @@ import { EditList, forModel } from "@/components/app/resume-chat"
 import { ResumeThumbnail } from "@/components/app/resume-thumbnail"
 import { LogoMark } from "@/components/marketing/logo"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useSidebar } from "@/components/ui/sidebar"
 import { Spinner } from "@/components/ui/spinner"
 import type { TailorPlan } from "@/lib/ai/tailor"
@@ -23,6 +24,8 @@ import type { ResumeDoc } from "@/lib/resume/schema"
 export interface ResumeCard {
   id: string
   title: string
+  kind: "base" | "tailored"
+  archived: boolean
   updated: string
   doc: ResumeDoc
 }
@@ -133,7 +136,7 @@ export function ResumeHome({ firstName, resumes, usage }: { firstName: string; r
     if (!saved) return
     const fit = await step(2, () => stageFit(saved.resumeId), (d) => (d.pinnedOverflow ? "Pinned items don't fit on one page" : d.cuts ? `One page. Moved ${d.cuts} weaker line${d.cuts === 1 ? "" : "s"} off to fit` : "Fits on one page"))
     if (!fit) return
-    const summary = await step(3, () => resumeSummary(saved.resumeId), (d) => (d.fails ? `${d.fails} to fix before sending` : d.warns ? `Checks passed, ${d.warns} to review` : "Checks passed"))
+    const summary = await step(3, () => resumeSummary(saved.resumeId), (d) => (d.fails ? `${d.fails} to fix before sending` : !d.ready ? "A few things to review before sending" : d.warns ? `Checks passed, ${d.warns} to review` : "Checks passed"))
     if (!summary) return
     patch(id, 3, {}, { resumeId: saved.resumeId, title: saved.title, doc: summary.doc, plan, fails: summary.fails, warns: summary.warns })
     setActive({ resumeId: saved.resumeId, title: saved.title })
@@ -190,15 +193,53 @@ export function ResumeHome({ firstName, resumes, usage }: { firstName: string; r
         <AnimatePresence initial={false}>
           {!chatting && (
             <motion.section key="resumes" {...fade} className="mt-16 w-full">
-              <h3 className="mb-4 text-xs font-medium tracking-wider text-muted-foreground uppercase">Your resumes</h3>
-              <div className="grid grid-cols-[repeat(auto-fill,184px)] justify-center gap-6 sm:justify-start">
-                {resumes.map((r) => <ResumeTile key={r.id} card={r} />)}
-              </div>
+              <ResumeLibrary resumes={resumes} />
             </motion.section>
           )}
         </AnimatePresence>
       </div>
     </LayoutGroup>
+  )
+}
+
+type Filter = "all" | "tailored" | "archived"
+
+// Every resume, searchable by name, with archived ones kept out of the way.
+function ResumeLibrary({ resumes }: { resumes: ResumeCard[] }) {
+  const [query, setQuery] = useState("")
+  const [filter, setFilter] = useState<Filter>("all")
+  const archived = resumes.filter((r) => r.archived).length
+  const q = query.trim().toLowerCase()
+  const shown = resumes.filter(
+    (r) => (filter === "archived" ? r.archived : !r.archived && (filter === "all" || r.kind === "tailored")) && (!q || r.title.toLowerCase().includes(q))
+  )
+  const filters: [Filter, string][] = [["all", "All"], ["tailored", "Tailored"], ...(archived ? [["archived", `Archived (${archived})`] as [Filter, string]] : [])]
+
+  return (
+    <>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-xs font-medium tracking-wider text-muted-foreground uppercase">Your resumes</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Show" className="inline-flex rounded-full border border-border p-0.5 text-xs">
+            {filters.map(([f, label]) => (
+              <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)} className={`rounded-full px-3 py-1 transition-colors ${filter === f ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {resumes.length > 4 && (
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or company" aria-label="Search resumes" className="h-8 w-56 text-sm" />
+          )}
+        </div>
+      </div>
+      {shown.length ? (
+        <div className="grid grid-cols-[repeat(auto-fill,184px)] justify-center gap-6 sm:justify-start">
+          {shown.map((r) => <ResumeTile key={r.id} card={r} />)}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">{q ? `No resumes match “${query.trim()}”.` : filter === "archived" ? "Nothing archived." : "No tailored resumes yet. Describe a job above to make one."}</p>
+      )}
+    </>
   )
 }
 

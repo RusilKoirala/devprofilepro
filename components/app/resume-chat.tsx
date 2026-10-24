@@ -7,7 +7,7 @@ import { offerUpgrade } from "@/components/app/upgrade-prompt"
 import { LogoMark } from "@/components/marketing/logo"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { chatWithResume, type ChatEditResult } from "@/lib/record/actions"
+import { chatWithResume, clearChat, type ChatEditResult } from "@/lib/record/actions"
 
 interface Message {
   role: "user" | "assistant"
@@ -18,17 +18,6 @@ interface Message {
 
 // Enough recent turns for the model; older ones stay on screen only.
 const SENT_TURNS = 12
-const KEPT = 60
-const storageKey = (resumeId: string) => `resume-chat:${resumeId}`
-
-function loadMessages(resumeId: string): Message[] {
-  try {
-    const saved = JSON.parse(localStorage.getItem(storageKey(resumeId)) ?? "[]")
-    return Array.isArray(saved) ? saved.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string") : []
-  } catch {
-    return []
-  }
-}
 
 const SUGGESTIONS = ["Shorten every line a little", "Move Skills to the top", "Lead each project with its impact", "Make it read better for backend roles"]
 
@@ -41,28 +30,21 @@ export function forModel(m: { role: "user" | "assistant"; content: string; edits
 }
 
 // Talk to one resume. Each message is one AI call; code checks every edit and the page re-fits.
-export function ResumeChat({ resumeId, onBusy }: { resumeId: string; onBusy: (busy: boolean) => void }) {
+export interface ChatMessageView {
+  role: "user" | "assistant"
+  content: string
+  edits?: ChatEditResult[]
+}
+
+// `initial`: this resume's saved conversation, loaded with the page, so it follows the person
+// across reloads and devices.
+export function ResumeChat({ resumeId, initial, onBusy }: { resumeId: string; initial: ChatMessageView[]; onBusy: (busy: boolean) => void }) {
   const router = useRouter()
-  const [messages, setMessages] = useState<Message[]>([])
-  const [loaded, setLoaded] = useState(false)
+  const [messages, setMessages] = useState<Message[]>(initial)
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
-
-  // This browser keeps the conversation per resume, so a reload doesn't wipe it. Read after mount:
-  // the server render has no storage, and reading it during render would mismatch on hydration.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMessages(loadMessages(resumeId))
-    setLoaded(true)
-  }, [resumeId])
-  useEffect(() => {
-    if (!loaded) return
-    try {
-      localStorage.setItem(storageKey(resumeId), JSON.stringify(messages.slice(-KEPT)))
-    } catch {}
-  }, [messages, loaded, resumeId])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
@@ -100,7 +82,7 @@ export function ResumeChat({ resumeId, onBusy }: { resumeId: string; onBusy: (bu
       <div className="flex-1 space-y-5 overflow-y-auto p-4">
         {messages.length > 0 && !busy && (
           <div className="flex justify-end">
-            <button type="button" onClick={() => setMessages([])} className="text-xs text-muted-foreground hover:text-foreground">Clear conversation</button>
+            <button type="button" onClick={() => { setMessages([]); void clearChat(resumeId) }} className="text-xs text-muted-foreground hover:text-foreground">Clear conversation</button>
           </div>
         )}
         {messages.length === 0 && (

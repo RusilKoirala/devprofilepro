@@ -56,7 +56,13 @@ Rules:
 
 export async function planTailoredResume(userId: string, brief: string, items: Item[], facts: Fact[], bullets: Bullet[]): Promise<TailorPlan> {
   const usable = items.filter((i) => i.type !== "contact")
-  const plan = await generate({
+  // Whatever still fails the check is repaired or dropped rather than trusted.
+  return repairTailorPlan(await draftTailorPlan(userId, brief, usable, facts, bullets), usable, facts)
+}
+
+// The model's plan after its one retry, before code repairs it. Evals score this directly.
+export async function draftTailorPlan(userId: string, brief: string, usable: Item[], facts: Fact[], bullets: Bullet[]): Promise<ModelPlan> {
+  return generate({
     step: "tailor",
     userId,
     schema: ModelSchema,
@@ -70,6 +76,4 @@ export async function planTailoredResume(userId: string, brief: string, items: I
     check: (out) => checkTailorPlan(out, usable, facts),
     acceptOnLastAttempt: true,
   })
-  // Whatever still fails the check is repaired or dropped rather than trusted.
-  return repairTailorPlan(plan, usable, facts)
 }

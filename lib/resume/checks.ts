@@ -11,7 +11,12 @@ export interface CheckResult {
   label: string
   status: CheckStatus
   detail?: string
+  // Where on the resume to look, so the editor can take the person there.
+  targets?: { itemId: string; bulletId?: string }[]
 }
+
+// Warnings serious enough that the resume isn't called ready until they're dealt with.
+const BLOCKING = new Set(["empty", "ownership"])
 
 export type LinkStatus = "ok" | "broken" | "restricted" | "unchecked"
 
@@ -40,10 +45,11 @@ function words(text: string) {
 
 // Writing problems a structure check can catch: entries with nothing under them, lines that repeat
 // the heading or are only a link, the same skill in two groups, a date written twice.
-export function contentChecks(doc: ResumeDoc, opts: { openOwnership?: string[] } = {}): CheckResult[] {
+export function contentChecks(doc: ResumeDoc, opts: { openOwnership?: { itemId: string; title: string }[] } = {}): CheckResult[] {
   const entries = doc.sections.flatMap((s) => s.entries.map((e) => ({ ...e, type: s.type })))
-  const empty = entries.filter((e) => (e.type === "job" || e.type === "project") && !e.bullets.length).map((e) => e.title || e.subtitle)
-  const thin = entries.flatMap((e) =>
+  const emptyEntries = entries.filter((e) => (e.type === "job" || e.type === "project") && !e.bullets.length)
+  const empty = emptyEntries.map((e) => e.title || e.subtitle)
+  const thinLines = entries.flatMap((e) =>
     e.bullets
       .filter((b) => {
         const t = b.text.trim()
@@ -53,48 +59,59 @@ export function contentChecks(doc: ResumeDoc, opts: { openOwnership?: string[] }
         const own = words(t)
         return own.length > 0 && own.length <= 14 && own.filter((w) => heading.has(w)).length / own.length >= 0.6
       })
-      .map((b) => `“${b.text.length > 60 ? `${b.text.slice(0, 57)}…` : b.text}”`)
+      .map((b) => ({ itemId: e.item_id, bulletId: b.id, text: b.text }))
   )
+  const thin = thinLines.map((l) => `“${l.text.length > 60 ? `${l.text.slice(0, 57)}…` : l.text}”`)
   const groups = doc.sections.filter((s) => s.type === "skills").flatMap((s) => s.entries)
   const seen = new Map<string, string>()
   const repeated = new Set<string>()
+  const repeatedIn = new Set<string>()
   for (const g of groups)
     for (const sk of g.subtitle.split(/,\s*/).map((x) => x.trim()).filter(Boolean)) {
       const key = sk.toLowerCase()
-      if (seen.has(key) && seen.get(key) !== g.title) repeated.add(sk)
+      if (seen.has(key) && seen.get(key) !== g.title) {
+        repeated.add(sk)
+        repeatedIn.add(g.item_id)
+      }
       else seen.set(key, g.title)
     }
-  const twiceDated = entries.filter((e) => e.type === "education" && e.dates && e.dates.split(/\s+[–-]\s+/).some((d) => d && e.subtitle.toLowerCase().includes(d.toLowerCase()))).map((e) => e.title)
+  const twiceDatedEntries = entries.filter((e) => e.type === "education" && e.dates && e.dates.split(/\s+[–-]\s+/).some((d) => d && e.subtitle.toLowerCase().includes(d.toLowerCase())))
+  const twiceDated = twiceDatedEntries.map((e) => e.title)
+  const owners = opts.openOwnership ?? []
 
   return [
     {
       id: "empty",
       label: "Every job and project says what you did",
       status: empty.length ? "warn" : "pass",
-      detail: empty.length ? `No lines under: ${empty.join(", ")}` : undefined,
+      detail: empty.length ? `No lines under: ${empty.join(", ")}. Add what you did, or hide the entry.` : undefined,
+      targets: emptyEntries.map((e) => ({ itemId: e.item_id })),
     },
     {
       id: "thin",
       label: "Lines add something new",
       status: thin.length ? "warn" : "pass",
       detail: thin.length ? `Only repeats the heading or gives a link: ${thin.slice(0, 3).join("; ")}${thin.length > 3 ? ` and ${thin.length - 3} more` : ""}` : undefined,
+      targets: thinLines.map(({ itemId, bulletId }) => ({ itemId, bulletId })),
     },
     {
       id: "repeats",
       label: "Nothing listed twice",
       status: repeated.size || twiceDated.length ? "warn" : "pass",
       detail: [repeated.size && `In more than one skills group: ${[...repeated].join(", ")}`, twiceDated.length && `Date written twice in ${twiceDated.join(", ")}`].filter(Boolean).join(" · ") || undefined,
+      targets: [...[...repeatedIn].map((itemId) => ({ itemId })), ...twiceDatedEntries.map((e) => ({ itemId: e.item_id }))],
     },
     {
       id: "ownership",
       label: "Team projects say what you built",
-      status: opts.openOwnership?.length ? "warn" : "pass",
-      detail: opts.openOwnership?.length ? `Answer the question on ${opts.openOwnership.join(", ")} so its lines are about your part.` : undefined,
+      status: owners.length ? "warn" : "pass",
+      detail: owners.length ? `Answer the question on ${owners.map((o) => o.title).join(", ")} so its lines are about your part.` : undefined,
+      targets: owners.map((o) => ({ itemId: o.itemId })),
     },
   ]
 }
 
-export async function runChecks(doc: ResumeDoc, opts: { pages: number; allBulletsSourced: boolean; openOwnership?: string[] }): Promise<{ results: CheckResult[]; ready: boolean }> {
+export async function runChecks(doc: ResumeDoc, opts: { pages: number; allBulletsSourced: boolean; openOwnership?: { itemId: string; title: string }[] }): Promise<{ results: CheckResult[]; ready: boolean }> {
   const results: CheckResult[] = []
 
   results.push({ id: "pages", label: "Fits on one page", status: opts.pages === 1 ? "pass" : "fail", detail: opts.pages === 1 ? undefined : `${opts.pages} pages` })
@@ -162,5 +179,5 @@ export async function runChecks(doc: ResumeDoc, opts: { pages: number; allBullet
 
   const order: Record<CheckStatus, number> = { fail: 0, warn: 1, not_checked: 2, pass: 3 }
   results.sort((a, b) => order[a.status] - order[b.status])
-  return { results, ready: !results.some((r) => r.status === "fail") }
+  return { results, ready: !results.some((r) => r.status === "fail" || (r.status === "warn" && BLOCKING.has(r.id))) }
 }

@@ -3,14 +3,14 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { ArrowDown, ArrowUp, ChevronDown, Copy, Download, EyeOff, GripVertical, Lightbulb, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RotateCcw, Sparkles, Trash2, Wand2 } from "lucide-react"
+import { Archive, ArrowDown, ArrowUp, ChevronDown, Copy, Download, EyeOff, GripVertical, Lightbulb, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RotateCcw, Sparkles, Trash2, Wand2 } from "lucide-react"
 import { toast } from "sonner"
-import { ChecksPanel, ReadinessBadge, useResumeChecks } from "@/components/app/checks-panel"
+import { ChecksPanel, ReadinessBadge, useResumeChecks, type CheckTarget } from "@/components/app/checks-panel"
 import { FactChip, type FactView } from "@/components/app/fact-chip"
 import { offerUpgrade } from "@/components/app/upgrade-prompt"
 import { MatchReport, type MatchView } from "@/components/app/match-report"
 import { QuestionCard, type QuestionView } from "@/components/app/questions-panel"
-import { ResumeChat } from "@/components/app/resume-chat"
+import { ResumeChat, type ChatMessageView } from "@/components/app/resume-chat"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -22,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
-  addBullet, deleteBullet, deleteResume, duplicateResume, editBullet, regenerateItem, renameResume, restoreBullet, restoreCut, setItemOrder, setItemState, setSectionOrder, updateHeader, updateItemDetails, type ActionResult,
+  addBullet, archiveResume, deleteBullet, deleteResume, duplicateResume, editBullet, regenerateItem, renameResume, restoreBullet, restoreCut, setItemOrder, setItemState, setSectionOrder, updateHeader, updateItemDetails, type ActionResult,
 } from "@/lib/record/actions"
 import { REWRITE_LABELS, type RewriteStyle } from "@/lib/record/rewrite-styles"
 import type { ItemType } from "@/lib/record/types"
@@ -35,11 +35,13 @@ type Details = Record<"role" | "company" | "name" | "url" | "school" | "degree" 
 export interface EditorData {
   resumeId: string
   kind: "base" | "tailored"
+  archived: boolean
   title: string
   version: string
   // Tailored from a job post or request: what it asked for and how this resume covers it.
   match: MatchView | null
   titles: Record<string, string>
+  chat: ChatMessageView[]
   header: { name: string; headline: string; targetRole: string; email: string; phone: string; location: string; website: string; github: string; linkedin: string }
   sections: {
     type: Exclude<ItemType, "contact">
@@ -178,6 +180,19 @@ export function ResumeEditor({ data }: { data: EditorData }) {
     requestAnimationFrame(() => document.getElementById("resume-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }))
   }
 
+  // From a check to the entry or line it's about: switch to editing, scroll there, flash it.
+  function show(target: CheckTarget) {
+    setMode("edit")
+    setPane("editor")
+    requestAnimationFrame(() => {
+      const el = document.getElementById(target.bulletId ? `line-${target.bulletId}` : `entry-${target.itemId}`) ?? document.getElementById(`entry-${target.itemId}`)
+      if (!el) return void toast("That entry isn't on the page right now.")
+      el.scrollIntoView({ behavior: "smooth", block: "center" })
+      el.classList.add("ring-2", "ring-amber-400/70")
+      setTimeout(() => el.classList.remove("ring-2", "ring-amber-400/70"), 1800)
+    })
+  }
+
   function duplicate() {
     startTransition(async () => {
       const res = await duplicateResume(data.resumeId)
@@ -218,6 +233,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
           ) : (
             <h2 className="text-lg font-medium">{data.title}</h2>
           )}
+          {data.archived && <Badge variant="outline" className="rounded-full font-normal text-muted-foreground">Archived</Badge>}
           <div role="group" aria-label="Edit or chat" className="inline-flex rounded-full border border-border p-0.5 text-xs">
             {(["edit", "chat"] as const).map((m) => (
               <button
@@ -254,11 +270,16 @@ export function ResumeEditor({ data }: { data: EditorData }) {
               <Button variant="outline">More <ChevronDown /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild><a href={`/api/tex/${data.resumeId}`} title="Same content as the PDF in a standard LaTeX template. Spacing differs, so check it still fits one page after compiling.">Download .tex</a></DropdownMenuItem>
+              <DropdownMenuItem asChild><a href={`/api/tex/${data.resumeId}`} title="Same content as the PDF in a standard LaTeX template. Fonts and spacing differ slightly; it's checked to fit on one page when the PDF does.">Download .tex</a></DropdownMenuItem>
               <DropdownMenuItem onSelect={openInOverleaf}>Open in Overleaf</DropdownMenuItem>
               <DropdownMenuSeparator />
               {tailored && <DropdownMenuItem onSelect={() => setRenaming(true)}><Pencil /> Rename</DropdownMenuItem>}
               <DropdownMenuItem disabled={pending} onSelect={duplicate}><Copy /> Duplicate</DropdownMenuItem>
+              {tailored && (
+                <DropdownMenuItem onSelect={() => run(() => archiveResume(data.resumeId, !data.archived), () => toast.success(data.archived ? "Moved back to your resumes." : "Archived. Find it under Archived on the Resumes page."))}>
+                  <Archive /> {data.archived ? "Unarchive" : "Archive"}
+                </DropdownMenuItem>
+              )}
               {tailored && <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}><Trash2 /> Delete resume</DropdownMenuItem>}
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild><Link href="/start/sources">Add sources and update</Link></DropdownMenuItem>
@@ -284,7 +305,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className={`min-w-0 ${mode === "chat" ? "lg:sticky lg:top-20 lg:self-start" : "hidden"} ${pane === "page" ? "max-lg:hidden" : ""}`}>
-          <ResumeChat resumeId={data.resumeId} onBusy={setChatBusy} />
+          <ResumeChat resumeId={data.resumeId} initial={data.chat} onBusy={setChatBusy} />
         </div>
         {/* Editor */}
         <div className={`min-w-0 ${mode === "edit" ? "space-y-6" : "hidden"} ${pane === "page" ? "max-lg:hidden" : ""}`}>
@@ -433,7 +454,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
               </div>
             </TabsContent>
             <TabsContent value="checks">
-              <ChecksPanel state={checks} />
+              <ChecksPanel state={checks} onShow={show} />
             </TabsContent>
             {data.match && (
               <TabsContent value="match">
@@ -574,7 +595,7 @@ function EntryCard({ resumeId, type, entry, position, allBullets, pending, run, 
   }
 
   return (
-    <div className="group/entry relative rounded-xl border border-border bg-card p-4 transition-colors hover:border-foreground/15">
+    <div id={`entry-${entry.itemId}`} className="group/entry relative scroll-mt-24 rounded-xl border border-border bg-card p-4 transition hover:border-foreground/15">
       {handle && (
         <div
           {...handle}
@@ -767,7 +788,7 @@ function BulletRow({ bullet, hint, disabled, onSave, onDelete }: {
   }
 
   return (
-    <li className="group flex gap-2 text-sm leading-relaxed">
+    <li id={`line-${bullet.id}`} className="group -mx-1 flex gap-2 rounded-md px-1 text-sm leading-relaxed transition">
       <span className="mt-[0.55em] size-1 shrink-0 rounded-full bg-muted-foreground" />
       <div className="min-w-0 flex-1">
         <button type="button" className="text-left break-words hover:text-foreground/80" onClick={() => setEditing(true)} title="Click to edit">

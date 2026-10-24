@@ -33,7 +33,16 @@ test("content checks flag empty entries, heading repeats, link-only lines and do
       { type: "education", title: "Education", entries: [e("Example University", "BSc, Expected graduation May 2027", "May 2027", [])] },
       { type: "skills", title: "Skills", entries: [e("Languages", "Go, Node.js", "", []), e("Tools", "Node.js, Docker", "", [])] },
     ],
-  }, { openOwnership: ["Layer5"] })
+  }, { openOwnership: [{ itemId: "Contributor", title: "Layer5" }] })
   const status = Object.fromEntries(results.map((r) => [r.id, r.status]))
   assert.deepEqual(status, { empty: "warn", thin: "warn", repeats: "warn", ownership: "warn" })
+})
+
+test("an entry with no lines keeps the resume from being called ready, and points at the entry", async () => {
+  const entry = { item_id: "j1", title: "Contributor", subtitle: "Layer5", dates: "", location: "", url: "", tech: [], bullets: [] }
+  const result = await runChecks({ ...doc, name: "Sam", contact: { ...doc.contact, email: "s@example.com", github: "" }, sections: [{ type: "job", title: "Experience", entries: [entry] }] }, { pages: 1, allBulletsSourced: true })
+  const empty = result.results.find((r) => r.id === "empty")!
+  assert.equal(empty.status, "warn")
+  assert.deepEqual(empty.targets, [{ itemId: "j1" }])
+  assert.equal(result.ready, false)
 })

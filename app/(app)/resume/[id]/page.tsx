@@ -16,7 +16,11 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
   const loaded = await loadResumeDoc(supabase, id)
   if (!loaded) notFound()
   const { resume, record, doc } = loaded
-  const { data: job } = resume.job_id ? await supabase.from("jobs").select("description,match_report").eq("id", resume.job_id).maybeSingle() : { data: null }
+  const [{ data: job }, { data: chat }] = await Promise.all([
+    resume.job_id ? supabase.from("jobs").select("description,match_report").eq("id", resume.job_id).maybeSingle() : Promise.resolve({ data: null }),
+    // The latest 60 messages, oldest first.
+    supabase.from("chat_messages").select("role,content,edits").eq("resume_id", resume.id).order("created_at", { ascending: false }).limit(60),
+  ])
   const report = job?.match_report as Partial<MatchView> | null
   const match: MatchView | null = report
     ? {
@@ -41,6 +45,8 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
   const data: EditorData = {
     resumeId: resume.id,
     kind: resume.kind,
+    archived: !!resume.archived_at,
+    chat: (chat ?? []).reverse().map((m) => ({ role: m.role, content: m.content, edits: m.edits ?? undefined })),
     title: resume.kind === "base" ? "Base resume" : resume.title,
     match,
     titles: Object.fromEntries(record.items.map((i) => [i.id, itemTitle(i)])),

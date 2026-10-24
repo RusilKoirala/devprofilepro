@@ -1,7 +1,8 @@
 import { displayUrl } from "./build.ts"
 import type { ResumeDoc } from "@/lib/resume/schema"
 
-// Plain string template of the same content (Jake's Resume). We never compile it.
+// Plain string template of the same content (Jake's Resume). The app never compiles it, but
+// scripts/check-latex.mts does, to confirm it fits on one page whenever the PDF does.
 export function escapeLatex(s: string): string {
   const escapes: Record<string, string> = {
     "\\": "\\textbackslash{}", "~": "\\textasciitilde{}", "^": "\\textasciicircum{}",
@@ -14,7 +15,7 @@ export function escapeLatex(s: string): string {
 const e = escapeLatex
 const href = (url: string, text = displayUrl(url)) => `\\href{${e(url)}}{\\underline{${e(text)}}}`
 
-const PREAMBLE = String.raw`\documentclass[letterpaper,11pt]{article}
+const PREAMBLE = String.raw`\documentclass[letterpaper,10pt]{article}
 \usepackage[empty]{fullpage}
 \usepackage{titlesec}
 \usepackage[usenames,dvipsnames]{color}
@@ -22,7 +23,8 @@ const PREAMBLE = String.raw`\documentclass[letterpaper,11pt]{article}
 \usepackage[hidelinks]{hyperref}
 \usepackage{tabularx}
 \usepackage[T1]{fontenc}
-\pdfgentounicode=1
+% pdfLaTeX only (Overleaf's default); skipped by XeLaTeX and LuaLaTeX so any engine compiles.
+\ifdefined\pdfgentounicode\pdfgentounicode=1\fi
 \addtolength{\oddsidemargin}{-0.5in}
 \addtolength{\evensidemargin}{-0.5in}
 \addtolength{\textwidth}{1in}

@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { isAppEnabled } from "@/lib/access"
+import { deleteUserData } from "@/lib/record/delete-user-data"
 import { relayoutResume } from "@/lib/record/pipeline"
 import { createClient } from "@/lib/supabase/server"
 import type { ActionResult } from "@/lib/record/actions"
@@ -79,28 +80,13 @@ export async function removeSource(sourceId: string): Promise<ActionResult<{ fac
   }
 }
 
-async function removeFolder(supabase: Awaited<ReturnType<typeof createClient>>, bucket: string, folder: string) {
-  for (;;) {
-    const { data, error } = await supabase.storage.from(bucket).list(folder, { limit: 100 })
-    if (error) throw new Error(error.message)
-    if (!data?.length) return
-    must((await supabase.storage.from(bucket).remove(data.map((f) => `${folder}/${f.name}`))).error)
-    if (data.length < 100) return
-  }
-}
-
 // Everything: sources and uploaded files, the Career Record, resumes, job posts, downloaded PDFs
 // and the AI log. The sign-in account itself is deleted from the account menu.
 export async function deleteAllData(confirm: string): Promise<ActionResult> {
   try {
     const { userId, supabase } = await session()
     if (confirm !== "DELETE") throw new Error('Type DELETE to confirm.')
-    // Children before parents, so no foreign key blocks a delete.
-    for (const table of ["exports", "bullets", "questions", "facts", "resumes", "jobs", "items", "source_versions", "sources", "ai_runs"]) {
-      must((await supabase.from(table).delete().eq("user_id", userId)).error)
-    }
-    await removeFolder(supabase, "uploads", userId)
-    await removeFolder(supabase, "exports", userId)
+    await deleteUserData(supabase, userId)
     revalidatePath("/", "layout")
     return { ok: true, data: undefined }
   } catch (err) {

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { AiError } from "@/lib/ai/client"
 import { AllowanceError, recordUsage, requireAllowance } from "@/lib/allowance"
+import { APPLICATION_STATUSES } from "@/lib/applications"
 import type { Allowance } from "@/lib/plans"
 import { BudgetError } from "@/lib/ai/budget"
 import { ingestGitHub, GitHubError } from "@/lib/ingest/github"
@@ -470,15 +471,26 @@ export async function mergeDuplicateFacts(): Promise<ActionResult<{ merged: numb
   }
 }
 
-export async function markSent(exportId: string, sent: boolean, sentTo?: string): Promise<ActionResult> {
+const ExportPatch = z.object({
+  // null = not sent. Any status marks the file as sent (keeping the first sent date).
+  status: z.enum(APPLICATION_STATUSES).nullable().optional(),
+  sentTo: z.string().trim().max(300).optional(),
+  notes: z.string().trim().max(2000).optional(),
+})
+
+// Where a downloaded file went and how that application is going.
+export async function updateExport(exportId: string, input: z.input<typeof ExportPatch>): Promise<ActionResult> {
   try {
     const { supabase } = await session()
-    const to = z.string().trim().max(300).optional().parse(sentTo)
-    const { data: row, error: rowError } = await supabase.from("exports").select("sent_at").eq("id", exportId).single()
+    const p = ExportPatch.parse(input)
+    const { data: row, error: rowError } = await supabase.from("exports").select("sent_at,status").eq("id", exportId).single()
     if (rowError) throw new Error(rowError.message)
-    const patch = sent
-      ? { sent_at: row.sent_at ?? new Date().toISOString(), ...(to !== undefined ? { sent_to: to || null } : {}) }
-      : { sent_at: null, sent_to: null }
+    const sending = p.status !== undefined ? p.status : p.sentTo ? (row.status ?? "sent") : undefined
+    const patch = {
+      ...(sending === null ? { sent_at: null, status: null } : sending ? { sent_at: row.sent_at ?? new Date().toISOString(), status: sending } : {}),
+      ...(p.sentTo !== undefined ? { sent_to: p.sentTo || null } : {}),
+      ...(p.notes !== undefined ? { notes: p.notes || null } : {}),
+    }
     const { error } = await supabase.from("exports").update(patch).eq("id", exportId)
     if (error) throw new Error(error.message)
     revalidatePath("/home")
@@ -596,6 +608,14 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
         edits.push({ label: label(a), ok: false, reason: err instanceof Error ? err.message : "Couldn't apply this" })
       }
     }
+    // Saved so the conversation follows the person to another device. Best effort: a failed save
+    // must not lose the edits that were just made.
+    const at = Date.now()
+    const { error: chatError } = await supabase.from("chat_messages").insert([
+      { resume_id: resumeId, role: "user", content: history.at(-1)!.content, created_at: new Date(at).toISOString() },
+      { resume_id: resumeId, role: "assistant", content: out.reply, edits, created_at: new Date(at + 1).toISOString() },
+    ])
+    if (chatError) console.error("chat_messages insert failed", chatError)
     // A chat message counts only when it changed the resume.
     if (changed) {
       await recordUsage(supabase, "fixes", resumeId)
@@ -608,7 +628,7 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
 }
 
 // The finished resume for a result card: its render shape plus how the checks went.
-export async function resumeSummary(resumeId: string): Promise<ActionResult<{ doc: ResumeDoc; fails: number; warns: number }>> {
+export async function resumeSummary(resumeId: string): Promise<ActionResult<{ doc: ResumeDoc; fails: number; warns: number; ready: boolean }>> {
   const checks = await runResumeChecks(resumeId)
   if (!checks.ok) return checks
   try {
@@ -616,7 +636,7 @@ export async function resumeSummary(resumeId: string): Promise<ActionResult<{ do
     const loaded = await loadResumeDoc(supabase, resumeId)
     if (!loaded) return { ok: false, error: "Resume not found" }
     const count = (status: string) => checks.data.results.filter((r) => r.status === status).length
-    return { ok: true, data: { doc: loaded.doc, fails: count("fail"), warns: count("warn") } }
+    return { ok: true, data: { doc: loaded.doc, fails: count("fail"), warns: count("warn"), ready: checks.data.ready } }
   } catch (err) {
     return fail(err)
   }
@@ -637,7 +657,8 @@ export async function runResumeChecks(resumeId: string): Promise<ActionResult<{ 
       .every((b) => b.fact_ids.length > 0 && b.fact_ids.every((id) => facts.get(id)?.item_id === b.item_id))
     const onPage = new Set(loaded.resume.layout.items.map((li) => li.item_id))
     const titles = new Map(loaded.record.items.map((i) => [i.id, itemTitle(i)]))
-    const openOwnership = [...new Set(loaded.record.questions.filter((q) => q.status === "open" && (q.kind === "ownership" || q.kind === "built") && onPage.has(q.item_id)).map((q) => titles.get(q.item_id) ?? "a project"))]
+    const ownershipItems = [...new Set(loaded.record.questions.filter((q) => q.status === "open" && (q.kind === "ownership" || q.kind === "built") && onPage.has(q.item_id)).map((q) => q.item_id))]
+    const openOwnership = ownershipItems.map((itemId) => ({ itemId, title: titles.get(itemId) ?? "a project" }))
     const { results, ready } = await runChecks(loaded.doc, { pages, allBulletsSourced, openOwnership })
     return { ok: true, data: { results, ready, parserText } }
   } catch (err) {
@@ -713,6 +734,30 @@ export async function deleteResume(resumeId: string): Promise<ActionResult> {
       }
     }
     revalidatePath("/", "layout")
+    return { ok: true, data: undefined }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+// Archive hides a resume from the sidebar and the default list; nothing is deleted.
+export async function archiveResume(resumeId: string, archived: boolean): Promise<ActionResult> {
+  try {
+    const { supabase } = await session()
+    const { error } = await supabase.from("resumes").update({ archived_at: archived ? new Date().toISOString() : null }).eq("id", resumeId).eq("kind", "tailored")
+    if (error) throw new Error(error.message)
+    revalidatePath("/", "layout")
+    return { ok: true, data: undefined }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+export async function clearChat(resumeId: string): Promise<ActionResult> {
+  try {
+    const { supabase } = await session()
+    const { error } = await supabase.from("chat_messages").delete().eq("resume_id", z.string().uuid().parse(resumeId))
+    if (error) throw new Error(error.message)
     return { ok: true, data: undefined }
   } catch (err) {
     return fail(err)

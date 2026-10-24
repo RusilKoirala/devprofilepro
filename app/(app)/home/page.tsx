@@ -54,11 +54,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const [user, record, { data: resumes }, { data: exports, error: exportsError, count: exportCount }, { count: sentCount }, usage] = await Promise.all([
     currentUser(),
     loadRecord(supabase),
-    supabase.from("resumes").select("id,kind,title,layout,updated_at").order("kind").order("updated_at", { ascending: false }),
+    supabase.from("resumes").select("id,kind,title,layout,updated_at").is("archived_at", null).order("kind").order("updated_at", { ascending: false }),
     // exports has two foreign keys to resumes (plain and owner-checked), so the embed must name one.
     supabase
       .from("exports")
-      .select("id,filename,sent_at,sent_to,created_at,resumes!exports_resume_id_fkey(title)", { count: "exact" })
+      .select("id,filename,sent_at,sent_to,status,notes,created_at,resumes!exports_resume_id_fkey(title)", { count: "exact" })
       .order("created_at", { ascending: false })
       .limit(shownDownloads),
     supabase.from("exports").select("id", { count: "exact", head: true }).not("sent_at", "is", null),
@@ -112,6 +112,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     createdAt: e.created_at,
     sentAt: e.sent_at,
     sentTo: e.sent_to,
+    status: e.status,
+    notes: e.notes,
   }))
 
 
