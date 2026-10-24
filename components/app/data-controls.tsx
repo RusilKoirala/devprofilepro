@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { Download, Trash2 } from "lucide-react"
+import { Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -79,10 +79,6 @@ export function DataControls({ sources }: { sources: SourceListItem[] }) {
             </ul>
           </CollapsibleContent>
         </Collapsible>
-        <div className="flex flex-wrap items-center gap-3 p-4 text-sm">
-          <p className="min-w-0 flex-1 text-muted-foreground">Everything you&apos;ve given us and everything we made, as JSON.</p>
-          <Button size="sm" variant="secondary" asChild><a href="/api/data"><Download /> Download my data</a></Button>
-        </div>
         <div className="flex flex-wrap items-center gap-3 p-4 text-sm">
           <p className="min-w-0 flex-1 text-muted-foreground">Delete your sources, uploaded files, Career Record, resumes and downloaded PDFs. This can&apos;t be undone.</p>
           <Button size="sm" variant="ghost" className="text-destructive" disabled={pending} onClick={() => setWiping(true)}><Trash2 /> Delete everything</Button>

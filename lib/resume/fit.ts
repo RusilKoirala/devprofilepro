@@ -14,6 +14,8 @@ export interface FitResult {
 }
 
 const MAX_STEPS = 60
+// Larger text first, so a short resume fills its page; lines are cut only at the 10pt floor.
+const SIZES = [11.5, 11, 10.5]
 
 // Render, count pages, and remove the weakest unpinned content until it fits on one page.
 // `relevance` (a tailored resume's items, most relevant to the job first) replaces general strength.
@@ -22,6 +24,12 @@ export async function fitToOnePage(layout: ResumeLayout, record: Pick<CareerReco
   const weight = weigher(relevance)
   const current: ResumeLayout = { ...layout, items: layout.items.map((li) => ({ ...li, bullet_ids: [...li.bullet_ids] })) }
   const cuts: CutEntry[] = []
+
+  for (const size of SIZES) {
+    const pdf = await renderPdf(buildResume({ ...current, font_size: size }, record))
+    if ((await pageCount(pdf)) <= 1) return { layout: { ...current, font_size: size }, cuts, pages: 1, pdf, pinnedOverflow: false }
+  }
+  delete current.font_size
 
   for (let step = 0; step < MAX_STEPS; step++) {
     const pdf = await renderPdf(buildResume(current, record))

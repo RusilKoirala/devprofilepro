@@ -26,7 +26,7 @@ Run `supabase/tests/record_integrity.sql` with `psql -v ON_ERROR_STOP=1 -f ...` 
 ## Code map
 
 - `app/(app)`: onboarding, home, Career Record and resume editor.
-- `app/api`: PDF previews, immutable exports, LaTeX and JSON downloads.
+- `app/api`: PDF previews, immutable exports, LaTeX downloads.
 - `lib/ingest`: GitHub, merged PRs, PDF and paste ingestion.
 - `lib/ai`: extraction, clarification questions, writing and spend guards.
 - `lib/record`: persistence, provenance checks and server actions.

@@ -53,6 +53,7 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
     match,
     page: pageEvidence(doc, Object.fromEntries(record.bullets.map((b) => [b.id, b.fact_ids]))),
     titles: Object.fromEntries(record.items.map((i) => [i.id, itemTitle(i)])),
+    doc,
     version: resume.updated_at,
     header: { name: doc.name, headline: doc.headline, targetRole: resume.layout.target_role ?? "", ...doc.contact },
     sections: doc.sections.map((s) => ({

@@ -54,7 +54,7 @@ const faqs = [
   },
   {
     q: "Can I take my data with me?",
-    a: "Always. Download your PDF and LaTeX source, or export your whole Career Record as data, on any plan. Cancelling Pro never deletes anything.",
+    a: "Always. Download your PDF and LaTeX source on any plan. Cancelling Pro never deletes anything.",
   },
 ]
 

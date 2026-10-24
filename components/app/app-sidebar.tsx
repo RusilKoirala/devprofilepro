@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useState } from "react"
 import { usePathname } from "next/navigation"
 import { UserButton, useUser } from "@clerk/nextjs"
-import { ChevronRight, CreditCard, Download, FileText, LayoutDashboard, Library, Plus, Sparkles } from "lucide-react"
+import { ChevronRight, CreditCard, FileText, LayoutDashboard, Library, Plus, Sparkles } from "lucide-react"
 import { LogoMark } from "@/components/marketing/logo"
 import { UpgradeDialog } from "@/components/app/upgrade-dialog"
 import { Button } from "@/components/ui/button"
@@ -26,7 +26,6 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarRail,
-  useSidebar,
 } from "@/components/ui/sidebar"
 
 export interface ResumeLink {
@@ -74,14 +73,6 @@ export function AppSidebar({ resumes, usage }: { resumes: ResumeLink[]; usage: P
                     <Plus />
                     <span>Add sources</span>
                   </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="Export my data">
-                  <a href="/api/data">
-                    <Download />
-                    <span>Export my data</span>
-                  </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -172,10 +163,9 @@ function NavLink({ href, label, icon: Icon, active }: { href: string; label: str
 }
 
 // "Resumes" goes to /resume (every resume); the chevron folds the list of resumes in and out.
-// With the sidebar collapsed to icons, clicking it also expands the sidebar with the list open.
+// A collapsed sidebar stays collapsed: clicking just navigates.
 // Plain state rather than Radix Collapsible: its generated ids didn't match between server and client.
 function ResumesMenu({ resumes, pathname }: { resumes: ResumeLink[]; pathname: string }) {
-  const { state, isMobile, setOpen } = useSidebar()
   const [listOpen, setListOpen] = useState(true)
   const items = resumes.map((r) => ({ ...r, href: `/resume/${r.id}`, label: r.kind === "base" ? "Base resume" : r.title }))
   const newHref = resumes.length ? "/resume" : "/start"
@@ -183,14 +173,7 @@ function ResumesMenu({ resumes, pathname }: { resumes: ResumeLink[]; pathname: s
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild isActive={pathname === "/resume"} tooltip="Resumes">
-        <Link
-          href="/resume"
-          onClick={() => {
-            if (state !== "collapsed" || isMobile) return
-            setOpen(true)
-            setListOpen(true)
-          }}
-        >
+        <Link href="/resume">
           <FileText />
           <span>Resumes</span>
         </Link>
