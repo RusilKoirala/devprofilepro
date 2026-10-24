@@ -34,6 +34,8 @@ export const ItemDataSchema = z.object({
 export type ItemData = Partial<z.infer<typeof ItemDataSchema>> & {
   team_project?: boolean
   ownership_confirmed?: boolean
+  // Entries the person said are not duplicates of this one (lib/record/entry-dupes.ts).
+  distinct_from?: string[]
 }
 
 export interface Item {
@@ -62,6 +64,10 @@ export interface Bullet {
   text: string
   fact_ids: string[]
   user_edited: boolean
+  // Null: the Career Record's shared wording. Set: this tailored resume's own line, standing in
+  // for the shared bullet `replaces` (or an extra line when that is null).
+  resume_id?: string | null
+  replaces?: string | null
 }
 
 export interface Question {
@@ -94,6 +100,10 @@ export interface ResumeLayout {
   item_order?: string[]
   // Tailored resumes only: the items chosen for this resume. The base resume shows every shown item.
   include?: string[]
+  // Tailored resumes only: shared lines removed from this resume, and items it has rewritten in its
+  // own words (their shared lines are ignored here).
+  hidden_bullets?: string[]
+  own_items?: string[]
   items: { item_id: string; bullet_ids: string[] }[]
 }
 

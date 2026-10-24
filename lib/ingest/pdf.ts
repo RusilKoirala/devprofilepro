@@ -5,7 +5,9 @@ import { transcribePdf } from "@/lib/ai/transcribe"
 import type { IngestedSource } from "@/lib/ingest/types"
 import { createClient } from "@/lib/supabase/server"
 
-export const MAX_PDF_BYTES = 5 * 1024 * 1024
+import { MAX_PDF_BYTES } from "@/lib/ingest/limits"
+
+export { MAX_PDF_BYTES }
 const MIN_TEXT_CHARS = 200
 
 export function cleanPdfText(text: string): string {
@@ -39,12 +41,16 @@ export async function ingestPdf(userId: string, file: File): Promise<IngestedSou
   const { error: uploadError } = await supabase.storage.from("uploads").upload(path, bytes, { contentType: "application/pdf", upsert: true })
   if (uploadError) throw new Error(`Couldn't save ${file.name}: ${uploadError.message}`)
 
-  // unpdf takes ownership of the buffer, so give it a copy.
-  const pdf = await getDocumentProxy(bytes.slice())
-  const [{ text, totalPages }, { links }] = await Promise.all([
-    extractText(pdf, { mergePages: true }),
-    extractLinks(pdf).catch(() => ({ links: [] as string[] })),
-  ])
+  // unpdf takes ownership of the buffer, so give it a copy. A file that can't be parsed isn't kept.
+  let parsed: [{ text: string; totalPages: number }, { links: string[] }]
+  try {
+    const pdf = await getDocumentProxy(bytes.slice())
+    parsed = await Promise.all([extractText(pdf, { mergePages: true }), extractLinks(pdf).catch(() => ({ links: [] as string[] }))])
+  } catch {
+    await supabase.storage.from("uploads").remove([path])
+    throw new Error(`${file.name} couldn't be opened as a PDF. Is it damaged or password-protected?`)
+  }
+  const [{ text, totalPages }, { links }] = parsed
   let raw = cleanPdfText(text)
   let status: IngestedSource["status"] = "ok"
   let transcribed = false

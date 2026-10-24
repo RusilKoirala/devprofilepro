@@ -43,3 +43,12 @@ test("only the fields the model filled in are passed on", () => {
   const fields = { role: null, company: "Acme", name: null, url: null, school: null, degree: null, details: null, category: null, location: "", start: null, end: null, tech: null, skills: null, headline: null, target_role: null, email: null, phone: null, website: null, github: null, linkedin: null }
   assert.deepEqual(presentFields(fields, ["role", "company", "location"] as const), { company: "Acme", location: "" })
 })
+
+test("a section put back by an earlier action can be moved in the same message", () => {
+  const start: ChatContext = { ...ctx, entries: new Map([...ctx.entries, ["j1", { type: "job", title: "Acme", onPage: false }]]), sections: ["education", "project"] }
+  const [show, move] = checkActions([a({ type: "show_entry", entry_id: "j1" }), a({ type: "move_section", section: "job", position: 0 })], start)
+  assert.equal(show.ok, true)
+  assert.equal(move.ok, true, move.reason)
+  // The caller's context is not changed by checking.
+  assert.equal(start.entries.get("j1")!.onPage, false)
+})

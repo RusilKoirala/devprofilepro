@@ -18,6 +18,9 @@ export const ALLOWANCE_LABELS: Record<Allowance, { title: string; unit: string; 
 
 export const PRO_PRICE = { monthly: 12, pass: 29 }
 
+// Downloads Free sees on the dashboard. Older files stay stored and reappear with Pro.
+export const FREE_HISTORY = 3
+
 export interface PlanUsage {
   plan: PlanId
   // Set on Pro: how they pay and until when Pro is guaranteed.
@@ -25,6 +28,8 @@ export interface PlanUsage {
   used: Record<Allowance, number>
   // Start of the next month (UTC), when Free allowances refill.
   resetsAt: string
+  // A query failed: the numbers (and maybe the plan) can't be trusted, so say so instead of showing 0.
+  unavailable?: boolean
 }
 
 export interface AllowanceState {
@@ -53,4 +58,15 @@ export function monthStart(now = new Date()): Date {
 
 export function nextMonthStart(now = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+}
+
+// The line that makes the gap concrete, worst allowance first.
+export function upgradeReason(states: AllowanceState[]): string | undefined {
+  const worst = states.find((s) => s.state === "out") ?? states.find((s) => s.state === "low")
+  if (!worst) return undefined
+  const { units, unit } = ALLOWANCE_LABELS[worst.key]
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+  return worst.state === "out"
+    ? `You've used all ${worst.limit} free ${units} this month.`
+    : `Only ${plural(worst.left!, unit, units)} left on Free this month.`
 }

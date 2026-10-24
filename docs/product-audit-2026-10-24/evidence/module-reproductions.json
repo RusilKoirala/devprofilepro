@@ -1,0 +1,43 @@
+[
+  {
+    "case": "short-but-selectable-text",
+    "inputCharacters": 115,
+    "result": {
+      "verdict": "fail",
+      "score": 0,
+      "checks": [
+        {
+          "id": "text",
+          "label": "Text can be read",
+          "status": "fail",
+          "detail": "Almost no text could be extracted. This looks like a scanned image or a design export, which most ATSs read as blank.",
+          "fix": "Export the PDF from Word, Google Docs or LaTeX so the text is selectable. If you can't highlight words in your PDF viewer, an ATS can't read them either."
+        }
+      ],
+      "words": 14,
+      "preview": "Alex Example alex@example.com github.com/alex Experience Built APIs with Go. Education Example University Skills Go"
+    }
+  },
+  {
+    "case": "Go-only-job",
+    "result": {
+      "found": [],
+      "missing": [
+        "APIs"
+      ],
+      "percent": 0
+    }
+  },
+  {
+    "case": "edit-tailored-changes-base",
+    "method": "actual editLine/buildResume, in-memory database adapter; no live data changed",
+    "baseBefore": "Built a service with Go",
+    "baseAfter": "Built an API with Go for the audit",
+    "reproduced": true
+  },
+  {
+    "case": "latex-omits-contact-location",
+    "location": "Kathmandu, Nepal",
+    "latexContainsLocation": false
+  }
+]

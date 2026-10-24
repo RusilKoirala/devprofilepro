@@ -4,7 +4,7 @@ import { isAppEnabled, PUBLIC_PATHS } from "@/lib/access"
 
 // Everything is private except the landing and pricing pages, auth pages, the waitlist API and the
 // Dodo webhook (it checks its own signature).
-const isPublic = createRouteMatcher(["/", "/pricing", "/ats-checker", "/sign-in(.*)", "/sign-up(.*)", "/api/ats-check", "/api/waitlist", "/api/webhooks/dodo"])
+const isPublic = createRouteMatcher(["/", "/pricing", "/privacy", "/ats-checker", "/sign-in(.*)", "/sign-up(.*)", "/api/ats-check", "/api/waitlist", "/api/webhooks/dodo"])
 
 const clerk = clerkMiddleware(
   async (auth, request) => {
@@ -15,6 +15,8 @@ const clerk = clerkMiddleware(
 )
 
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
+  // Public sample files the landing page links to (public/samples).
+  if (request.nextUrl.pathname.startsWith("/samples/")) return NextResponse.next()
   // Early access lock: nothing but the landing page, pricing and waitlist until APP_ENABLED=true.
   if (!isAppEnabled()) {
     if (PUBLIC_PATHS.has(request.nextUrl.pathname)) return NextResponse.next()

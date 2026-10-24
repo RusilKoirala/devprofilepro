@@ -21,3 +21,19 @@ test("unrecognized and missing dates never pass as checked", async () => {
   assert.equal((await dates("Spring 2024 – Summer 2025")).status, "warn")
   assert.equal((await dates("")).status, "not_checked")
 })
+
+test("content checks flag empty entries, heading repeats, link-only lines and double listings", async () => {
+  const { contentChecks } = await import("./checks.ts")
+  const e = (title: string, subtitle: string, dates: string, bullets: string[], url = "") => ({ item_id: title, title, subtitle, dates, location: "", url, tech: [], bullets: bullets.map((text, n) => ({ id: `${title}${n}`, text })) })
+  const results = contentChecks({
+    ...doc,
+    sections: [
+      { type: "job", title: "Experience", entries: [e("Engineer", "Acme", "Jun 2024 – Present", ["Engineer at Acme, Jun 2024 – Present"]), e("Contributor", "Layer5", "", [])] },
+      { type: "project", title: "Projects", entries: [e("PulseOps", "", "", ["Deployed at https://pulseops.vercel.app"], "https://pulseops.vercel.app")] },
+      { type: "education", title: "Education", entries: [e("Example University", "BSc, Expected graduation May 2027", "May 2027", [])] },
+      { type: "skills", title: "Skills", entries: [e("Languages", "Go, Node.js", "", []), e("Tools", "Node.js, Docker", "", [])] },
+    ],
+  }, { openOwnership: ["Layer5"] })
+  const status = Object.fromEntries(results.map((r) => [r.id, r.status]))
+  assert.deepEqual(status, { empty: "warn", thin: "warn", repeats: "warn", ownership: "warn" })
+})

@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useState } from "react"
 import { usePathname } from "next/navigation"
 import { UserButton, useUser } from "@clerk/nextjs"
-import { ChevronRight, Download, FileText, LayoutDashboard, Library, Plus, Sparkles } from "lucide-react"
+import { ChevronRight, CreditCard, Download, FileText, LayoutDashboard, Library, Plus, Sparkles } from "lucide-react"
 import { LogoMark } from "@/components/marketing/logo"
 import { UpgradeDialog } from "@/components/app/upgrade-dialog"
 import { Button } from "@/components/ui/button"
@@ -89,8 +89,20 @@ export function AppSidebar({ resumes, usage }: { resumes: ResumeLink[]; usage: P
         </SidebarGroup>
       </SidebarContent>
 
+      {/* Money and account live at the bottom, apart from the work above. */}
       <SidebarFooter>
         {usage?.plan === "free" && <UpgradeCard usage={usage} />}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild isActive={pathname === "/billing"} tooltip="Plan & billing">
+              <Link href="/billing">
+                <CreditCard />
+                <span>Plan & billing</span>
+                {usage?.billing?.pastDue && <span className="ml-auto size-2 rounded-full bg-amber-400" aria-label="Payment due" />}
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <UserRow />
       </SidebarFooter>
       <SidebarRail />

@@ -7,6 +7,7 @@ const TITLES: [prefix: string, title: string][] = [
   ["/resume/", "Resume"],
   ["/resume", "Resumes"],
   ["/record", "Career Record"],
+  ["/billing", "Plan & billing"],
   ["/start/sources", "Add sources"],
   ["/start/new", "Your first resume"],
   ["/start", "Get started"],

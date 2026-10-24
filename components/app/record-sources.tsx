@@ -5,11 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { ArrowRight, CheckCircle2, Circle, ExternalLink, FileArchive, FileText, Github, Linkedin, RefreshCw, Sparkles, XCircle } from "lucide-react"
 import { toast } from "sonner"
+import { offerUpgrade } from "@/components/app/upgrade-prompt"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { useConnectGitHub } from "@/hooks/use-connect-github"
+import { SyncReview } from "@/components/app/sync-review"
+import { uploadProblem } from "@/lib/ingest/limits"
+import type { DetailChange } from "@/lib/record/pipeline"
 import { addSources, mergeDuplicateFacts, stageExtract, stageFit, stageWrite, type ActionResult } from "@/lib/record/actions"
 
 export interface SourcesView {
@@ -29,6 +33,8 @@ interface Step {
 interface Outcome {
   added: string[]
   updated: string[]
+  updatedIds: string[]
+  changes: DetailChange[]
   resumeId: string | null
 }
 
@@ -63,10 +69,10 @@ export function RecordSources({ view }: { view: SourcesView }) {
     async function step<T>(call: () => Promise<ActionResult<T>>, describe: (d: T) => string): Promise<T | null> {
       const n = i++
       set(n, { state: "running" })
-      const res = await call()
+      const res = await call().catch((): ActionResult<T> => ({ ok: false, error: "We couldn't reach the server. Check your connection and try again." }))
       if (!res.ok) {
         set(n, { state: "failed", detail: res.error })
-        toast.error(res.error)
+        if (!offerUpgrade(res)) toast.error(res.error)
         return null
       }
       set(n, { state: "done", detail: describe(res.data) })
@@ -79,6 +85,12 @@ export function RecordSources({ view }: { view: SourcesView }) {
       if (opts.pdf) form.set("pdfs", opts.pdf)
       const read = await step(() => addSources(form), (lines) => lines.map((l) => `${l.ok ? "" : "✗ "}${l.label}: ${l.detail}`).join(" · ") || "Nothing new to read")
       if (!read) return
+      // Nothing new could be read: stop rather than re-run the build on old data and call it "up to date".
+      if (read.length && !read.some((l) => l.ok)) {
+        set(0, { state: "failed" })
+        setSteps((all) => all && all.filter((s, k) => k === 0))
+        return void toast.error("Nothing new could be read, so nothing was updated.")
+      }
       router.refresh()
     }
     const found = await step(stageExtract, (d) =>
@@ -91,7 +103,7 @@ export function RecordSources({ view }: { view: SourcesView }) {
     if (!written) return
     const fit = await step(() => stageFit(written.resumeId), (d) => (d.pinnedOverflow ? "Pinned items don't fit on one page" : d.cuts ? `One page. Moved ${plural(d.cuts, "weaker line")} off to fit` : "Fits on one page"))
     if (!fit) return
-    setOutcome({ added: found.added, updated: found.updated, resumeId: written.resumeId })
+    setOutcome({ added: found.added, updated: found.updated, updatedIds: found.updatedIds, changes: found.changes, resumeId: written.resumeId })
     router.refresh()
   }
 
@@ -202,6 +214,7 @@ export function RecordSources({ view }: { view: SourcesView }) {
               )}
             </div>
           )}
+          {outcome && <SyncReview updatedIds={outcome.updatedIds} changes={outcome.changes} />}
         </div>
       )}
 
@@ -231,7 +244,16 @@ export function RecordSources({ view }: { view: SourcesView }) {
             {pdf && /\.zip$/i.test(pdf.name) ? <FileArchive className="size-5" /> : <FileText className="size-5" />}
             <span>{pdf ? pdf.name : "Choose the PDF or ZIP, or drop it here"}</span>
             <span className="text-xs">From the ZIP we only read jobs, education, projects and skills. Messages and connections are never opened.</span>
-            <input type="file" accept="application/pdf,.zip,application/zip" className="sr-only" onChange={(e) => setPdf(e.target.files?.[0] ?? null)} />
+            <input type="file" accept="application/pdf,.zip,application/zip" className="sr-only" onChange={(e) => {
+                const f = e.target.files?.[0] ?? null
+                const problem = f && uploadProblem(f)
+                if (problem) {
+                  e.target.value = ""
+                  setPdf(null)
+                  return void toast.error(problem)
+                }
+                setPdf(f)
+              }} />
           </label>
           <DialogFooter>
             <Button

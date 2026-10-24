@@ -33,7 +33,7 @@ export async function startCheckout(billing: "monthly" | "pass"): Promise<Action
     const session = await dodo().checkoutSessions.create({
       product_cart: [{ product_id: billing === "pass" ? proProducts().pass : proProducts().monthly, quantity: 1 }],
       customer: { email, name: user?.fullName || email },
-      return_url: `${await origin()}/home?upgraded=${billing}`,
+      return_url: `${await origin()}/billing?upgraded=${billing}`,
       metadata: { user_id: userId, billing },
     })
     if (!session.checkout_url) return { ok: false, error: "Checkout didn't start. Try again." }

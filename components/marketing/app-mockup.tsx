@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FileText, Sparkles } from "lucide-react"
+import { Download, ExternalLink, FileText, GitPullRequest, RefreshCw, Sparkles } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,15 +14,14 @@ import {
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
-import { Switch } from "@/components/ui/switch"
-import { GitHubIcon, LinkedInIcon, XIcon } from "./brand-icons"
+import { GitHubIcon, LinkedInIcon } from "./brand-icons"
 import { LogoMark } from "./logo"
 
 const sources = [
-  { icon: GitHubIcon, title: "github.com/mayachen", meta: "42 repos read", status: "Live" },
+  { icon: GitHubIcon, title: "github.com/mayachen", meta: "42 repos read", status: "Synced" },
   { icon: LinkedInIcon, title: "LinkedIn", meta: "Profile.pdf", status: "Synced" },
   { icon: FileText, title: "resume-2023.pdf", meta: "2 pages", status: "Read" },
-  { icon: XIcon, title: "x.com/mayabuilds", meta: "Bio and posts", status: "Read" },
+  { icon: GitPullRequest, title: "Pull requests", meta: "6 merged", status: "Read" },
 ]
 
 const changes = [
@@ -30,7 +29,7 @@ const changes = [
     kind: "Added",
     tone: "text-emerald-400",
     text: "Shipped offline sync for 40k weekly users; cut cold start from 2.1s to 0.6s",
-    from: "push to tidepool/mobile",
+    from: "GitHub sync of tidepool/mobile",
     when: "2m",
   },
   {
@@ -102,9 +101,9 @@ export function AppMockup() {
             <Label className="text-xs text-muted-foreground">Target role</Label>
             <Input readOnly value="Senior Mobile Engineer" className="h-8 text-[13px]" />
           </div>
-          <div className="flex items-center justify-between px-1">
-            <Label className="text-[13px]">Update when I ship</Label>
-            <Switch checked />
+          <div className="flex items-center justify-between rounded-lg border px-3 py-2 text-[13px]">
+            <span>Sync GitHub</span>
+            <RefreshCw className="size-3.5 text-muted-foreground" />
           </div>
         </aside>
 

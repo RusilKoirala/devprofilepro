@@ -5,7 +5,7 @@ import OpenAI from "openai"
 import { zodResponseFormat } from "openai/helpers/zod"
 import type { z } from "zod"
 import { checkBudget, recordSpend } from "@/lib/ai/budget"
-import { aiProvider, estimateCostUsd, modelFor, type AiProvider, type AiStep } from "@/lib/ai/model"
+import { aiProvider, estimateCostUsd, modelFor, type AiStep } from "@/lib/ai/model"
 import { checkLimit } from "@/lib/ratelimit"
 import { createClient } from "@/lib/supabase/server"
 
@@ -52,12 +52,12 @@ const OPENAI_MAX_OUTPUT = 32_768
 let anthropicClient: Anthropic | null = null
 let openaiClient: OpenAI | null = null
 
-async function callAnthropic<T>(opts: GenerateOptions<T>, content: AiContent[]): Promise<CallResult<T>> {
+async function callAnthropic<T>(opts: GenerateOptions<T>, content: AiContent[], model: string): Promise<CallResult<T>> {
   anthropicClient ??= new Anthropic()
   // Streaming avoids HTTP timeouts on long outputs; finalMessage() gives the parsed result.
   const message = await anthropicClient.beta.messages
     .stream({
-      model: modelFor("anthropic"),
+      model,
       max_tokens: opts.maxTokens ?? 32000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
@@ -86,10 +86,10 @@ async function callAnthropic<T>(opts: GenerateOptions<T>, content: AiContent[]):
   }
 }
 
-async function callOpenAI<T>(opts: GenerateOptions<T>, content: AiContent[]): Promise<CallResult<T>> {
+async function callOpenAI<T>(opts: GenerateOptions<T>, content: AiContent[], model: string): Promise<CallResult<T>> {
   openaiClient ??= new OpenAI()
   const completion = await openaiClient.chat.completions.parse({
-    model: modelFor("openai"),
+    model,
     max_completion_tokens: Math.min(opts.maxTokens ?? 16000, OPENAI_MAX_OUTPUT),
     messages: [
       { role: "system", content: opts.system },
@@ -119,8 +119,9 @@ async function callOpenAI<T>(opts: GenerateOptions<T>, content: AiContent[]): Pr
 export async function generate<T>(opts: GenerateOptions<T>): Promise<T> {
   const provider = aiProvider()
   if (!provider) throw new AiError("No AI key configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.", opts.step, "config")
-  await checkLimit(opts.userId, opts.step)
-  await checkBudget()
+  const { pro, fast } = await checkBudget()
+  await checkLimit(opts.userId, opts.step, pro)
+  const model = modelFor(provider, fast)
 
   let content = opts.content
   let lastErrors: string[] = []
@@ -129,13 +130,13 @@ export async function generate<T>(opts: GenerateOptions<T>): Promise<T> {
     const started = Date.now()
     let result: CallResult<T>
     try {
-      result = provider === "anthropic" ? await callAnthropic(opts, content) : await callOpenAI(opts, content)
+      result = provider === "anthropic" ? await callAnthropic(opts, content, model) : await callOpenAI(opts, content, model)
     } catch (err) {
-      await logRun(opts.step, provider, { ms: Date.now() - started, ok: false, meta: { error: String(err) } })
+      await logRun(opts.step, model, { ms: Date.now() - started, ok: false, meta: { error: String(err) } })
       throw new AiError(err instanceof Error ? err.message : "AI API error", opts.step, "api")
     }
 
-    const cost = estimateCostUsd(modelFor(provider), result.usage)
+    const cost = estimateCostUsd(model, result.usage)
     recordSpend(cost)
     const usage = {
       input_tokens: result.usage.input,
@@ -145,22 +146,22 @@ export async function generate<T>(opts: GenerateOptions<T>): Promise<T> {
     }
 
     if (result.stop === "refusal") {
-      await logRun(opts.step, provider, { ...usage, ok: false, meta: { stop: "refusal", cost_usd: cost } })
+      await logRun(opts.step, model, { ...usage, ok: false, meta: { stop: "refusal", cost_usd: cost } })
       throw new AiError("The model declined this request.", opts.step, "refusal")
     }
     if (result.stop === "max_tokens") {
-      await logRun(opts.step, provider, { ...usage, ok: false, meta: { stop: "max_tokens", cost_usd: cost } })
+      await logRun(opts.step, model, { ...usage, ok: false, meta: { stop: "max_tokens", cost_usd: cost } })
       throw new AiError("The response was too long and got cut off.", opts.step, "max_tokens")
     }
 
     const data = result.data
     lastErrors = data == null ? ["Output did not match the schema."] : (opts.check?.(data) ?? [])
     if (data != null && (lastErrors.length === 0 || (attempt === attempts - 1 && opts.acceptOnLastAttempt))) {
-      await logRun(opts.step, provider, { ...usage, ok: lastErrors.length === 0, meta: { ...opts.logMeta?.(data), check_errors: lastErrors.length, cost_usd: cost } })
+      await logRun(opts.step, model, { ...usage, ok: lastErrors.length === 0, meta: { ...opts.logMeta?.(data), check_errors: lastErrors.length, cost_usd: cost } })
       return data
     }
 
-    await logRun(opts.step, provider, { ...usage, ok: false, meta: { attempt, errors: lastErrors.slice(0, 20), cost_usd: cost } })
+    await logRun(opts.step, model, { ...usage, ok: false, meta: { attempt, errors: lastErrors.slice(0, 20), cost_usd: cost } })
     content = [
       ...opts.content,
       { type: "text", text: `Your previous answer had these problems. Fix them and answer again:\n- ${lastErrors.join("\n- ")}` },
@@ -171,13 +172,13 @@ export async function generate<T>(opts: GenerateOptions<T>): Promise<T> {
 
 async function logRun(
   step: AiStep,
-  provider: AiProvider,
+  model: string,
   run: { input_tokens?: number; output_tokens?: number; cache_read_tokens?: number; ms: number; ok: boolean; meta: Record<string, unknown> }
 ) {
-  if (process.env.AI_LOG_STDOUT) console.log(`[ai] ${step} ${modelFor(provider)}`, JSON.stringify({ ...run, meta: { cost_usd: run.meta.cost_usd, errors: run.meta.errors } }))
+  if (process.env.AI_LOG_STDOUT) console.log(`[ai] ${step} ${model}`, JSON.stringify({ ...run, meta: { cost_usd: run.meta.cost_usd, errors: run.meta.errors } }))
   try {
     const supabase = await createClient()
-    await supabase.from("ai_runs").insert({ step, model: modelFor(provider), ...run })
+    await supabase.from("ai_runs").insert({ step, model, ...run })
   } catch {
     // Logging must never break generation.
   }

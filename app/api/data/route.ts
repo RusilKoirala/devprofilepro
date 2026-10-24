@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-const TABLES = ["sources", "items", "facts", "bullets", "questions", "jobs", "resumes", "exports"] as const
+const TABLES = ["sources", "source_versions", "items", "facts", "bullets", "questions", "jobs", "resumes", "exports"] as const
 
 // "Download my data": every row the user owns, as JSON.
 export async function GET() {

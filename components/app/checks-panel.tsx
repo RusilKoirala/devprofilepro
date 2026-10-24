@@ -49,9 +49,9 @@ export function ReadinessBadge({ state, onClick }: { state: ChecksState | null; 
       ) : fails ? (
         <><XCircle className="size-3.5 text-destructive" /> {fails} to fix before sending</>
       ) : warns ? (
-        <><AlertTriangle className="size-3.5 text-amber-400" /> Ready, {warns} to review</>
+        <><AlertTriangle className="size-3.5 text-amber-400" /> Checks passed, {warns} to review</>
       ) : (
-        <><CheckCircle2 className="size-3.5 text-emerald-400" /> Ready to send</>
+        <><CheckCircle2 className="size-3.5 text-emerald-400" /> Checks passed</>
       )}
     </button>
   )
@@ -66,8 +66,10 @@ export function ChecksPanel({ state }: { state: ChecksState | null }) {
   return (
     <div className="space-y-4">
       <Alert>
-        <AlertTitle>{state.ready ? "Reviewed and ready to send" : "Fix these before you send it"}</AlertTitle>
-        <AlertDescription>Checks are advice, worst first. You can always download.</AlertDescription>
+        <AlertTitle>{state.ready ? "Passed the automatic checks" : "Fix these before you send it"}</AlertTitle>
+        <AlertDescription>
+          These check page fit, contact details, dates, links, sources and repeated or empty content, worst first. They can&apos;t judge whether it&apos;s persuasive, so read it once yourself before sending. You can always download.
+        </AlertDescription>
       </Alert>
       <ul className="space-y-2">
         {state.results.map((r) => (

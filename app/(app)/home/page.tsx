@@ -3,12 +3,15 @@ import Link from "next/link"
 import { currentUser } from "@clerk/nextjs/server"
 import { ArrowRight, CircleCheck, Copy, Download, FileText, Github, Linkedin, Mail, Plus, RefreshCw, Sparkles } from "lucide-react"
 import { ExportsTable, type ExportView } from "@/components/app/exports-table"
+import { PaymentPending } from "@/components/app/payment-pending"
 import { PlanCard } from "@/components/app/plan-card"
+import { UpgradeDialog } from "@/components/app/upgrade-dialog"
 import { ResumeThumbnail } from "@/components/app/resume-thumbnail"
 import { Button } from "@/components/ui/button"
-import { allowanceStates } from "@/lib/plans"
+import { allowanceStates, FREE_HISTORY } from "@/lib/plans"
 import { loadRecord } from "@/lib/record/db"
 import { findDuplicateFacts } from "@/lib/record/dedupe"
+import { findDuplicateEntries } from "@/lib/record/entry-dupes"
 import type { ResumeLayout } from "@/lib/record/types"
 import { buildResume } from "@/lib/resume/build"
 import { createClient } from "@/lib/supabase/server"
@@ -42,16 +45,26 @@ interface Attention {
 }
 
 // One page that answers: where does my resume stand, what should I do next, and what's left on the plan.
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ upgraded?: string }> }) {
-  const { upgraded } = await searchParams
+const PAGE = 20
+
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ upgraded?: string; downloads?: string }> }) {
+  const { upgraded, downloads } = await searchParams
+  const shownDownloads = Math.min(1000, Math.max(PAGE, Number(downloads) || PAGE))
   const supabase = await createClient()
-  const [user, record, { data: resumes }, { data: exports }, usage] = await Promise.all([
+  const [user, record, { data: resumes }, { data: exports, error: exportsError, count: exportCount }, { count: sentCount }, usage] = await Promise.all([
     currentUser(),
     loadRecord(supabase),
     supabase.from("resumes").select("id,kind,title,layout,updated_at").order("kind").order("updated_at", { ascending: false }),
-    supabase.from("exports").select("id,filename,sent_at,created_at,resumes(title)").order("created_at", { ascending: false }).limit(20),
+    // exports has two foreign keys to resumes (plain and owner-checked), so the embed must name one.
+    supabase
+      .from("exports")
+      .select("id,filename,sent_at,sent_to,created_at,resumes!exports_resume_id_fkey(title)", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .limit(shownDownloads),
+    supabase.from("exports").select("id", { count: "exact", head: true }).not("sent_at", "is", null),
     loadPlanUsage(supabase),
   ])
+  if (exportsError) console.error(exportsError)
   // Nothing yet: the first screen is "Where are you starting?", not an empty dashboard.
   if (!resumes?.length && !record.sources.length && !record.items.length) redirect("/start")
   const base = resumes?.find((r) => r.kind === "base")
@@ -66,7 +79,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const lastSource = [...record.sources].sort((a, b) => b.fetched_at.localeCompare(a.fetched_at))[0]
   const openQuestions = record.questions.filter((q) => q.status === "open").length
   const duplicates = findDuplicateFacts(record.facts).size
-  const sent = (exports ?? []).filter((e) => e.sent_at).length
+  const duplicateEntries = findDuplicateEntries(record.items).length
+  const totalDownloads = exportCount ?? exports?.length ?? 0
   const baseHref = base ? `/resume/${base.id}` : "/start"
 
   // Worst first; only things the person can act on from here.
@@ -74,6 +88,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     !base && { icon: <FileText />, text: "Your sources are in. Build your first resume from them.", href: "/start/new", action: "Start" },
     base && (!contact.name || !contact.email) && { icon: <Mail />, text: `Add your ${!contact.name ? "name" : "email"} so recruiters can reach you.`, href: baseHref, action: "Fix" },
     openQuestions > 0 && { icon: <Sparkles />, text: `${plural(openQuestions, "quick question")} would make your resume more specific.`, href: baseHref, action: "Answer" },
+    duplicateEntries > 0 && { icon: <Copy />, text: `${plural(duplicateEntries, "pair")} of entries look like the same thing twice.`, href: "/record", action: "Review" },
     duplicates > 0 && { icon: <Copy />, text: `${plural(duplicates, "repeated fact")} in your Career Record.`, href: "/record", action: "Merge" },
     base && !github && { icon: <Github />, text: "Connect GitHub so new projects show up with one click.", href: "/record", action: "Connect" },
     github && since(github.fetched_at) > 14 * DAY && { icon: <Github />, text: `GitHub was last synced ${ago(github.fetched_at)}.`, href: "/record", action: "Sync" },
@@ -84,16 +99,19 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       href: "/pricing",
       action: "See Pro",
     },
-    base && !(exports ?? []).length && { icon: <Download />, text: "Download your first PDF. It's free, and we keep the exact file you sent.", href: baseHref, action: "Open" },
+    base && !exportsError && !totalDownloads && { icon: <Download />, text: "Download your first PDF. It's free, and we keep the exact file you sent.", href: baseHref, action: "Open" },
   ]
   const attention = candidates.filter((a): a is Attention => !!a).slice(0, 5)
 
-  const exportViews: ExportView[] = (exports ?? []).map((e) => ({
+  // Free sees its latest downloads; the rest stay stored and show again on Pro.
+  const free = usage.plan === "free"
+  const exportViews: ExportView[] = (exports ?? []).slice(0, free ? FREE_HISTORY : undefined).map((e) => ({
     id: e.id,
     filename: e.filename,
     resume: (e.resumes as unknown as { title: string } | null)?.title ?? "Deleted resume",
     createdAt: e.created_at,
     sentAt: e.sent_at,
+    sentTo: e.sent_to,
   }))
 
 
@@ -110,24 +128,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </div>
       </div>
 
-      {upgraded && (
-        <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] px-5 py-4 text-sm">
-          <Sparkles className="mt-0.5 size-4 shrink-0 text-emerald-400" />
-          <p>
-            {usage.plan === "pro" ? (
-              <><span className="font-medium">You&apos;re on Pro.</span> <span className="text-muted-foreground">Tailor a resume for every job you apply to.</span></>
-            ) : (
-              <><span className="font-medium">Payment received, thank you.</span> <span className="text-muted-foreground">Pro switches on within a minute. Refresh if it hasn&apos;t yet.</span></>
-            )}
-          </p>
-        </div>
-      )}
+      {upgraded && <PaymentPending pro={usage.plan === "pro"} />}
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Resumes" value={resumes?.length ?? 0} detail={base ? `1 base${tailored.length ? ` · ${tailored.length} tailored` : ""}` : "None yet"} href="/resume" />
         <Stat label="Career Record" value={entries.length} detail={`${plural(record.facts.length, "fact")}, each with its source`} href="/record" />
-        <Stat label="Downloads" value={exportViews.length} detail={exportViews.length ? `${sent} marked as sent` : "Free, always"} href="#downloads" />
+        <Stat label="Downloads" value={exportsError ? "–" : totalDownloads} detail={exportsError ? "Couldn't load" : totalDownloads ? `${sentCount ?? 0} marked as sent` : "Free, always"} href="#downloads" />
         <Stat label="Sources" value={record.sources.length} detail={lastSource ? `Last read ${ago(lastSource.fetched_at)}` : "None yet"} href="/record" />
       </div>
 
@@ -182,17 +189,36 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <section id="downloads" className="scroll-mt-20 rounded-2xl border border-border bg-card">
         <div className="px-5 pt-4 pb-2">
           <h3 className="text-sm font-medium">Downloads</h3>
-          <p className="text-sm text-muted-foreground">Every PDF you download is kept exactly as it was, so you know what you sent where.</p>
+          <p className="text-sm text-muted-foreground">Every PDF you download is kept exactly as it was. Mark where you sent it, so you know what went where.</p>
         </div>
         <div className="px-3 pb-2">
-          {exportViews.length ? <ExportsTable exports={exportViews} /> : <p className="px-2 py-4 text-sm text-muted-foreground">No downloads yet.</p>}
+          {exportsError ? (
+            <p role="alert" className="px-2 py-4 text-sm text-destructive">We couldn&apos;t load your download history just now. Your files are safe; refresh to try again.</p>
+          ) : exportViews.length ? (
+            <ExportsTable exports={exportViews} />
+          ) : (
+            <p className="px-2 py-4 text-sm text-muted-foreground">No downloads yet.</p>
+          )}
+          {free && totalDownloads > exportViews.length && (
+            <div className="flex flex-wrap items-center gap-3 px-2 py-3 text-sm text-muted-foreground">
+              <span>{plural(totalDownloads - exportViews.length, "older download")} kept safe. Free shows your last {FREE_HISTORY}.</span>
+              <UpgradeDialog reason={`Free shows your last ${FREE_HISTORY} downloads. Pro shows every version you sent, and all ${totalDownloads} files are already stored.`}>
+                <Button size="sm" variant="secondary">See all with Pro</Button>
+              </UpgradeDialog>
+            </div>
+          )}
+          {!free && totalDownloads > exportViews.length && (
+            <div className="px-2 py-3">
+              <Button asChild size="sm" variant="ghost"><Link href={`/home?downloads=${exportViews.length + PAGE}#downloads`} scroll={false}>Show {Math.min(PAGE, totalDownloads - exportViews.length)} more of {totalDownloads}</Link></Button>
+            </div>
+          )}
         </div>
       </section>
     </div>
   )
 }
 
-function Stat({ label, value, detail, href }: { label: string; value: number; detail: string; href: string }) {
+function Stat({ label, value, detail, href }: { label: string; value: number | string; detail: string; href: string }) {
   return (
     <Link href={href} className="rounded-2xl border border-border bg-card p-4 transition-colors hover:border-foreground/15">
       <p className="text-xs text-muted-foreground">{label}</p>

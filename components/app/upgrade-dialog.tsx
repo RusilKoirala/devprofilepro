@@ -3,30 +3,26 @@
 import Link from "next/link"
 import { useState } from "react"
 import { useUser } from "@clerk/nextjs"
-import { CheckCircle2, FileStack, History, Lock, RefreshCw, Sparkles, Target, Wand2 } from "lucide-react"
+import { Check, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { startCheckout } from "@/lib/plan-actions"
-import { PLANS, PRO_PRICE } from "@/lib/plans"
+import { PRO_PRICE } from "@/lib/plans"
 
-const free = PLANS.free.limits
+const PERKS = ["Unlimited tailored resumes, each with a match report", "Unlimited AI fixes and chat edits", "Sync GitHub and LinkedIn anytime", "Your full download history"]
 
-// Free next to Pro on every line, so the difference is concrete rather than a feature list.
-const ROWS = [
-  { icon: FileStack, title: "Tailored resumes", free: `${free.tailored} a month`, pro: "Unlimited" },
-  { icon: Target, title: "Match report for each job", free: `${free.tailored} a month`, pro: "Every job" },
-  { icon: Wand2, title: "AI fixes and chat edits", free: `${free.fixes} a month`, pro: "Unlimited" },
-  { icon: RefreshCw, title: "GitHub and LinkedIn syncs", free: `${free.updates} a month`, pro: "Anytime" },
-  { icon: History, title: "What you sent where", free: "Last 3", pro: "Forever" },
+const OPTIONS = [
+  { id: "pass" as const, name: "3 months", price: PRO_PRICE.pass, unit: "once", note: "A 90-day pass. Never renews.", tag: `Save $${PRO_PRICE.monthly * 3 - PRO_PRICE.pass}` },
+  { id: "monthly" as const, name: "Monthly", price: PRO_PRICE.monthly, unit: "/ month", note: "Renews monthly. Cancel anytime.", tag: null },
 ]
 
 // `reason` is the one line that explains why this person is seeing the upgrade right now,
-// e.g. "You've used 2 of your 3 free tailored resumes this month."
-export function UpgradeDialog({ reason, children }: { reason?: string; children: React.ReactNode }) {
+// e.g. "You've used 2 of your 3 free tailored resumes this month." Opened by its trigger
+// (`children`), or controlled with `open` when there is no button (see upgrade-prompt.tsx).
+export function UpgradeDialog({ reason, children, open, onOpenChange }: { reason?: string; children?: React.ReactNode; open?: boolean; onOpenChange?: (open: boolean) => void }) {
   const { user } = useUser()
   const [billing, setBilling] = useState<"monthly" | "pass">("pass")
   const [busy, setBusy] = useState(false)
@@ -46,76 +42,67 @@ export function UpgradeDialog({ reason, children }: { reason?: string; children:
     setJoined(true)
   }
 
+  const chosen = OPTIONS.find((o) => o.id === billing)!
+
   return (
-    <Dialog>
-      <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
-        <div className="relative border-b border-border bg-[radial-gradient(80%_100%_at_50%_0%,rgba(255,255,255,0.08),transparent)] px-6 pt-6 pb-5">
-          <DialogHeader>
-            <Badge variant="outline" className="mb-2 w-fit gap-1.5 rounded-full border-white/15 bg-white/[0.04] font-normal">
-              <Sparkles className="size-3" /> Pro
-            </Badge>
-            <DialogTitle className="text-2xl font-semibold tracking-tight">A tailored resume for every job</DialogTitle>
-            <DialogDescription className="text-[15px]">
-              {reason ?? "Free gets you a great resume. Pro gets you one aimed at every job you apply to."}
-            </DialogDescription>
-          </DialogHeader>
-        </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {children && <DialogTrigger asChild>{children}</DialogTrigger>}
+      <DialogContent className="gap-0 p-0 sm:max-w-md">
+        <DialogHeader className="px-6 pt-6 text-left">
+          <DialogTitle className="text-lg font-semibold">Upgrade to Pro</DialogTitle>
+          <DialogDescription>{reason ?? "For an active job search: a resume aimed at every job you apply to."}</DialogDescription>
+        </DialogHeader>
 
-        <div className="px-6 py-5">
-          <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 gap-y-3 text-sm">
-            <span />
-            <span className="w-20 text-right text-xs text-muted-foreground">Free</span>
-            <span className="w-20 text-right text-xs font-medium">Pro</span>
-            {ROWS.map(({ icon: Icon, title, free, pro }) => (
-              <div key={title} className="contents">
-                <span className="flex items-center gap-2.5">
-                  <Icon className="size-4 shrink-0 text-muted-foreground" />
-                  {title}
-                </span>
-                <span className="w-20 text-right text-muted-foreground">{free}</span>
-                <span className="w-20 text-right font-medium">{pro}</span>
-              </div>
-            ))}
+        {joined ? (
+          <div className="m-6 flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-4 text-sm">
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+            <p>
+              <span className="font-medium">You&apos;re on the Pro list.</span>{" "}
+              <span className="text-muted-foreground">We&apos;ll email {email ?? "you"} the moment you can switch it on.</span>
+            </p>
           </div>
+        ) : (
+          <>
+            <RadioGroup value={billing} onValueChange={(v) => setBilling(v as "monthly" | "pass")} className="grid grid-cols-2 gap-3 px-6 pt-5" aria-label="Billing">
+              {OPTIONS.map((o) => (
+                <label
+                  key={o.id}
+                  htmlFor={`plan-${o.id}`}
+                  className={`relative cursor-pointer rounded-lg border p-3.5 transition-colors ${billing === o.id ? "border-foreground/60 bg-muted/40" : "border-border hover:border-foreground/25"}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium whitespace-nowrap">{o.name}</span>
+                    <RadioGroupItem id={`plan-${o.id}`} value={o.id} />
+                  </div>
+                  <p className="mt-2">
+                    <span className="text-2xl font-semibold tracking-tight tabular-nums">${o.price}</span>
+                    <span className="ml-1 text-sm text-muted-foreground">{o.unit}</span>
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">{o.note}</p>
+                  {o.tag && <span className="absolute -top-2 right-3 rounded-full border border-border bg-background px-1.5 text-[11px] text-muted-foreground">{o.tag}</span>}
+                </label>
+              ))}
+            </RadioGroup>
 
-          {joined ? (
-            <div className="mt-6 flex items-start gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4 text-sm">
-              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" />
-              <p>
-                <span className="font-medium">You&apos;re on the Pro list.</span>{" "}
-                <span className="text-muted-foreground">Pro is opening soon. We&apos;ll email {email ?? "you"} the moment you can switch it on.</span>
+            <ul className="space-y-2 px-6 pt-5 text-sm">
+              {PERKS.map((p) => (
+                <li key={p} className="flex items-start gap-2.5">
+                  <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" /> {p}
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-6 border-t border-border px-6 py-4">
+              <Button className="w-full" onClick={upgrade} disabled={busy}>
+                {busy && <Spinner />} Continue to checkout · ${chosen.price}
+              </Button>
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Checkout by Dodo Payments. No refunds.{" "}
+                <Link href="/pricing" target="_blank" className="underline-offset-4 hover:text-foreground hover:underline">Compare plans</Link>
               </p>
             </div>
-          ) : (
-            <>
-              <div className="mt-6 flex items-center justify-between gap-3">
-                <Tabs value={billing} onValueChange={(v) => setBilling(v as "monthly" | "pass")}>
-                  <TabsList className="rounded-full">
-                    <TabsTrigger value="monthly" className="rounded-full px-3">Monthly</TabsTrigger>
-                    <TabsTrigger value="pass" className="rounded-full px-3">3-month pass</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                <p className="text-right">
-                  <span className="text-2xl font-semibold tracking-tight tabular-nums">${billing === "pass" ? PRO_PRICE.pass : PRO_PRICE.monthly}</span>
-                  <span className="text-sm text-muted-foreground">{billing === "pass" ? " / 3 months" : " / month"}</span>
-                </p>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {billing === "pass" ? "One payment. Ends after 90 days and never renews." : "Renews monthly. Cancel anytime in one click."}
-              </p>
-              <Button size="lg" className="mt-5 h-11 w-full rounded-full" onClick={upgrade} disabled={busy}>
-                {busy ? <Spinner /> : <Sparkles />} Upgrade to Pro
-              </Button>
-              <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
-                <Lock className="size-3" /> Secure checkout by Dodo Payments. Payments aren&apos;t refunded.
-              </p>
-            </>
-          )}
-          <p className="mt-4 text-center text-xs">
-            <Link href="/pricing" target="_blank" className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Compare plans</Link>
-          </p>
-        </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   )

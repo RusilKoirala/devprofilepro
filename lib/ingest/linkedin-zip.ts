@@ -2,7 +2,9 @@ import { createHash } from "node:crypto"
 import { unzipSync, strFromU8 } from "fflate"
 import type { IngestedSource } from "@/lib/ingest/types"
 
-export const MAX_ZIP_BYTES = 50 * 1024 * 1024
+import { MAX_ZIP_BYTES } from "@/lib/ingest/limits"
+
+export { MAX_ZIP_BYTES }
 
 // The career files in LinkedIn's "Get a copy of your data" export. Everything else in the
 // archive (messages, connections, ads, logins) is never unzipped.
@@ -78,7 +80,7 @@ export function renderSection(heading: string, csv: string): string | null {
 }
 
 export async function ingestLinkedInZip(file: File): Promise<IngestedSource> {
-  if (file.size > MAX_ZIP_BYTES) throw new Error(`${file.name} is over 50 MB. Request the smaller "fast file" export instead.`)
+  if (file.size > MAX_ZIP_BYTES) throw new Error(`${file.name} is over 10 MB. Request the smaller "fast file" export instead.`)
   const bytes = new Uint8Array(await file.arrayBuffer())
 
   const wanted = new Set(SECTIONS.map(([f]) => f.toLowerCase()))

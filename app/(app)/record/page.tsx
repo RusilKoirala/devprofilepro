@@ -1,9 +1,13 @@
 import { currentUser } from "@clerk/nextjs/server"
+import { DataControls } from "@/components/app/data-controls"
+import { EntryDuplicates, type DuplicateEntryView, type DuplicatePairView } from "@/components/app/entry-duplicates"
+import { EDITABLE } from "@/lib/record/edits"
+import { findDuplicateEntries } from "@/lib/record/entry-dupes"
 import { MergeDuplicates, RecordSources, type SourcesView } from "@/components/app/record-sources"
 import { RecordView, type RecordItemView } from "@/components/app/record-view"
 import { loadRecord } from "@/lib/record/db"
 import { findDuplicateFacts } from "@/lib/record/dedupe"
-import { itemTitle } from "@/lib/record/types"
+import { itemTitle, type Item } from "@/lib/record/types"
 import { createClient } from "@/lib/supabase/server"
 
 export const metadata = { title: "Career Record · DevProfile" }
@@ -57,19 +61,45 @@ export default async function RecordPage() {
       .map((f) => ({ id: f.id, text: f.text, label: f.label, quote: f.quote, source: f.source_id ? (sources.get(f.source_id)?.label ?? null) : null, url: f.source_id ? (sources.get(f.source_id)?.url ?? null) : null })),
   }))
 
+  // Entries that look like the same thing read twice, with where each one's facts came from.
+  const entryView = (item: Item): DuplicateEntryView => {
+    const own = record.facts.filter((f) => f.item_id === item.id)
+    const read = [...new Set(own.map((f) => f.source_id).filter((id): id is string => !!id))]
+      .map((id) => sources.get(id))
+      .filter((src) => !!src)
+      .map((src) => `${src.label}, read ${new Date(src.fetched_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`)
+    const keys = item.type === "contact" ? [] : EDITABLE[item.type]
+    const fields = Object.fromEntries(keys.map((k) => [k, Array.isArray(item.data[k]) ? (item.data[k] as string[]).join(", ") : String(item.data[k] ?? "")]).filter(([, v]) => v))
+    return { id: item.id, title: itemTitle(item), fields, sources: [...read, ...(own.some((f) => f.label === "user") ? ["you"] : [])], facts: own.length }
+  }
+  const KIND: Record<string, string> = { job: "job", project: "project", education: "school", award: "award" }
+  const byId = new Map(record.items.map((i) => [i.id, i]))
+  const duplicates: DuplicatePairView[] = findDuplicateEntries(record.items).map((p) => ({
+    why: p.why,
+    kind: KIND[byId.get(p.a)!.type] ?? "entry",
+    a: entryView(byId.get(p.a)!),
+    b: entryView(byId.get(p.b)!),
+  }))
+
   return (
     <div className="mx-auto max-w-4xl space-y-10 pt-4">
       <RecordSources view={view} />
       <div>
         <h2 className="font-medium">Everything we found</h2>
         <p className="text-sm text-muted-foreground">
-          Including hidden items. Resumes are views of this record: change a fact once, and every resume using it updates.
+          Including hidden items. Every resume is built from this record: titles, dates and facts are shared, and a tailored resume can reword its own lines.
         </p>
-        <div className="mt-4">
+        <div className="mt-4 space-y-3">
+          <EntryDuplicates pairs={duplicates} />
           <MergeDuplicates count={findDuplicateFacts(record.facts).size} />
         </div>
         <RecordView items={items} baseResumeId={base?.id ?? null} />
       </div>
+      <DataControls
+        sources={[...record.sources]
+          .sort((a, b) => b.fetched_at.localeCompare(a.fetched_at))
+          .map((s) => ({ id: s.id, label: s.label, kind: s.kind, read: ago(s.fetched_at), facts: record.facts.filter((f) => f.source_id === s.id).length }))}
+      />
     </div>
   )
 }

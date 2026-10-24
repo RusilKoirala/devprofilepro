@@ -53,8 +53,10 @@ const PREAMBLE = String.raw`\documentclass[letterpaper,11pt]{article}
 export function toLatex(doc: ResumeDoc): string {
   const c = doc.contact
   const contact = [
+    // Same fields, same order as the PDF's contact line.
     c.phone && e(c.phone),
     c.email && href(`mailto:${c.email}`, c.email),
+    c.location && e(c.location),
     c.linkedin && href(c.linkedin),
     c.github && href(c.github),
     c.website && href(c.website),

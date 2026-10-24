@@ -12,10 +12,14 @@ import { Progress } from "@/components/ui/progress"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { useConnectGitHub } from "@/hooks/use-connect-github"
+import { uploadProblem } from "@/lib/ingest/limits"
 import { addSources, stageExtract, stageFit, stageInterview, stageWrite, submitInterview, type ActionResult } from "@/lib/record/actions"
 import type { InterviewCard } from "@/lib/record/pipeline"
 
-type Phase = "connect" | "reading" | "interview" | "writing"
+type Phase = "resume" | "connect" | "reading" | "interview" | "writing"
+
+// Where an interrupted first build picks up, worked out on the server from what's already saved.
+export type Resume = { at: "extract" } | { at: "interview-questions" } | { at: "interview"; cards: InterviewCard[] } | { at: "write" } | null
 type StepState = "pending" | "running" | "done" | "failed"
 interface Step {
   label: string
@@ -32,11 +36,11 @@ function plural(n: number, one: string, many = `${one}s`) {
 
 // The first-timer path: connect GitHub → we read it → a few tappable questions about what they
 // built → the resume is written once, from their work and their answers.
-export function FirstResumeFlow({ githubLogin, provider }: { githubLogin: string | null; provider: string }) {
+export function FirstResumeFlow({ githubLogin, provider, resume }: { githubLogin: string | null; provider: string; resume: Resume }) {
   const router = useRouter()
   const params = useSearchParams()
   const github = useConnectGitHub("/start/new")
-  const [phase, setPhase] = useState<Phase>("connect")
+  const [phase, setPhase] = useState<Phase>(resume ? "resume" : "connect")
   const [steps, setSteps] = useState<Step[]>([])
   const [username, setUsername] = useState("")
   const [byUsername, setByUsername] = useState(false)
@@ -45,6 +49,8 @@ export function FirstResumeFlow({ githubLogin, provider }: { githubLogin: string
   const [file, setFile] = useState<File | null>(null)
   const [cards, setCards] = useState<InterviewCard[]>([])
   const [answers, setAnswers] = useState<Record<string, string | null>>({})
+  // Entries that gained a fact from an answer already saved, so the writer rewrites them.
+  const answeredItems = useRef(new Set<string>())
   const returned = useRef(false)
 
   // Back from GitHub: say whether it worked; the connected state shows on the card.
@@ -65,7 +71,7 @@ export function FirstResumeFlow({ githubLogin, provider }: { githubLogin: string
 
   async function step<T>(i: number, call: () => Promise<ActionResult<T>>, describe?: (d: T) => string | undefined): Promise<T | null> {
     set(i, { state: "running" })
-    const res = await call()
+    const res = await call().catch((): ActionResult<T> => ({ ok: false, error: "We couldn't reach the server. Check your connection and try again." }))
     if (!res.ok) {
       set(i, { state: "failed", detail: res.error })
       return null
@@ -91,12 +97,19 @@ export function FirstResumeFlow({ githubLogin, provider }: { githubLogin: string
     const read = await step(0, () => addSources(form), (lines) => lines.map((l) => `${l.ok ? "" : "✗ "}${l.label}: ${l.detail}`).join(" · "))
     if (!read) return
     if (!read.some((l) => l.ok)) return set(0, { state: "failed", detail: read.map((l) => `${l.label}: ${l.detail}`).join(" · ") || "Nothing to read" })
+    await findAndAsk()
+  }
 
-    const found = await step(1, stageExtract, (d) => {
-      const parts = [d.counts.project && plural(d.counts.project, "project"), d.counts.job && plural(d.counts.job, "job"), d.counts.education && plural(d.counts.education, "school")].filter(Boolean)
-      return parts.length ? `Found ${parts.join(", ")}` : "Nothing we could use yet"
-    })
-    if (!found) return
+  // Stages after reading, also where an interrupted build picks up (steps 1 and 2 of "reading").
+  async function findAndAsk(skipFind = false) {
+    if (skipFind) set(1, { state: "done", detail: "Already found" })
+    else {
+      const found = await step(1, stageExtract, (d) => {
+        const parts = [d.counts.project && plural(d.counts.project, "project"), d.counts.job && plural(d.counts.job, "job"), d.counts.education && plural(d.counts.education, "school")].filter(Boolean)
+        return parts.length ? `Found ${parts.join(", ")}` : "Nothing we could use yet"
+      })
+      if (!found) return
+    }
 
     const questions = await step(2, stageInterview, (q) => (q.length ? `${plural(q.length, "question")}, about a minute` : "Nothing to ask, writing now"))
     if (!questions) return
@@ -118,21 +131,58 @@ export function FirstResumeFlow({ githubLogin, provider }: { githubLogin: string
     router.push(`/resume/${written.resumeId}`)
   }
 
+  // Each answer is saved as soon as it's given, so a reload doesn't lose it.
+  function saveAnswer(id: string, answer: string | null) {
+    if (!answer) return
+    void submitInterview([{ id, answer }]).then((res) => res.ok && res.data.itemIds.forEach((i) => answeredItems.current.add(i))).catch(() => {})
+  }
+
   async function finishInterview(final: Record<string, string | null>) {
     setPhase("writing")
     setSteps([{ label: "Saving your answers", state: "running" }])
-    const res = await submitInterview(cards.map((c) => ({ id: c.id, answer: final[c.id] ?? null })))
+    // Already-saved answers are skipped on the server; this saves the rest and marks skips.
+    const res = await submitInterview(cards.map((c) => ({ id: c.id, answer: final[c.id] ?? null }))).catch((): ActionResult<{ itemIds: string[] }> => ({ ok: false, error: "We couldn't reach the server. Your earlier answers are saved; try again." }))
     if (!res.ok) {
       setSteps([{ label: "Saving your answers", state: "failed", detail: res.error }])
       return
     }
-    await write(res.data.itemIds)
+    await write([...new Set([...answeredItems.current, ...res.data.itemIds])])
+  }
+
+  // Pick up an interrupted first build after its last finished stage.
+  function pickUp() {
+    if (!resume) return setPhase("connect")
+    if (resume.at === "interview") {
+      setCards(resume.cards)
+      return setPhase("interview")
+    }
+    if (resume.at === "write") return void write([])
+    setPhase("reading")
+    setSteps([
+      { label: "Reading what you added", state: "done", detail: "Already read" },
+      { label: "Finding your strongest work", state: "pending" },
+      { label: "Preparing a few quick questions", state: "pending" },
+    ])
+    void findAndAsk(resume.at === "interview-questions")
   }
 
   const failed = steps.some((s) => s.state === "failed")
 
   return (
     <div className="mx-auto max-w-xl pt-10 pb-16">
+      {phase === "resume" && resume && (
+        <>
+          <h2 className="text-2xl font-medium tracking-tight">Pick up where you left off</h2>
+          <p className="mt-2 text-muted-foreground">
+            {resume.at === "extract" ? "We've read your sources. Next we find your strongest work." : resume.at === "interview-questions" ? "We've found your work. Next come a few quick questions." : resume.at === "interview" ? `You have ${plural(resume.cards.length, "question")} left. Your earlier answers are saved.` : "Your answers are saved. Next we write your resume."}
+          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <Button size="lg" onClick={pickUp}>Continue <ArrowRight /></Button>
+            <Button size="lg" variant="ghost" onClick={() => setPhase("connect")}>Add more sources first</Button>
+          </div>
+        </>
+      )}
+
       {phase === "connect" && (
         <>
           <h2 className="text-2xl font-medium tracking-tight">Let&apos;s build your first resume</h2>
@@ -152,7 +202,7 @@ export function FirstResumeFlow({ githubLogin, provider }: { githubLogin: string
                   <p className="flex items-center gap-2 text-sm"><CheckCircle2 className="size-4 text-emerald-400" /> Connected as @{githubLogin}</p>
                 ) : byUsername ? (
                   <div className="flex gap-2">
-                    <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="GitHub username" autoComplete="off" autoFocus />
+                    <Input aria-label="GitHub username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="GitHub username" autoComplete="off" autoFocus />
                     <Button variant="ghost" onClick={() => { setByUsername(false); setUsername("") }}>Cancel</Button>
                   </div>
                 ) : (
@@ -191,7 +241,16 @@ export function FirstResumeFlow({ githubLogin, provider }: { githubLogin: string
               <CollapsibleContent className="space-y-4 px-5 pb-5">
                 <div className="space-y-2">
                   <Label htmlFor="linkedin" className="text-sm">LinkedIn PDF or data export ZIP</Label>
-                  <Input id="linkedin" type="file" accept="application/pdf,.zip,application/zip" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                  <Input id="linkedin" type="file" accept="application/pdf,.zip,application/zip" onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null
+                    const problem = f && uploadProblem(f)
+                    if (problem) {
+                      e.target.value = ""
+                      setFile(null)
+                      return void toast.error(problem)
+                    }
+                    setFile(f)
+                  }} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="extra" className="text-sm">Other things you&apos;ve done</Label>
@@ -212,7 +271,7 @@ export function FirstResumeFlow({ githubLogin, provider }: { githubLogin: string
       {(phase === "reading" || phase === "writing") && (
         <>
           <h2 className="text-2xl font-medium tracking-tight">{phase === "reading" ? "Reading your work" : "Writing your resume"}</h2>
-          <p className="mt-2 text-muted-foreground">{failed ? "Something went wrong. You can try again." : "Keep this tab open, it takes about a minute."}</p>
+          <p className="mt-2 text-muted-foreground">{failed ? "Something went wrong. What's done so far is saved, so trying again picks up from here." : "About a minute. If you leave, we'll pick up from the last finished step."}</p>
           <ol className="mt-8 space-y-4 rounded-2xl border border-border bg-card p-5">
             {steps.map((s) => (
               <li key={s.label} className="flex items-start gap-3 text-sm">
@@ -228,7 +287,7 @@ export function FirstResumeFlow({ githubLogin, provider }: { githubLogin: string
           </ol>
           {failed && (
             <div className="mt-6 flex gap-2">
-              <Button onClick={() => (phase === "writing" && cards.length ? finishInterview(answers) : phase === "writing" ? write([]) : read())}>Try again</Button>
+              <Button onClick={() => (phase === "writing" && cards.length ? finishInterview(answers) : phase === "writing" ? write([]) : steps[0]?.state === "done" ? findAndAsk(steps[1]?.state === "done") : read())}>Try again</Button>
               <Button variant="ghost" onClick={() => setPhase("connect")}>Back</Button>
             </div>
           )}
@@ -238,6 +297,7 @@ export function FirstResumeFlow({ githubLogin, provider }: { githubLogin: string
       {phase === "interview" && (
         <Interview
           cards={cards}
+          onAnswer={saveAnswer}
           onDone={(final) => {
             setAnswers(final)
             finishInterview(final)
@@ -255,7 +315,7 @@ function joined(picked: Record<string, string[]>, typed: Record<string, string>,
 
 // One question at a time. Single-choice questions advance on tap; "what did you build" takes
 // several picks; every question takes free text and can be skipped.
-function Interview({ cards, onDone }: { cards: InterviewCard[]; onDone: (answers: Record<string, string | null>) => void }) {
+function Interview({ cards, onAnswer, onDone }: { cards: InterviewCard[]; onAnswer: (id: string, answer: string | null) => void; onDone: (answers: Record<string, string | null>) => void }) {
   const [index, setIndex] = useState(0)
   const [picked, setPicked] = useState<Record<string, string[]>>({})
   const [typed, setTyped] = useState<Record<string, string>>({})
@@ -268,6 +328,7 @@ function Interview({ cards, onDone }: { cards: InterviewCard[]; onDone: (answers
 
   // State updates land after this call, so callers pass the values they just changed.
   function next(nextPicked = picked, nextTyped = typed) {
+    onAnswer(card.id, joined(nextPicked, nextTyped, card.id))
     if (!last) return setIndex(index + 1)
     onDone(Object.fromEntries(cards.map((c) => [c.id, joined(nextPicked, nextTyped, c.id)])))
   }
@@ -314,9 +375,9 @@ function Interview({ cards, onDone }: { cards: InterviewCard[]; onDone: (answers
         )}
 
         {free ? (
-          <Textarea className="mt-6" rows={3} maxLength={500} value={text} onChange={(e) => setTyped({ ...typed, [card.id]: e.target.value })} placeholder="A sentence is plenty. Plain words are fine." autoFocus />
+          <Textarea aria-label={card.prompt} className="mt-6" rows={3} maxLength={500} value={text} onChange={(e) => setTyped({ ...typed, [card.id]: e.target.value })} placeholder="A sentence is plenty. Plain words are fine." autoFocus />
         ) : (
-          <Input className="mt-4" maxLength={300} value={text} onChange={(e) => setTyped({ ...typed, [card.id]: e.target.value })} placeholder={multi ? "Something else? Type it here" : "Or type your own answer"} />
+          <Input aria-label={card.prompt} className="mt-4" maxLength={300} value={text} onChange={(e) => setTyped({ ...typed, [card.id]: e.target.value })} placeholder={multi ? "Something else? Type it here" : "Or type your own answer"} />
         )}
       </div>
 

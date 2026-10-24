@@ -1,6 +1,6 @@
 "use client"
 
-import { FileText } from "lucide-react"
+import { FileText, GitPullRequest } from "lucide-react"
 import {
   motion,
   useMotionValueEvent,
@@ -10,12 +10,12 @@ import {
 } from "motion/react"
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { GitHubIcon, LinkedInIcon, XIcon } from "./brand-icons"
+import { GitHubIcon, LinkedInIcon } from "./brand-icons"
 
 const steps = [
   {
     title: "Connect your sources",
-    body: "Add your GitHub username, upload your LinkedIn PDF or an old resume, and optionally your X handle.",
+    body: "Add your GitHub username, upload your LinkedIn PDF or an old resume, and optionally links to pull requests you merged.",
     visual: <SourcesVisual />,
   },
   {
@@ -25,7 +25,7 @@ const steps = [
   },
   {
     title: "Stay current",
-    body: "Leave auto-update on. When you ship, the resume rewrites the lines that changed and nothing else.",
+    body: "After you ship, press Sync. New work is read and added, and the lines you edited by hand stay yours.",
     visual: <UpdateVisual />,
   },
 ]
@@ -68,10 +68,10 @@ export function HowItWorks() {
       <div className="mx-auto max-w-7xl px-4 py-24 sm:px-6 md:sticky md:top-0 md:flex md:h-screen md:flex-col md:justify-center md:py-0">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-4xl font-semibold tracking-[-0.03em] text-balance md:text-5xl">
-            Three steps, then it runs itself
+            Three steps, then one click to stay current
           </h2>
           <p className="mt-4 text-lg text-pretty text-muted-foreground">
-            Set it up once. After that, your resume keeps pace with your work.
+            Set it up once. After that, a sync brings your resume up to date with your work.
           </p>
         </div>
 
@@ -147,7 +147,7 @@ function SourcesVisual() {
     { icon: GitHubIcon, label: "mayachen" },
     { icon: LinkedInIcon, label: "Profile.pdf" },
     { icon: FileText, label: "resume-2023.pdf" },
-    { icon: XIcon, label: "@mayabuilds" },
+    { icon: GitPullRequest, label: "3 merged PRs" },
   ]
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -182,7 +182,7 @@ function UpdateVisual() {
   return (
     <div className="space-y-2 font-mono text-[11px]">
       <div className="truncate rounded-lg border bg-background/60 px-2.5 py-2 text-muted-foreground">
-        git push origin main
+        Sync GitHub
       </div>
       <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.07] px-2.5 py-2 text-emerald-300">
         + Shipped offline sync for 40k weekly users
