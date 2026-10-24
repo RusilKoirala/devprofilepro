@@ -3,7 +3,7 @@ import { test } from "node:test"
 import { runChecks } from "./checks.ts"
 import type { ResumeDoc } from "./schema.ts"
 
-const doc: ResumeDoc = { name: "Test", headline: "", contact: { email: "", phone: "", location: "", website: "", github: "", linkedin: "" }, sections: [] }
+const doc: ResumeDoc = { template: "classic", name: "Test", headline: "", contact: { email: "", phone: "", location: "", website: "", github: "", linkedin: "" }, sections: [] }
 async function dates(value: string) {
   const result = await runChecks({ ...doc, sections: [{ type: "job", title: "Experience", entries: [{ item_id: "i", title: "Engineer", subtitle: "", dates: value, location: "", url: "", tech: [], bullets: [] }] }] }, { pages: 1, allBulletsSourced: true })
   return result.results.find((r) => r.id === "dates")!

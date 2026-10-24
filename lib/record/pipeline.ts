@@ -291,13 +291,10 @@ async function saveOwnBullets(supabase: SupabaseClient, resume: ResumeRow, bulle
   return bullets.length
 }
 
-// Students and interns lead with Education; working developers lead with Experience;
-// no job history means Projects come before the (empty) Experience section.
-export function sectionOrder(items: Pick<Item, "type" | "status" | "data">[]): ItemType[] {
-  const jobs = items.filter((i) => i.type === "job" && i.status !== "hidden")
-  if (!jobs.length) return ["education", "project", "skills", "award", "job"]
-  const early = jobs.every((j) => /\b(intern|internship|trainee|apprentice|student|teaching assistant|research assistant)\b/i.test(j.data.role ?? ""))
-  return early ? ["education", "job", "project", "skills", "award"] : ["job", "project", "education", "skills", "award"]
+// Skills first, then Experience, Education, Projects and Awards: what a recruiter scans for, in
+// the order they scan. Empty sections are skipped when the page is built.
+export function sectionOrder(): ItemType[] {
+  return ["skills", "job", "education", "project", "award"]
 }
 
 // Default order: jobs and schools newest first, projects, skills and awards strongest first.
@@ -315,7 +312,7 @@ export function defaultLayout(record: Pick<CareerRecord, "items" | "bullets">, h
   const shown = record.items.filter((i) => i.type !== "contact" && (picked ? picked.has(i.id) : i.status !== "hidden"))
   return {
     headline,
-    section_order: sectionOrder(shown),
+    section_order: sectionOrder(),
     items: orderItems(shown).map((i) => ({ item_id: i.id, bullet_ids: resumeBullets(record.bullets, i.id, resume).map((b) => b.id) })),
   }
 }
@@ -354,6 +351,7 @@ export async function writeBase(supabase: SupabaseClient, userId: string, target
     ...base,
     items: applyItemOrder(base.items, itemOrder),
     ...(role ? { target_role: role } : {}),
+    ...(existing?.layout?.template ? { template: existing.layout.template } : {}),
     ...(itemOrder ? { item_order: itemOrder } : {}),
   }
   if (existing) {
@@ -381,6 +379,7 @@ export async function relayoutResume(supabase: SupabaseClient, resumeId: string)
   const layout: ResumeLayout = {
     ...base,
     ...(resume.layout.target_role ? { target_role: resume.layout.target_role } : {}),
+    ...(resume.layout.template ? { template: resume.layout.template } : {}),
     ...(resume.layout.item_order ? { item_order: resume.layout.item_order } : {}),
     ...(include ? { include } : {}),
     ...(own.hidden_bullets?.length ? { hidden_bullets: own.hidden_bullets } : {}),

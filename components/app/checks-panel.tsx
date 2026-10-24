@@ -41,28 +41,6 @@ export function useResumeChecks(resumeId: string, version: string): ChecksState 
   return state && state.version === version ? state : null
 }
 
-export function ReadinessBadge({ state, onClick }: { state: ChecksState | null; onClick: () => void }) {
-  const fails = state?.results.filter((r) => r.status === "fail").length ?? 0
-  const warns = state?.results.filter((r) => r.status === "warn").length ?? 0
-  return (
-    <button type="button" onClick={onClick} className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs transition-colors hover:bg-muted">
-      {!state ? (
-        <><Spinner className="size-3" /> Checking…</>
-      ) : state.error ? (
-        <><CircleDashed className="size-3.5 text-muted-foreground" /> Checks unavailable</>
-      ) : fails ? (
-        <><XCircle className="size-3.5 text-destructive" /> {fails} to fix before sending</>
-      ) : !state.ready ? (
-        <><AlertTriangle className="size-3.5 text-amber-400" /> {warns} to review before sending</>
-      ) : warns ? (
-        <><AlertTriangle className="size-3.5 text-amber-400" /> {warns} to review</>
-      ) : (
-        <><CheckCircle2 className="size-3.5 text-emerald-400" /> Checks passed</>
-      )}
-    </button>
-  )
-}
-
 // `onShow` takes the person to the entry or line a check is about. `onRemoveLine` and `onKeepLine`
 // settle a flagged line right here, one at a time, so every change is one the person chose.
 export function ChecksPanel({

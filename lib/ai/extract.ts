@@ -41,7 +41,7 @@ Rules:
 - Hide (show: false) forks with no commits by the user, empty repos, and plain tutorial clones, and say why in reason. Hidden items are kept; the user can show them.
 - Merge duplicates: the same job in the resume and LinkedIn is one item with facts from both.
 - Output one "contact" item if any contact details exist, and group skills into a few "skills" items by category (Languages, Frameworks, Tools). Only list skills the sources show.
-- section_order: put Projects before Experience when there is little or no job history.`
+- section_order: Skills, Experience, Education, Projects, Awards.`
 
 // Fixed order so the packed block is stable for prompt caching.
 const KIND_ORDER = ["resume_pdf", "linkedin_pdf", "paste", "pr_link", "github", "win"]

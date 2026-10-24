@@ -34,7 +34,7 @@ import { questionFact } from "@/lib/record/question-fact"
 import { findDuplicateFacts } from "@/lib/record/dedupe"
 import { sharedBullets } from "@/lib/resume/order"
 import {
-  addLine, clearReview, editLine, RANGE, removeLine, restoreLine, setItemOrderIn, setItemStateIn, setSectionOrderIn, updateDetailsIn, updateHeaderIn,
+  addLine, clearReview, editLine, RANGE, removeLine, restoreLine, setItemOrderIn, setItemStateIn, setSectionOrderIn, setTemplateIn, updateDetailsIn, updateHeaderIn,
   type DeletedBullet, type DetailsInput, type HeaderInput,
 } from "@/lib/record/edits"
 import { REWRITE_STYLES, type RewriteStyle } from "@/lib/record/rewrite-styles"
@@ -66,8 +66,10 @@ export interface CoverageLine {
 
 // ① Ingest everything the user gave us on /start.
 // After the first build, reading sources again is a sync or rebuild: a Free allowance.
-async function hasBaseResume(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const { count, error } = await supabase.from("resumes").select("id", { count: "exact", head: true }).eq("kind", "base")
+// Counted by the Career Record, not the base resume: deleting the base resume must not make the
+// next rebuild free.
+async function hasBuiltRecord(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { count, error } = await supabase.from("items").select("id", { count: "exact", head: true })
   if (error) throw new Error(error.message)
   return (count ?? 0) > 0
 }
@@ -76,7 +78,7 @@ export async function addSources(formData: FormData): Promise<ActionResult<Cover
   try {
     const { userId, supabase } = await session()
     // Checked here too, before anything is fetched, so a Free user out of syncs isn't left half way.
-    if (await hasBaseResume(supabase)) await requireAllowance(supabase, "updates")
+    if (await hasBuiltRecord(supabase)) await requireAllowance(supabase, "updates")
     const coverage: CoverageLine[] = []
     const sources: IngestedSource[] = []
 
@@ -157,7 +159,7 @@ export async function stageExtract(): Promise<ActionResult<{ counts: Partial<Rec
   try {
     const { userId, supabase } = await session()
     // The first build is free; every read after it counts as a sync or rebuild.
-    const counted = await hasBaseResume(supabase)
+    const counted = await hasBuiltRecord(supabase)
     if (counted) await requireAllowance(supabase, "updates")
     const report = await buildRecord(supabase, userId)
     if (counted) await recordUsage(supabase, "updates")
@@ -268,7 +270,8 @@ export async function stageTailorSave(brief: string, input: TailorPlan): Promise
     const layout: ResumeLayout = {
       headline: base?.layout?.headline ?? "",
       target_role: plan.role ?? plan.title,
-      section_order: [...new Set([...plan.section_order, "job", "project", "education", "skills", "award"] as const)],
+      section_order: [...new Set([...plan.section_order, "skills", "job", "education", "project", "award"] as const)],
+      ...(base?.layout?.template ? { template: base.layout.template } : {}),
       // Relevance order for projects, skills and awards; jobs and schools stay newest first.
       item_order: include.filter((id) => types.get(id) !== "job" && types.get(id) !== "education"),
       include,
@@ -432,6 +435,11 @@ export async function restoreBullet(resumeId: string, snapshot: DeletedBullet): 
 
 export async function setItemOrder(resumeId: string, sectionIds: string[]): Promise<ActionResult> {
   return edit(resumeId, (supabase) => setItemOrderIn(supabase, resumeId, sectionIds))
+}
+
+// A new design changes how much fits, so the page is re-fit from everything again.
+export async function setTemplate(resumeId: string, template: string): Promise<ActionResult> {
+  return edit(resumeId, (supabase) => setTemplateIn(supabase, resumeId, template))
 }
 
 export async function setSectionOrder(resumeId: string, order: ItemType[]): Promise<ActionResult> {
@@ -752,8 +760,8 @@ export async function deleteResume(resumeId: string): Promise<ActionResult> {
     const { supabase } = await session()
     const resume = await loadResume(supabase, resumeId)
     if (!resume) throw new Error("Resume not found")
-    if (resume.kind === "base") throw new Error("The base resume can't be deleted. It is built from your whole Career Record.")
-    // Its own lines go with it (cascade); every PDF downloaded from it stays.
+    // Its own lines go with it (cascade); every PDF downloaded from it stays. The base resume has no
+    // lines of its own, so deleting it leaves the Career Record whole; Get started builds a new one.
     const { error } = await supabase.from("resumes").delete().eq("id", resumeId)
     if (error) throw new Error(error.message)
     // The job post goes too, unless a copy of this resume still uses it.

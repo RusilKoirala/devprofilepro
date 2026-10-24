@@ -4,7 +4,8 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
-import { ArrowRight, CheckCircle2, CircleDashed, X, XCircle } from "lucide-react"
+import { ArrowRight, CheckCircle2, CircleDashed, Trash2, X, XCircle } from "lucide-react"
+import { DeleteResumeDialog } from "@/components/app/delete-resume-dialog"
 import { MatchReport, pageEvidence } from "@/components/app/match-report"
 import { MATCH_REPORT_VERSION } from "@/lib/ai/tailor-check"
 import { NewResumePrompt } from "@/components/app/new-resume-prompt"
@@ -246,14 +247,28 @@ function ResumeLibrary({ resumes }: { resumes: ResumeCard[] }) {
 }
 
 function ResumeTile({ card }: { card: ResumeCard }) {
+  const router = useRouter()
+  const [deleting, setDeleting] = useState(false)
   return (
-    <Link href={`/resume/${card.id}`} className="group">
-      <div className="overflow-hidden rounded-lg border border-border shadow-sm ring-foreground/20 transition group-hover:-translate-y-0.5 group-hover:ring-2 group-focus-visible:ring-2">
-        <ResumeThumbnail doc={card.doc} />
-      </div>
-      <p className="mt-2.5 truncate text-sm font-medium">{card.title}</p>
-      <p className="text-xs text-muted-foreground">Updated {card.updated}</p>
-    </Link>
+    <div className="group relative">
+      <Link href={`/resume/${card.id}`} className="block">
+        <div className="overflow-hidden rounded-lg border border-border shadow-sm ring-foreground/20 transition group-hover:-translate-y-0.5 group-hover:ring-2 group-has-[a:focus-visible]:ring-2">
+          <ResumeThumbnail doc={card.doc} />
+        </div>
+        <p className="mt-2.5 truncate pr-7 text-sm font-medium">{card.title}</p>
+        <p className="text-xs text-muted-foreground">Updated {card.updated}</p>
+      </Link>
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={`Delete ${card.title}`}
+        onClick={() => setDeleting(true)}
+        className="absolute right-0 bottom-3 size-7 text-muted-foreground transition-opacity hover:text-destructive focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+      >
+        <Trash2 />
+      </Button>
+      <DeleteResumeDialog resume={{ id: card.id, title: card.title, kind: card.kind }} open={deleting} onOpenChange={setDeleting} onDeleted={() => router.refresh()} />
+    </div>
   )
 }
 

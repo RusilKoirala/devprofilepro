@@ -1,3 +1,4 @@
+import type { TemplateId } from "@/lib/resume/templates"
 import { z } from "zod"
 
 export const ITEM_TYPES = ["contact", "job", "project", "education", "skills", "award"] as const
@@ -99,6 +100,10 @@ export interface ResumeLayout {
   // Optional "what are you applying for", steers which facts the writer leads with.
   target_role?: string
   section_order: ItemType[]
+  // Which design the page is printed in (lib/resume/templates.ts). Unset means Classic.
+  template?: TemplateId
+  // Body text size the fitter chose: the largest from 11.5pt down to 10pt that fits one page.
+  font_size?: number
   // Item ids in the order the user dragged them. Unset means the default order.
   item_order?: string[]
   // Tailored resumes only: the items chosen for this resume. The base resume shows every shown item.

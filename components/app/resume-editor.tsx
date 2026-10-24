@@ -2,33 +2,38 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState, useTransition } from "react"
-import { Archive, ArrowDown, ArrowUp, ChevronDown, Copy, Download, EyeOff, GripVertical, Lightbulb, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RotateCcw, Sparkles, Trash2, Wand2 } from "lucide-react"
+import { useCallback, useRef, useState, useTransition } from "react"
+import { Archive, ArrowDown, ArrowUp, Copy, Download, EyeOff, FileCheck, GripVertical, Lightbulb, MessageSquare, MoreHorizontal, Palette, Pencil, Pin, PinOff, Plus, RotateCcw, Trash2, Wand2 } from "lucide-react"
 import { toast } from "sonner"
-import { ChecksPanel, ReadinessBadge, useResumeChecks, type CheckTarget } from "@/components/app/checks-panel"
+import { ChecksPanel, useResumeChecks, type CheckTarget } from "@/components/app/checks-panel"
+import { DeleteResumeDialog } from "@/components/app/delete-resume-dialog"
 import { FactChip, type FactView } from "@/components/app/fact-chip"
 import { offerUpgrade } from "@/components/app/upgrade-prompt"
 import { MatchReport, type MatchView, type PageEvidence } from "@/components/app/match-report"
 import { QuestionCard, type QuestionView } from "@/components/app/questions-panel"
 import { ResumeChat, type ChatMessageView } from "@/components/app/resume-chat"
+import { ResumeThumbnail } from "@/components/app/resume-thumbnail"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Spinner } from "@/components/ui/spinner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
-  addBullet, archiveResume, deleteBullet, deleteResume, duplicateResume, editBullet, keepLine, recheckMatch, regenerateItem, renameResume, restoreBullet, restoreCut, setItemOrder, setItemState, setSectionOrder, updateHeader, updateItemDetails, type ActionResult,
+  addBullet, archiveResume, deleteBullet, duplicateResume, editBullet, keepLine, recheckMatch, regenerateItem, renameResume, restoreBullet, restoreCut, setItemOrder, setItemState, setSectionOrder, setTemplate, updateHeader, updateItemDetails, type ActionResult,
 } from "@/lib/record/actions"
 import { REWRITE_LABELS, type RewriteStyle } from "@/lib/record/rewrite-styles"
 import type { ItemType } from "@/lib/record/types"
 import { displayUrl } from "@/lib/resume/build"
 import { bulletHint } from "@/lib/resume/hints"
 import { OVERLEAF_URL } from "@/lib/resume/latex"
+import type { ResumeDoc } from "@/lib/resume/schema"
+import { TEMPLATES, type TemplateId } from "@/lib/resume/templates"
 
 type Details = Record<"role" | "company" | "name" | "url" | "school" | "degree" | "details" | "category" | "location" | "start" | "end" | "tech" | "skills", string>
 
@@ -43,6 +48,8 @@ export interface EditorData {
   // What the PDF prints now, for the match report (lib/record/evidence.ts).
   page: PageEvidence
   titles: Record<string, string>
+  // What the page prints, for the design picker's previews.
+  doc: ResumeDoc
   chat: ChatMessageView[]
   header: { name: string; headline: string; targetRole: string; email: string; phone: string; location: string; website: string; github: string; linkedin: string }
   sections: {
@@ -155,7 +162,8 @@ export function ResumeEditor({ data }: { data: EditorData }) {
 
   const allBullets = data.sections.flatMap((s) => s.entries.flatMap((e) => e.bullets.map((b) => b.text)))
   const questions = [...data.sections.flatMap((s) => s.entries.flatMap((e) => e.questions)), ...data.otherQuestions]
-  const hinted = allBullets.filter((t, i) => bulletHint(t, allBullets.filter((_, j) => j !== i))).length
+  // Everything that asks for the person's attention lives in one tab: questions and check results.
+  const improveCount = questions.length + (checks?.results.filter((r) => r.status === "fail" || r.status === "warn").length ?? 0)
 
   async function download() {
     setDownloading(true)
@@ -175,12 +183,6 @@ export function ResumeEditor({ data }: { data: EditorData }) {
     }
   }
 
-  function showPanel(value: string) {
-    setTab(value)
-    setPane("page")
-    // On phones the panel sits below the editor; bring it into view so the tap visibly does something.
-    requestAnimationFrame(() => document.getElementById("resume-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }))
-  }
 
   // From a check to the entry or line it's about: switch to editing, scroll there, flash it.
   function show(target: CheckTarget) {
@@ -204,14 +206,6 @@ export function ResumeEditor({ data }: { data: EditorData }) {
     })
   }
 
-  function remove() {
-    startTransition(async () => {
-      const res = await deleteResume(data.resumeId)
-      if (!res.ok) return void toast.error(res.error)
-      toast.success(`Deleted “${data.title}”. Its downloaded PDFs are still on your Dashboard.`)
-      router.push("/resume")
-    })
-  }
 
   async function openInOverleaf() {
     const tex = await (await fetch(`/api/tex/${data.resumeId}`)).text()
@@ -225,7 +219,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
   return (
     <div className="min-w-0 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           {tailored ? (
             <button type="button" onClick={() => setRenaming(true)} className="group/title flex min-w-0 items-center gap-1.5 text-left" title="Rename">
               <h2 className="min-w-0 text-lg font-medium break-words">{data.title}</h2>
@@ -236,40 +230,16 @@ export function ResumeEditor({ data }: { data: EditorData }) {
             <h2 className="text-lg font-medium">{data.title}</h2>
           )}
           {data.archived && <Badge variant="outline" className="rounded-full font-normal text-muted-foreground">Archived</Badge>}
-          <div role="group" aria-label="Edit or chat" className="inline-flex rounded-full border border-border p-0.5 text-xs">
-            {(["edit", "chat"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={mode === m}
-                onClick={() => { setMode(m); setPane("editor") }}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors ${mode === m ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                {m === "edit" ? <Pencil className="size-3" /> : <MessageSquare className="size-3" />}
-                {m === "edit" ? "Edit" : "Chat"}
-              </button>
-            ))}
-          </div>
-          <ReadinessBadge state={checks} onClick={() => showPanel("checks")} />
-          {(questions.length > 0 || hinted > 0) && (
-            <button
-              type="button"
-              onClick={() => document.querySelector("[data-attention]")?.scrollIntoView({ behavior: "smooth", block: "center" })}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Sparkles className="size-3.5" />
-              {[questions.length && `${questions.length} question${questions.length === 1 ? "" : "s"}`, hinted && `${hinted} to polish`].filter(Boolean).join(" · ")}
-            </button>
-          )}
           {pending && <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Spinner /> Saving…</span>}
         </div>
         <div className="flex items-center gap-2">
+          <DesignMenu doc={data.doc} pending={pending} onPick={(t) => run(() => setTemplate(data.resumeId, t))} />
           <Button onClick={download} disabled={downloading || pending}>
             {downloading ? <Spinner /> : <Download />} Download PDF
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline">More <ChevronDown /></Button>
+              <Button variant="outline" size="icon" aria-label="More"><MoreHorizontal /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem asChild><a href={`/api/tex/${data.resumeId}`} title="Same content as the PDF in a standard LaTeX template. Fonts and spacing differ slightly; it's checked to fit on one page when the PDF does.">Download .tex</a></DropdownMenuItem>
@@ -282,35 +252,41 @@ export function ResumeEditor({ data }: { data: EditorData }) {
                   <Archive /> {data.archived ? "Unarchive" : "Archive"}
                 </DropdownMenuItem>
               )}
-              {tailored && <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}><Trash2 /> Delete resume</DropdownMenuItem>}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild><Link href="/start/sources">Add sources and update</Link></DropdownMenuItem>
-              <DropdownMenuItem asChild><a href="/api/data">Download my data (JSON)</a></DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}><Trash2 /> Delete resume</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
 
-      <p className="-mt-3 text-xs text-muted-foreground">
-        {tailored
-          ? "Lines you edit, add or remove here change this resume only. Titles, dates, links and contact details are shared with your other resumes."
-          : "Edits here update your Career Record wording, and every tailored resume that hasn't reworded that line in its own way."}
-      </p>
-
       <div role="group" aria-label="Show the editor or the page" className="grid grid-cols-2 rounded-full border border-border p-0.5 text-sm lg:hidden">
         {(["editor", "page"] as const).map((p) => (
           <button key={p} type="button" aria-pressed={pane === p} onClick={() => setPane(p)} className={`rounded-full px-3 py-1.5 transition-colors ${pane === p ? "bg-foreground text-background" : "text-muted-foreground"}`}>
-            {p === "editor" ? (mode === "chat" ? "Chat" : "Edit") : "Preview & checks"}
+            {p === "editor" ? (mode === "chat" ? "Ask AI" : "Edit") : improveCount ? `Page · ${improveCount} to improve` : "Page"}
           </button>
         ))}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className={`min-w-0 ${mode === "chat" ? "lg:sticky lg:top-20 lg:self-start" : "hidden"} ${pane === "page" ? "max-lg:hidden" : ""}`}>
+        <div className={`min-w-0 space-y-4 ${pane === "page" ? "max-lg:hidden" : ""} ${mode === "chat" ? "lg:sticky lg:top-20 lg:self-start" : ""}`}>
+        <div role="group" aria-label="Edit or ask AI" className="inline-flex rounded-full border border-border p-0.5 text-xs">
+          {(["edit", "chat"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={mode === m}
+              onClick={() => setMode(m)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors ${mode === m ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {m === "edit" ? <Pencil className="size-3" /> : <MessageSquare className="size-3" />}
+              {m === "edit" ? "Edit" : "Ask AI"}
+            </button>
+          ))}
+        </div>
+        <div className={mode === "chat" ? "" : "hidden"}>
           <ResumeChat resumeId={data.resumeId} initial={data.chat} onBusy={setChatBusy} />
         </div>
         {/* Editor */}
-        <div className={`min-w-0 ${mode === "edit" ? "space-y-6" : "hidden"} ${pane === "page" ? "max-lg:hidden" : ""}`}>
+        <div className={mode === "edit" ? "space-y-6" : "hidden"}>
           <HeaderCard resumeId={data.resumeId} header={data.header} pending={pending} run={run} />
 
           {sections.map((section, si) => {
@@ -403,33 +379,10 @@ export function ResumeEditor({ data }: { data: EditorData }) {
             )
           })}
 
-          {data.otherQuestions.length > 0 && (
-            <section className="space-y-2">
-              <h2 className="text-xs font-medium tracking-wider text-muted-foreground uppercase">About items not on the page</h2>
-              {data.otherQuestions.map((q) => <QuestionCard key={q.id} resumeId={data.resumeId} question={q} showItem />)}
-            </section>
-          )}
-
-          {data.cuts.length > 0 && (
-            <section className="space-y-2">
-              <h2 className="text-xs font-medium tracking-wider text-muted-foreground uppercase">Moved off the page to fit</h2>
-              {data.cuts.map((c, i) => (
-                <div key={i} className="flex items-start justify-between gap-3 rounded-lg border border-dashed border-border p-3 text-sm">
-                  <div className="min-w-0">
-                    <div className="font-medium">{c.title}</div>
-                    {c.bulletText && <div className="text-muted-foreground">“{c.bulletText}”</div>}
-                    <div className="text-xs text-muted-foreground">{c.reason}</div>
-                  </div>
-                  <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => restoreCut(data.resumeId, c.itemId), () => toast.success("Restored and pinned. Something weaker made room."))}>
-                    <RotateCcw /> Restore
-                  </Button>
-                </div>
-              ))}
-            </section>
-          )}
           <p className="text-sm text-muted-foreground">
             Hidden items and everything else we found are in your <Link href="/record" className="underline underline-offset-4">Career Record</Link>.
           </p>
+        </div>
         </div>
 
         {/* Preview + checks */}
@@ -437,7 +390,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="preview">Preview</TabsTrigger>
-              <TabsTrigger value="checks">Checks</TabsTrigger>
+              <TabsTrigger value="improve">Improve{improveCount > 0 && <span className="ml-1 rounded-full bg-amber-400/15 px-1.5 text-[11px] text-amber-400">{improveCount}</span>}</TabsTrigger>
               {data.match && <TabsTrigger value="match">Job match</TabsTrigger>}
             </TabsList>
             <TabsContent value="preview">
@@ -455,7 +408,30 @@ export function ResumeEditor({ data }: { data: EditorData }) {
                 )}
               </div>
             </TabsContent>
-            <TabsContent value="checks">
+            <TabsContent value="improve" className="space-y-6">
+              {questions.length > 0 && (
+                <section className="space-y-2">
+                  <h3 className="text-xs font-medium tracking-wider text-muted-foreground uppercase">Questions that make your lines stronger</h3>
+                  {questions.map((q) => <QuestionCard key={q.id} resumeId={data.resumeId} question={q} showItem />)}
+                </section>
+              )}
+              {data.cuts.length > 0 && (
+                <section className="space-y-2">
+                  <h3 className="text-xs font-medium tracking-wider text-muted-foreground uppercase">Moved off the page to fit</h3>
+                  {data.cuts.map((c, i) => (
+                    <div key={i} className="flex items-start justify-between gap-3 rounded-lg border border-dashed border-border p-3 text-sm">
+                      <div className="min-w-0">
+                        <div className="font-medium">{c.title}</div>
+                        {c.bulletText && <div className="text-muted-foreground">“{c.bulletText}”</div>}
+                        <div className="text-xs text-muted-foreground">{c.reason}</div>
+                      </div>
+                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => restoreCut(data.resumeId, c.itemId), () => toast.success("Restored and pinned. Something weaker made room."))}>
+                        <RotateCcw /> Restore
+                      </Button>
+                    </div>
+                  ))}
+                </section>
+              )}
               <ChecksPanel
                 state={checks}
                 onShow={show}
@@ -488,20 +464,60 @@ export function ResumeEditor({ data }: { data: EditorData }) {
       </div>
 
       <RenameDialog open={renaming} onOpenChange={setRenaming} title={data.title} pending={pending} onSave={(title) => run(() => renameResume(data.resumeId, title), () => setRenaming(false))} />
-      <Dialog open={deleting} onOpenChange={setDeleting}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete “{data.title}”?</DialogTitle>
-            <DialogDescription>
-              This resume and the wording only it uses are deleted. Your Career Record, your other resumes, and every PDF you downloaded from it stay.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleting(false)}>Cancel</Button>
-            <Button variant="destructive" disabled={pending} onClick={() => { setDeleting(false); remove() }}>Delete resume</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteResumeDialog resume={{ id: data.resumeId, title: data.title, kind: data.kind }} open={deleting} onOpenChange={setDeleting} onDeleted={() => router.push("/resume")} />
+    </div>
+  )
+}
+
+// Your own resume in every design, side by side. A pick re-fits the page in that design.
+function DesignMenu({ doc, pending, onPick }: { doc: ResumeDoc; pending: boolean; onPick: (template: TemplateId) => void }) {
+  const [open, setOpen] = useState(false)
+  const [picked, setPicked] = useState<{ from: TemplateId; to: TemplateId } | null>(null)
+  // Shows the new pick right away; the saved design takes over once the page is refreshed.
+  const current = picked?.from === doc.template ? picked.to : doc.template
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline"><Palette /> {TEMPLATES.find((t) => t.id === current)?.name}</Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[22rem] p-3">
+        <div role="radiogroup" aria-label="Design" className="grid grid-cols-2 gap-2">
+          {TEMPLATES.map((t) => {
+            const on = current === t.id
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                disabled={pending}
+                title={t.blurb}
+                onClick={() => { setOpen(false); if (on) return; setPicked({ from: doc.template, to: t.id }); onPick(t.id) }}
+                className={`group/design min-w-0 rounded-lg border p-1.5 text-left transition-colors disabled:cursor-wait ${on ? "border-foreground bg-muted" : "border-border hover:border-muted-foreground/60 hover:bg-muted/50"}`}
+              >
+                <FluidThumbnail doc={doc} template={t.id} />
+                <div className={`mt-1.5 truncate text-xs ${on ? "font-medium text-foreground" : "text-muted-foreground group-hover/design:text-foreground"}`}>{t.name}</div>
+              </button>
+            )
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function FluidThumbnail({ doc, template }: { doc: ResumeDoc; template: TemplateId }) {
+  const [width, setWidth] = useState(0)
+  const ref = useRef<ResizeObserver | null>(null)
+  const measure = useCallback((el: HTMLDivElement | null) => {
+    ref.current?.disconnect()
+    if (!el) return
+    ref.current = new ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)))
+    ref.current.observe(el)
+  }, [])
+  return (
+    <div ref={measure} className="aspect-[8.5/11] overflow-hidden rounded-sm border border-border/60 bg-white">
+      {width > 0 && <ResumeThumbnail doc={doc} template={template} width={width} />}
     </div>
   )
 }
@@ -694,12 +710,6 @@ function EntryCard({ resumeId, type, entry, position, allBullets, pending, run, 
         </ul>
       )}
 
-      {entry.questions.length > 0 && (
-        <div className="mt-3 space-y-2">
-          {entry.questions.map((q) => <QuestionCard key={q.id} resumeId={resumeId} question={q} />)}
-        </div>
-      )}
-
       {writable &&
         (adding ? (
           <BulletInput
@@ -799,6 +809,7 @@ function BulletRow({ bullet, hint, disabled, onSave, onDelete }: {
   onDelete: () => void
 }) {
   const [editing, setEditing] = useState(false)
+  const [sources, setSources] = useState(false)
 
   if (editing) {
     return (
@@ -808,6 +819,7 @@ function BulletRow({ bullet, hint, disabled, onSave, onDelete }: {
     )
   }
 
+  const extras = bullet.facts.length > 0 || bullet.userEdited || bullet.ownCopy
   return (
     <li id={`line-${bullet.id}`} className="group -mx-1 flex gap-2 rounded-md px-1 text-sm leading-relaxed transition">
       <span className="mt-[0.55em] size-1 shrink-0 rounded-full bg-muted-foreground" />
@@ -815,31 +827,47 @@ function BulletRow({ bullet, hint, disabled, onSave, onDelete }: {
         <button type="button" className="text-left break-words hover:text-foreground/80" onClick={() => setEditing(true)} title="Click to edit">
           {bullet.text}
         </button>
-        <span className="mt-1 flex flex-wrap items-center gap-1">
-          {bullet.facts.map((f) => <FactChip key={f.id} fact={f} />)}
-          {bullet.userEdited && <Badge variant="outline" className="text-[10px]">edited by you</Badge>}
-          {bullet.ownCopy && <Badge variant="outline" className="text-[10px]">this resume only</Badge>}
-          {hint && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button type="button" data-attention onClick={() => setEditing(true)} className="inline-flex items-center gap-1 rounded-md px-1 text-[11px] text-amber-400 hover:bg-amber-400/10">
-                  <Lightbulb className="size-3" /> {hint.kind === "no_result" ? "Add a result?" : "Polish"}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-64">{hint.text}</TooltipContent>
-            </Tooltip>
-          )}
-        </span>
+        {sources && (
+          <span className="mt-1 flex flex-wrap items-center gap-1">
+            {bullet.facts.map((f) => <FactChip key={f.id} fact={f} />)}
+            {bullet.userEdited && <Badge variant="outline" className="text-[10px]">edited by you</Badge>}
+            {bullet.ownCopy && <Badge variant="outline" className="text-[10px]">this resume only</Badge>}
+          </span>
+        )}
       </div>
-      <button
-        type="button"
-        onClick={onDelete}
-        disabled={disabled}
-        aria-label="Remove this line"
-        className="mt-0.5 size-6 shrink-0 rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 disabled:pointer-events-none [&_svg]:mx-auto [&_svg]:size-3.5"
-      >
-        <Trash2 />
-      </button>
+      <div className="flex shrink-0 items-start">
+        {hint && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" onClick={() => setEditing(true)} aria-label={hint.kind === "no_result" ? "Add a result?" : "Polish"} className="mt-0.5 size-6 rounded-md text-amber-400 hover:bg-amber-400/10 [&_svg]:mx-auto [&_svg]:size-3.5">
+                <Lightbulb />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-64">{hint.text}</TooltipContent>
+          </Tooltip>
+        )}
+        {extras && (
+          <button
+            type="button"
+            onClick={() => setSources(!sources)}
+            aria-pressed={sources}
+            aria-label="Where this line comes from"
+            title="Where this line comes from"
+            className={`mt-0.5 size-6 rounded-md text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 [&_svg]:mx-auto [&_svg]:size-3.5 ${sources ? "" : "md:opacity-0 md:group-hover:opacity-100"}`}
+          >
+            <FileCheck />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={disabled}
+          aria-label="Remove this line"
+          className="mt-0.5 size-6 rounded-md text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 disabled:pointer-events-none md:opacity-0 md:group-hover:opacity-100 [&_svg]:mx-auto [&_svg]:size-3.5"
+        >
+          <Trash2 />
+        </button>
+      </div>
     </li>
   )
 }

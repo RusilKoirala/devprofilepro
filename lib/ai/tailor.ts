@@ -49,7 +49,7 @@ Rules:
 - Use only the <item> ids given. Include the items most relevant to the request, most relevant first. Hidden items may be included when they fit the request better than shown ones.
 - A one-page resume usually has 1-4 jobs, 2-4 projects, education, and the relevant skill groups. Always keep education and at least one skills item when they exist.
 - Each item's reason must describe that item only, from its own <fact>s, and fact_ids must be ids of facts inside that same <item>. Never describe one item with another item's facts.
-- section_order: lead with what proves the most for this request. Students and interns usually lead with Education.
+- section_order: Skills, Experience, Education, Projects, Awards. Change it only when the request asks for a different order.
 - requirements: list the key requirements of a job post, or of the skills a request names (max 10). Search the WHOLE record for each one before deciding, including items you didn't pick:
   - "covered": facts of items you included clearly show it. Cite them.
   - "unclear": they show part of it (one half of "Go and Kubernetes", a Dockerfile for "containers in production"). Cite what partly shows it.

@@ -29,7 +29,7 @@ const sections = [
     title: "Ending",
     body: [
       "You can delete your data, or your whole account, at any time. Deleting your account deletes your DevProfile data and files.",
-      "We may suspend accounts that break these terms. If we ever shut DevProfile down, we'll give notice so you can download your resumes and data first.",
+      "We may suspend accounts that break these terms. If we ever shut DevProfile down, we'll give notice so you can download your resumes first.",
     ],
   },
   {

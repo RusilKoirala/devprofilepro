@@ -1,5 +1,6 @@
 import type { CareerRecord } from "@/lib/record/db"
 import type { Item, ResumeLayout } from "@/lib/record/types"
+import { templateOf } from "@/lib/resume/templates"
 import { SECTION_TITLES, type ResumeDoc, type ResumeEntry, type ResumeSection } from "@/lib/resume/schema"
 
 function dates(start?: string | null, end?: string | null) {
@@ -51,6 +52,8 @@ export function buildResume(layout: ResumeLayout, record: Pick<CareerRecord, "it
   }
 
   return {
+    template: templateOf(layout.template),
+    size: layout.font_size,
     name: contact.name ?? "",
     headline: layout.headline,
     contact: {

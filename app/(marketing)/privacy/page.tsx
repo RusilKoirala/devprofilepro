@@ -27,7 +27,7 @@ const sections = [
   {
     title: "Your controls",
     body: [
-      "On the Career Record page you can download everything as JSON, remove any single source (with the facts and lines that came only from it), or delete all your DevProfile data, including uploaded files and downloaded PDFs.",
+      "On the Career Record page you can remove any single source (with the facts and lines that came only from it), or delete all your DevProfile data, including uploaded files and downloaded PDFs.",
       "Deleting your account from the account menu deletes all of your DevProfile data and files with it.",
       "Questions or requests: email dev@rusil.me.",
     ],

@@ -4,6 +4,7 @@ import { z } from "zod"
 import { loadResume } from "@/lib/record/db"
 import type { ItemType } from "@/lib/record/types"
 import { reorderWithin } from "@/lib/resume/order"
+import { TEMPLATE_IDS } from "@/lib/resume/templates"
 
 // Resume edits without the re-fit. Server actions call one and re-fit; the chat applies several
 // in a row and re-fits once. Each loads the resume itself, so a sequence never writes a stale layout.
@@ -207,6 +208,12 @@ export async function setItemOrderIn(supabase: SupabaseClient, resumeId: string,
 }
 
 // Sections not in `order` keep their place after these.
+export async function setTemplateIn(supabase: SupabaseClient, resumeId: string, template: string) {
+  const id = z.enum(TEMPLATE_IDS).parse(template)
+  const resume = await resumeOrThrow(supabase, resumeId)
+  must((await supabase.from("resumes").update({ layout: { ...resume.layout, template: id }, updated_at: now() }).eq("id", resumeId)).error)
+}
+
 export async function setSectionOrderIn(supabase: SupabaseClient, resumeId: string, order: ItemType[]) {
   const types = z.array(z.enum(["job", "project", "education", "skills", "award"])).max(5).parse(order)
   if (new Set(types).size !== types.length) throw new Error("Each section can appear once.")
