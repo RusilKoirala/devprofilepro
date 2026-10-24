@@ -17,7 +17,7 @@ async function listResumes(): Promise<ResumeLink[]> {
   if (!isSupabaseConfigured()) return []
   try {
     const supabase = await createClient()
-    const { data } = await supabase.from("resumes").select("id,title,kind").order("kind").order("updated_at", { ascending: false })
+    const { data } = await supabase.from("resumes").select("id,title,kind").is("archived_at", null).order("kind").order("updated_at", { ascending: false })
     return (data ?? []) as ResumeLink[]
   } catch {
     return []

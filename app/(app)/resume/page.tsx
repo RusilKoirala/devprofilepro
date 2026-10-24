@@ -23,7 +23,7 @@ export default async function ResumesPage() {
   const [user, record, { data: resumes, error }, usage] = await Promise.all([
     currentUser(),
     loadRecord(supabase),
-    supabase.from("resumes").select("id,kind,title,layout,updated_at").order("kind").order("updated_at", { ascending: false }),
+    supabase.from("resumes").select("id,kind,title,layout,updated_at,archived_at").order("kind").order("updated_at", { ascending: false }),
     loadPlanUsage(supabase),
   ])
   if (error) throw new Error(error.message)
@@ -39,6 +39,8 @@ export default async function ResumesPage() {
       resumes={resumes.map((r) => ({
         id: r.id,
         title: r.kind === "base" ? "Base resume" : r.title,
+        kind: r.kind as "base" | "tailored",
+        archived: !!r.archived_at,
         updated: ago(r.updated_at),
         doc: buildResume(r.layout as ResumeLayout, record),
       }))}

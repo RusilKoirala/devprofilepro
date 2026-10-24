@@ -1,11 +1,15 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { ArrowRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { AlertTriangle, CheckCircle2, CircleDashed, XCircle } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
 import { runResumeChecks } from "@/lib/record/actions"
 import type { CheckResult, CheckStatus } from "@/lib/resume/checks"
+
+export type CheckTarget = NonNullable<CheckResult["targets"]>[number]
 
 const ICONS: Record<CheckStatus, React.ReactNode> = {
   pass: <CheckCircle2 className="size-4 text-emerald-400" />,
@@ -48,6 +52,8 @@ export function ReadinessBadge({ state, onClick }: { state: ChecksState | null; 
         <><CircleDashed className="size-3.5 text-muted-foreground" /> Checks unavailable</>
       ) : fails ? (
         <><XCircle className="size-3.5 text-destructive" /> {fails} to fix before sending</>
+      ) : !state.ready ? (
+        <><AlertTriangle className="size-3.5 text-amber-400" /> {warns} to review before sending</>
       ) : warns ? (
         <><AlertTriangle className="size-3.5 text-amber-400" /> Checks passed, {warns} to review</>
       ) : (
@@ -57,7 +63,9 @@ export function ReadinessBadge({ state, onClick }: { state: ChecksState | null; 
   )
 }
 
-export function ChecksPanel({ state }: { state: ChecksState | null }) {
+// `onShow` takes the person to the entry or line a check is about.
+export function ChecksPanel({ state, onShow }: { state: ChecksState | null; onShow?: (target: CheckTarget) => void }) {
+  const [step, setStep] = useState<Record<string, number>>({})
   if (!state) {
     return <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground"><Spinner /> Checking your PDF and testing links…</div>
   }
@@ -66,7 +74,7 @@ export function ChecksPanel({ state }: { state: ChecksState | null }) {
   return (
     <div className="space-y-4">
       <Alert>
-        <AlertTitle>{state.ready ? "Passed the automatic checks" : "Fix these before you send it"}</AlertTitle>
+        <AlertTitle>{state.ready ? "Passed the automatic checks" : state.results.some((r) => r.status === "fail") ? "Fix these before you send it" : "Review these before you send it"}</AlertTitle>
         <AlertDescription>
           These check page fit, contact details, dates, links, sources and repeated or empty content, worst first. They can&apos;t judge whether it&apos;s persuasive, so read it once yourself before sending. You can always download.
         </AlertDescription>
@@ -79,6 +87,21 @@ export function ChecksPanel({ state }: { state: ChecksState | null }) {
               {r.label}
               {r.status === "not_checked" && <span className="text-muted-foreground"> (not checked)</span>}
               {r.detail && <span className="block text-muted-foreground">{r.detail}</span>}
+              {onShow && r.status !== "pass" && !!r.targets?.length && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-1 -ml-2 h-7 px-2 text-xs"
+                  onClick={() => {
+                    // Each click goes to the next place this check is about.
+                    const n = step[r.id] ?? 0
+                    onShow(r.targets![n % r.targets!.length])
+                    setStep((s) => ({ ...s, [r.id]: n + 1 }))
+                  }}
+                >
+                  Show {r.targets.length > 1 ? `${((step[r.id] ?? 0) % r.targets.length) + 1} of ${r.targets.length}` : "me"} <ArrowRight />
+                </Button>
+              )}
             </span>
           </li>
         ))}
