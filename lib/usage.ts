@@ -1,5 +1,6 @@
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { onFastModel } from "@/lib/ai/budget"
 import { isProActive, type SubscriptionRow } from "@/lib/billing/events"
 import { monthStart, nextMonthStart, type PlanUsage } from "@/lib/plans"
 
@@ -17,6 +18,11 @@ export async function loadPlanUsage(supabase: SupabaseClient, now = new Date()):
   const pro = isProActive(row, now)
   const kinds = ((events.data ?? []) as { kind: string }[]).map((e) => e.kind)
   const count = (kind: string) => kinds.filter((k) => k === kind).length
+  let fastModel = false
+  if (pro) {
+    const { data: runs } = await supabase.from("ai_runs").select("meta").gte("created_at", `${now.toISOString().slice(0, 10)}T00:00:00Z`)
+    fastModel = onFastModel((runs ?? []).reduce((sum, r) => sum + Number((r.meta as { cost_usd?: number })?.cost_usd ?? 0), 0))
+  }
   return {
     plan: pro ? "pro" : "free",
     ...(pro && row
@@ -35,6 +41,7 @@ export async function loadPlanUsage(supabase: SupabaseClient, now = new Date()):
       updates: count("updates"),
     },
     resetsAt: nextMonthStart(now).toISOString(),
+    ...(fastModel ? { fastModel } : {}),
     ...(events.error || subError ? { unavailable: true } : {}),
   }
 }

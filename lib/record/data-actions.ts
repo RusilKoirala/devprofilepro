@@ -29,8 +29,10 @@ function fail(err: unknown): { ok: false; error: string } {
 }
 
 // Facts read from this source go; lines that cited only them go; entries left with no facts go.
-// Lines that also cite other facts stay, citing those. Every resume is re-fitted afterwards.
-export async function removeSource(sourceId: string): Promise<ActionResult<{ facts: number; entries: number }>> {
+// Lines that also cite other facts stay, citing those, but are flagged for review: "Built the API
+// and cut latency 40%" may now rest on the API fact alone. Every resume is re-fitted afterwards.
+// PDFs already downloaded are snapshots and don't change.
+export async function removeSource(sourceId: string): Promise<ActionResult<{ facts: number; entries: number; review: number }>> {
   try {
     const { supabase } = await session()
     const id = z.string().uuid().parse(sourceId)
@@ -40,13 +42,25 @@ export async function removeSource(sourceId: string): Promise<ActionResult<{ fac
     must(factsError)
     const gone = new Set((facts ?? []).map((f) => f.id as string))
     const touchedItems = [...new Set((facts ?? []).map((f) => f.item_id as string))]
+    let flagged = 0
 
     if (gone.size) {
-      const { data: bullets, error: bulletsError } = await supabase.from("bullets").select("id,fact_ids").overlaps("fact_ids", [...gone])
+      const { data: bullets, error: bulletsError } = await supabase.from("bullets").select("id,item_id,fact_ids").overlaps("fact_ids", [...gone])
       must(bulletsError)
+      const review = new Map<string, string[]>()
       for (const b of bullets ?? []) {
         const keep = (b.fact_ids as string[]).filter((f) => !gone.has(f))
         must(keep.length ? (await supabase.from("bullets").update({ fact_ids: keep }).eq("id", b.id)).error : (await supabase.from("bullets").delete().eq("id", b.id)).error)
+        if (keep.length) flagged++
+        if (keep.length) review.set(b.item_id as string, [...(review.get(b.item_id as string) ?? []), b.id as string])
+      }
+      if (review.size) {
+        const { data: items, error: itemsError } = await supabase.from("items").select("id,data").in("id", [...review.keys()])
+        must(itemsError)
+        for (const item of items ?? []) {
+          const review_lines = [...new Set([...(item.data.review_lines ?? []), ...review.get(item.id as string)!])]
+          must((await supabase.from("items").update({ data: { ...item.data, review_lines } }).eq("id", item.id)).error)
+        }
       }
       must((await supabase.from("facts").delete().in("id", [...gone])).error)
     }
@@ -74,7 +88,7 @@ export async function removeSource(sourceId: string): Promise<ActionResult<{ fac
     must(resumesError)
     for (const r of resumes ?? []) await relayoutResume(supabase, r.id as string)
     revalidatePath("/", "layout")
-    return { ok: true, data: { facts: gone.size, entries } }
+    return { ok: true, data: { facts: gone.size, entries, review: flagged } }
   } catch (err) {
     return fail(err)
   }

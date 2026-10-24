@@ -36,6 +36,9 @@ export type ItemData = Partial<z.infer<typeof ItemDataSchema>> & {
   ownership_confirmed?: boolean
   // Entries the person said are not duplicates of this one (lib/record/entry-dupes.ts).
   distinct_from?: string[]
+  // Lines of this entry that lost one of the sources they cited (lib/record/data-actions.ts), so
+  // part of what they say may no longer be backed. Cleared when the line is edited or confirmed.
+  review_lines?: string[]
 }
 
 export interface Item {

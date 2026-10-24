@@ -148,7 +148,7 @@ export function RecordSources({ view }: { view: SourcesView }) {
             </div>
           ) : byUsername ? (
             <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (username.trim()) update({ github: username.trim() }) }}>
-              <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="GitHub username" className="h-8 w-40" autoComplete="off" autoFocus />
+              <Input value={username} onChange={(e) => setUsername(e.target.value)} aria-label="GitHub username" placeholder="GitHub username" className="h-8 w-40" autoComplete="off" autoFocus />
               <Button size="sm" type="submit" disabled={running || !username.trim()}>Import</Button>
               <Button size="sm" type="button" variant="ghost" onClick={() => setByUsername(false)}>Cancel</Button>
             </form>
@@ -181,7 +181,7 @@ export function RecordSources({ view }: { view: SourcesView }) {
 
       {steps && (
         <div className="space-y-4 rounded-2xl border border-border bg-card p-4">
-          <ol className="space-y-3">
+          <ol aria-live="polite" aria-label="Update progress" className="space-y-3">
             {steps.map((s) => (
               <li key={s.label} className="flex items-start gap-3 text-sm">
                 <span className="mt-0.5 shrink-0">

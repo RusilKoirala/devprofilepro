@@ -55,7 +55,7 @@ export function ReadinessBadge({ state, onClick }: { state: ChecksState | null; 
       ) : !state.ready ? (
         <><AlertTriangle className="size-3.5 text-amber-400" /> {warns} to review before sending</>
       ) : warns ? (
-        <><AlertTriangle className="size-3.5 text-amber-400" /> Checks passed, {warns} to review</>
+        <><AlertTriangle className="size-3.5 text-amber-400" /> {warns} to review</>
       ) : (
         <><CheckCircle2 className="size-3.5 text-emerald-400" /> Checks passed</>
       )}
@@ -63,8 +63,21 @@ export function ReadinessBadge({ state, onClick }: { state: ChecksState | null; 
   )
 }
 
-// `onShow` takes the person to the entry or line a check is about.
-export function ChecksPanel({ state, onShow }: { state: ChecksState | null; onShow?: (target: CheckTarget) => void }) {
+// `onShow` takes the person to the entry or line a check is about. `onRemoveLine` and `onKeepLine`
+// settle a flagged line right here, one at a time, so every change is one the person chose.
+export function ChecksPanel({
+  state,
+  onShow,
+  onRemoveLine,
+  onKeepLine,
+  busy = false,
+}: {
+  state: ChecksState | null
+  onShow?: (target: CheckTarget) => void
+  onRemoveLine?: (bulletId: string) => void
+  onKeepLine?: (itemId: string, bulletId: string) => void
+  busy?: boolean
+}) {
   const [step, setStep] = useState<Record<string, number>>({})
   if (!state) {
     return <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground"><Spinner /> Checking your PDF and testing links…</div>
@@ -74,7 +87,13 @@ export function ChecksPanel({ state, onShow }: { state: ChecksState | null; onSh
   return (
     <div className="space-y-4">
       <Alert>
-        <AlertTitle>{state.ready ? "Passed the automatic checks" : state.results.some((r) => r.status === "fail") ? "Fix these before you send it" : "Review these before you send it"}</AlertTitle>
+        <AlertTitle>
+          {state.results.some((r) => r.status === "fail")
+            ? "Fix these before you send it"
+            : state.results.some((r) => r.status === "warn")
+              ? `Nothing blocking, ${state.results.filter((r) => r.status === "warn").length} to review before you send it`
+              : "Passed the automatic checks"}
+        </AlertTitle>
         <AlertDescription>
           These check page fit, contact details, dates, links, sources and repeated or empty content, worst first. They can&apos;t judge whether it&apos;s persuasive, so read it once yourself before sending. You can always download.
         </AlertDescription>
@@ -87,7 +106,21 @@ export function ChecksPanel({ state, onShow }: { state: ChecksState | null; onSh
               {r.label}
               {r.status === "not_checked" && <span className="text-muted-foreground"> (not checked)</span>}
               {r.detail && <span className="block text-muted-foreground">{r.detail}</span>}
-              {onShow && r.status !== "pass" && !!r.targets?.length && (
+              {r.status !== "pass" && !!r.lines?.length && (onRemoveLine || onKeepLine) && (
+                <ul className="mt-2 space-y-1.5">
+                  {r.lines.map((l) => (
+                    <li key={l.bulletId} className="rounded-md border border-border px-2 py-1.5 text-xs">
+                      <span className="block text-foreground/90">“{l.text}”</span>
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {onShow && <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => onShow(l)}>Show</Button>}
+                        {r.fix === "review" && onKeepLine && <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={busy} onClick={() => onKeepLine(l.itemId, l.bulletId)}>It&apos;s still true</Button>}
+                        {onRemoveLine && <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-destructive" disabled={busy} onClick={() => onRemoveLine(l.bulletId)}>Remove from this resume</Button>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {onShow && r.status !== "pass" && !!r.targets?.length && !r.lines?.length && (
                 <Button
                   size="sm"
                   variant="ghost"

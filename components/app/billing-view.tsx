@@ -41,11 +41,14 @@ export function BillingView({ usage, email, upgraded }: { usage: PlanUsage; emai
         <p className="mt-1 text-sm text-muted-foreground">Manage your plan and see what you&apos;ve used this month.</p>
       </header>
 
-      {(upgraded || usage.unavailable) && (
+      {(upgraded || usage.unavailable || usage.fastModel) && (
         <div className="mt-6 space-y-3">
           {upgraded && <PaymentPending pro={pro} />}
           {usage.unavailable && (
             <p role="alert" className="text-sm text-amber-400">We couldn&apos;t load your plan just now, so this page may be out of date. Refresh to try again.</p>
+          )}
+          {usage.fastModel && (
+            <p className="text-sm text-amber-400">You&apos;ve used far more AI than usual today, so it&apos;s running on the faster model until midnight UTC. Everything still works; results may be a little less careful.</p>
           )}
         </div>
       )}

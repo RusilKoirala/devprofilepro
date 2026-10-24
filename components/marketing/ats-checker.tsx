@@ -31,10 +31,14 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<Result | null>(null)
+  // Bumped whenever the file or job post changes, so a response for older inputs is thrown away.
+  const revision = useRef(0)
 
   function pick(f: File | undefined | null) {
     setError(null)
     if (!f) return
+    revision.current++
+    setBusy(false)
     setResult(null)
     if (f.type && f.type !== "application/pdf") {
       setFile(null)
@@ -46,6 +50,7 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
 
   async function check() {
     if (!file) return input.current?.click()
+    const asked = ++revision.current
     setBusy(true)
     setError(null)
     const form = new FormData()
@@ -54,17 +59,20 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
     try {
       const res = await fetch("/api/ats-check", { method: "POST", body: form })
       const data = await res.json()
+      if (asked !== revision.current) return
       if (!res.ok) throw new Error(data.error ?? "Something went wrong. Try again.")
       setResult({ ...data, fileName: file.name, checkedAt: Date.now() })
       requestAnimationFrame(() => document.getElementById("ats-report")?.scrollIntoView({ behavior: "smooth", block: "start" }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Try again.")
+      if (asked === revision.current) setError(err instanceof Error ? err.message : "Something went wrong. Try again.")
     } finally {
-      setBusy(false)
+      if (asked === revision.current) setBusy(false)
     }
   }
 
   function reset() {
+    revision.current++
+    setBusy(false)
     setResult(null)
     setFile(null)
     if (input.current) input.current.value = ""
@@ -101,7 +109,7 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
               </span>
             )}
           </button>
-          <input ref={input} type="file" accept="application/pdf" className="sr-only" onChange={(e) => pick(e.target.files?.[0])} />
+          <input ref={input} type="file" accept="application/pdf" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => pick(e.target.files?.[0])} />
 
           <Collapsible>
             <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-xl px-1 py-1 text-left text-sm">
@@ -110,7 +118,7 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
               <label htmlFor="ats-job-post" className="sr-only">Job post (optional)</label>
-              <Textarea id="ats-job-post" rows={5} maxLength={20000} value={jobPost} onChange={(e) => { setJobPost(e.target.value); setResult(null) }} placeholder="Paste the job description here (optional)" />
+              <Textarea id="ats-job-post" rows={5} maxLength={20000} value={jobPost} onChange={(e) => { revision.current++; setBusy(false); setJobPost(e.target.value); setResult(null) }} placeholder="Paste the job description here (optional)" />
             </CollapsibleContent>
           </Collapsible>
 

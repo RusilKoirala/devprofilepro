@@ -8,13 +8,19 @@ import { createClient } from "@/lib/supabase/server"
 //                               keeps working on a faster model instead of stopping.
 //   AI_PRO_HARD_DAILY_USD       Pro: abuse stop, per user per day (default $10)
 //   AI_SERVER_DAILY_BUDGET_USD  per server process per day, all users together (default $2).
-//                               Past it, Free pauses and Pro moves to the faster model.
+//                               Past it, Free pauses. Pro is never slowed by other people's use:
+//                               only its own day decides its model.
 export const USER_DAILY = Number(process.env.AI_USER_DAILY_BUDGET_USD ?? 0.5)
 export const PRO_DAILY = Number(process.env.AI_PRO_DAILY_BUDGET_USD ?? 3)
 const PRO_HARD = Number(process.env.AI_PRO_HARD_DAILY_USD ?? 10)
 const SERVER_DAILY = Number(process.env.AI_SERVER_DAILY_BUDGET_USD ?? 2)
 
 export class BudgetError extends Error {}
+
+// Whether a Pro account's AI has moved to the faster model for the rest of today (UTC).
+export function onFastModel(proSpentToday: number) {
+  return proSpentToday >= PRO_DAILY
+}
 
 let serverDay = ""
 let serverSpent = 0
@@ -51,7 +57,7 @@ export async function checkBudget(): Promise<{ pro: boolean; fast: boolean }> {
   }
   if (pro) {
     if (spent >= PRO_HARD) throw new BudgetError("This account has used an unusually large amount of AI today, so it's paused until midnight UTC. Editing and downloads still work. If this is normal use, email dev@rusil.me.")
-    return { pro, fast: serverOver || spent >= PRO_DAILY }
+    return { pro, fast: spent >= PRO_DAILY }
   }
   if (serverOver) throw new BudgetError("AI is busy for today. Editing and downloads still work; try again tomorrow, or go Pro to keep going.")
   if (spent >= USER_DAILY) throw new BudgetError("You've hit today's free AI limit. Editing and downloads still work, and it resets at midnight UTC.")

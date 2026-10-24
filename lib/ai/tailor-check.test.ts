@@ -1,20 +1,24 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { checkTailorPlan, repairTailorPlan } from "./tailor-check.ts"
+import { checkTailorPlan, remapReport, repairTailorPlan, reportForResume } from "./tailor-check.ts"
 import type { ModelPlan } from "./tailor.ts"
 import type { Fact, Item } from "@/lib/record/types"
 
-const item = (id: string, type: Item["type"], data: Item["data"]): Item => ({ id, type, data, rank: 50, status: "shown", reason: null, pinned: false })
+const item = (id: string, type: Item["type"], data: Item["data"], status: Item["status"] = "shown"): Item => ({ id, type, data, rank: 50, status, reason: null, pinned: false })
 const fact = (id: string, item_id: string, text: string): Fact => ({ id, item_id, text, label: "document", source_id: "s", quote: text, approx: false })
 
-// The audit's failure: Student API explained with PulseOps' facts, and the summary naming PulseOps.
+// The first audit's failure: Student API explained with PulseOps' facts, and the summary naming PulseOps.
 const items = [
   item("api", "project", { name: "Student API" }),
-  item("pulse", "project", { name: "PulseOps" }),
+  item("pulse", "project", { name: "PulseOps", tech: ["express", "postgres"] }),
   item("edu", "education", { school: "Example University" }),
   item("sk", "skills", { category: "Languages", skills: ["Go"] }),
 ]
-const facts = [fact("f-api", "api", "Go service with a Dockerfile"), fact("f-pulse", "pulse", "Express and Postgres uptime monitoring")]
+const facts = [
+  fact("f-api", "api", "Go service with a Dockerfile"),
+  fact("f-deploy", "api", "Deployed the Student API live at https://student-api.example.app"),
+  fact("f-pulse", "pulse", "Express and Postgres uptime monitoring"),
+]
 const plan: ModelPlan = {
   title: "Backend", company: null, role: "Backend engineer",
   items: [{ item_id: "api", reason: "Uptime monitoring with Express and Postgres", fact_ids: ["f-pulse"] }],
@@ -30,11 +34,71 @@ test("evidence from another item, coverage from an unselected item and a stray s
   assert.ok(errors.some((e) => e.includes('summary names "pulseops"')))
 })
 
-test("repair drops borrowed reasons, downgrades unsupported coverage and keeps education and skills", () => {
+test("repair drops borrowed reasons, points to evidence elsewhere and keeps education and skills", () => {
   const out = repairTailorPlan(plan, items, facts)
   assert.equal(out.items.find((i) => i.item_id === "api")!.reason, "")
-  assert.deepEqual(out.requirements[0], { text: "Postgres", status: "unclear", item_ids: [], fact_ids: [] })
-  assert.ok(out.items.some((i) => i.item_id === "edu"))
+  assert.deepEqual(out.requirements[0], { text: "Postgres", status: "elsewhere", item_ids: ["pulse"], fact_ids: ["f-pulse"] })
+  assert.ok(out.items.find((i) => i.item_id === "edu")!.reason.startsWith("Kept"))
   assert.ok(out.items.some((i) => i.item_id === "sk"))
   assert.ok(!/pulseops/i.test(out.summary))
+})
+
+const backend: ModelPlan = {
+  title: "Backend", company: null, role: null,
+  items: [{ item_id: "api", reason: "(Education item hidden but relevant) Go service", fact_ids: ["f-api"] }],
+  section_order: ["project"],
+  requirements: [
+    { text: "Experience deploying applications", status: "not_found", fact_ids: [] },
+    { text: "Experience with PostgreSQL database", status: "not_found", fact_ids: [] },
+    { text: "Experience with Docker or containerization", status: "not_found", fact_ids: [] },
+    { text: "Experience with Rust", status: "not_found", fact_ids: [] },
+  ],
+  summary: "Picked Student API.",
+}
+
+test("the whole record is searched before a requirement is called missing", () => {
+  const [deploy, pg, docker, rust] = repairTailorPlan(backend, items, facts).requirements
+  assert.equal(deploy.status, "covered")
+  assert.deepEqual(deploy.fact_ids, ["f-deploy"])
+  assert.equal(pg.status, "elsewhere")
+  assert.deepEqual(pg.item_ids, ["pulse"])
+  assert.equal(docker.status, "unclear")
+  assert.equal(rust.status, "not_found")
+})
+
+test("status remarks are taken out of explanations", () => {
+  assert.equal(repairTailorPlan(backend, items, facts).items[0].reason, "Go service")
+})
+
+test("a correctly owned fact that doesn't name the skill can't cover it", () => {
+  const its = [item("project", "project", { name: "Example API" })]
+  const fs = [fact("f", "project", "Built a JavaScript landing page.")]
+  const adversarial: ModelPlan = {
+    title: "Example", company: null, role: null,
+    items: [{ item_id: "project", reason: "Has production Kubernetes expertise.", fact_ids: ["f"] }],
+    section_order: ["project"],
+    requirements: [{ text: "Production Kubernetes operations", status: "covered", fact_ids: ["f"] }],
+    summary: "Selected Example API.",
+  }
+  // Ownership checks still pass: the fact is the item's own...
+  assert.deepEqual(checkTailorPlan(adversarial, its, fs), [])
+  // ...but neither the claim nor the explanation survives repair.
+  const out = repairTailorPlan(adversarial, its, fs)
+  assert.equal(out.requirements[0].status, "not_found")
+  assert.equal(out.items[0].reason, "")
+})
+
+test("a re-checked report is versioned and judged against the resume's own entries", () => {
+  const report = reportForResume({ ...backend, items: [...backend.items, { item_id: "pulse", reason: "Postgres monitoring", fact_ids: ["f-pulse"] }] }, ["api", "edu"], items, facts)
+  assert.equal(report.version, 2)
+  assert.ok(!report.reasons.some((r) => r.item_id === "pulse"))
+  assert.equal(report.requirements[1].status, "elsewhere")
+})
+
+test("merging entries moves report citations onto the kept entry", () => {
+  const report = { summary: "", reasons: [{ item_id: "keep", reason: "" , fact_ids: ["a"] }, { item_id: "drop", reason: "Go API", fact_ids: ["b"] }], requirements: [{ text: "Go", item_ids: ["drop", "keep"] }] }
+  const out = remapReport(report, "drop", "keep")!
+  assert.deepEqual(out.reasons, [{ item_id: "keep", reason: "Go API", fact_ids: ["a", "b"] }])
+  assert.deepEqual(out.requirements[0].item_ids, ["keep"])
+  assert.equal(remapReport(report, "other", "keep"), null)
 })

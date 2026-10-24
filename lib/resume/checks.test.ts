@@ -46,3 +46,23 @@ test("an entry with no lines keeps the resume from being called ready, and point
   assert.deepEqual(empty.targets, [{ itemId: "j1" }])
   assert.equal(result.ready, false)
 })
+
+test("repo statistics are flagged as lines to remove, each one offered on its own", async () => {
+  const { contentChecks } = await import("./checks.ts")
+  const entry = { item_id: "p", title: "Student API", subtitle: "", dates: "", location: "", url: "", tech: [], bullets: [{ id: "b1", text: "Hosting 17 commits in a solo repo" }, { id: "b2", text: "Cut cold-start time by caching the schema" }] }
+  const thin = contentChecks({ ...doc, sections: [{ type: "project", title: "Projects", entries: [entry] }] }).find((r) => r.id === "thin")!
+  assert.equal(thin.fix, "remove")
+  assert.deepEqual(thin.lines, [{ itemId: "p", bulletId: "b1", text: "Hosting 17 commits in a solo repo" }])
+})
+
+test("a line that lost part of its source blocks ready until it's reviewed", async () => {
+  const entry = { item_id: "j1", title: "Engineer", subtitle: "Acme", dates: "", location: "", url: "", tech: [], bullets: [{ id: "b1", text: "Built the API and cut latency by 40%" }] }
+  const base = { ...doc, name: "Sam", contact: { ...doc.contact, email: "s@example.com", github: "https://github.com/sam" }, sections: [{ type: "job" as const, title: "Experience", entries: [entry] }] }
+  const flagged = await runChecks(base, { pages: 1, allBulletsSourced: true, reviewLines: ["b1"] })
+  const partial = flagged.results.find((r) => r.id === "partial_sources")!
+  assert.equal(partial.status, "warn")
+  assert.equal(partial.fix, "review")
+  assert.equal(flagged.ready, false)
+  const clear = await runChecks(base, { pages: 1, allBulletsSourced: true })
+  assert.equal(clear.results.find((r) => r.id === "partial_sources")!.status, "pass")
+})

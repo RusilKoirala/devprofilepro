@@ -19,7 +19,8 @@ import { RateLimitedError } from "@/lib/ratelimit"
 import { loadRecord, loadResume, saveSources } from "@/lib/record/db"
 import { buildRecord, queueInterview, refreshQuestions, relayoutResume, writeBase, writeItems, type DetailChange, type InterviewCard } from "@/lib/record/pipeline"
 import { ItemDataSchema, ITEM_TYPES, itemTitle, type ItemType, type ResumeLayout } from "@/lib/record/types"
-import { planTailoredResume, TailorSchema, type TailorPlan } from "@/lib/ai/tailor"
+import { draftTailorPlan, planTailoredResume, TailorSchema, type TailorPlan } from "@/lib/ai/tailor"
+import { MATCH_REPORT_VERSION, reportForResume } from "@/lib/ai/tailor-check"
 import { chatTurn, resumeForChat, type ChatMessage } from "@/lib/ai/chat"
 import { checkActions, presentFields, type ChatAction, type ChatContext } from "@/lib/record/chat-actions"
 import { SECTION_TITLES } from "@/lib/resume/schema"
@@ -33,7 +34,7 @@ import { questionFact } from "@/lib/record/question-fact"
 import { findDuplicateFacts } from "@/lib/record/dedupe"
 import { sharedBullets } from "@/lib/resume/order"
 import {
-  addLine, editLine, RANGE, removeLine, restoreLine, setItemOrderIn, setItemStateIn, setSectionOrderIn, updateDetailsIn, updateHeaderIn,
+  addLine, clearReview, editLine, RANGE, removeLine, restoreLine, setItemOrderIn, setItemStateIn, setSectionOrderIn, updateDetailsIn, updateHeaderIn,
   type DeletedBullet, type DetailsInput, type HeaderInput,
 } from "@/lib/record/edits"
 import { REWRITE_STYLES, type RewriteStyle } from "@/lib/record/rewrite-styles"
@@ -260,7 +261,7 @@ export async function stageTailorSave(brief: string, input: TailorPlan): Promise
     const types = new Map(record.items.map((i) => [i.id, i.type]))
     const { data: job, error: jobError } = await supabase
       .from("jobs")
-      .insert({ company: plan.company, role: plan.role, description: z.string().max(20000).parse(brief), match_report: { requirements: plan.requirements, summary: plan.summary, reasons: plan.items } })
+      .insert({ company: plan.company, role: plan.role, description: z.string().max(20000).parse(brief), match_report: { version: MATCH_REPORT_VERSION, requirements: plan.requirements, summary: plan.summary, reasons: plan.items } })
       .select("id")
       .single()
     if (jobError) throw new Error(jobError.message)
@@ -278,6 +279,28 @@ export async function stageTailorSave(brief: string, input: TailorPlan): Promise
     // Counted when saved, not when the AI call ran.
     await recordUsage(supabase, "tailored", data.id as string)
     return { ok: true, data: { resumeId: data.id as string, title: plan.title } }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+// A fresh, checked match report for a tailored resume, e.g. one whose report was made before the
+// evidence checks. Only the report changes: the resume keeps its entries and wording.
+export async function recheckMatch(resumeId: string): Promise<ActionResult> {
+  try {
+    const { userId, supabase } = await session()
+    const [resume, record] = await Promise.all([loadResume(supabase, z.string().uuid().parse(resumeId)), loadRecord(supabase)])
+    if (!resume?.job_id) throw new Error("This resume has no job post to check against.")
+    const { data: job, error: jobError } = await supabase.from("jobs").select("description").eq("id", resume.job_id).single()
+    if (jobError) throw new Error(jobError.message)
+    if (!job.description?.trim()) throw new Error("This resume's job post wasn't saved, so it can't be re-checked.")
+    const usable = record.items.filter((i) => i.type !== "contact")
+    const draft = await draftTailorPlan(userId, job.description, usable, record.facts, sharedBullets(record.bullets))
+    const include = resume.layout.include ?? usable.filter((i) => i.status === "shown").map((i) => i.id)
+    const { error } = await supabase.from("jobs").update({ match_report: reportForResume(draft, include, usable, record.facts) }).eq("id", resume.job_id)
+    if (error) throw new Error(error.message)
+    revalidatePath(`/resume/${resumeId}`)
+    return { ok: true, data: undefined }
   } catch (err) {
     return fail(err)
   }
@@ -388,6 +411,11 @@ export async function updateHeader(resumeId: string, input: HeaderInput): Promis
 
 export async function updateItemDetails(resumeId: string | null, itemId: string, input: DetailsInput): Promise<ActionResult> {
   return edit(resumeId, (supabase) => updateDetailsIn(supabase, itemId, input))
+}
+
+// The person checked a line that lost part of its source and it still holds.
+export async function keepLine(resumeId: string, itemId: string, bulletId: string): Promise<ActionResult> {
+  return edit(resumeId, (supabase) => clearReview(supabase, z.string().uuid().parse(itemId), z.string().uuid().parse(bulletId)))
 }
 
 export async function addBullet(resumeId: string, itemId: string, input: string): Promise<ActionResult> {
@@ -628,7 +656,7 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
 }
 
 // The finished resume for a result card: its render shape plus how the checks went.
-export async function resumeSummary(resumeId: string): Promise<ActionResult<{ doc: ResumeDoc; fails: number; warns: number; ready: boolean }>> {
+export async function resumeSummary(resumeId: string): Promise<ActionResult<{ doc: ResumeDoc; bulletFacts: Record<string, string[]>; fails: number; warns: number; ready: boolean }>> {
   const checks = await runResumeChecks(resumeId)
   if (!checks.ok) return checks
   try {
@@ -636,7 +664,9 @@ export async function resumeSummary(resumeId: string): Promise<ActionResult<{ do
     const loaded = await loadResumeDoc(supabase, resumeId)
     if (!loaded) return { ok: false, error: "Resume not found" }
     const count = (status: string) => checks.data.results.filter((r) => r.status === status).length
-    return { ok: true, data: { doc: loaded.doc, fails: count("fail"), warns: count("warn"), ready: checks.data.ready } }
+    const shown = new Set(loaded.doc.sections.flatMap((sec) => sec.entries.flatMap((e) => e.bullets.map((b) => b.id))))
+    const bulletFacts = Object.fromEntries(loaded.record.bullets.filter((b) => shown.has(b.id)).map((b) => [b.id, b.fact_ids]))
+    return { ok: true, data: { doc: loaded.doc, bulletFacts, fails: count("fail"), warns: count("warn"), ready: checks.data.ready } }
   } catch (err) {
     return fail(err)
   }
@@ -659,7 +689,8 @@ export async function runResumeChecks(resumeId: string): Promise<ActionResult<{ 
     const titles = new Map(loaded.record.items.map((i) => [i.id, itemTitle(i)]))
     const ownershipItems = [...new Set(loaded.record.questions.filter((q) => q.status === "open" && (q.kind === "ownership" || q.kind === "built") && onPage.has(q.item_id)).map((q) => q.item_id))]
     const openOwnership = ownershipItems.map((itemId) => ({ itemId, title: titles.get(itemId) ?? "a project" }))
-    const { results, ready } = await runChecks(loaded.doc, { pages, allBulletsSourced, openOwnership })
+    const reviewLines = loaded.record.items.flatMap((i) => i.data.review_lines ?? [])
+    const { results, ready } = await runChecks(loaded.doc, { pages, allBulletsSourced, openOwnership, reviewLines })
     return { ok: true, data: { results, ready, parserText } }
   } catch (err) {
     return fail(err)

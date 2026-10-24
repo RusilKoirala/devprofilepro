@@ -12,7 +12,9 @@ import { extractRecord } from "@/lib/ai/extract"
 import { generateQuestions } from "@/lib/ai/questions"
 import { checkBullet, writeBullets } from "@/lib/ai/write"
 import { draftTailorPlan } from "@/lib/ai/tailor"
-import { checkTailorPlan } from "@/lib/ai/tailor-check"
+import { checkTailorPlan, repairTailorPlan } from "@/lib/ai/tailor-check"
+import { hasTerm } from "@/lib/ats/keywords"
+import { support } from "@/lib/record/evidence"
 import { bannedWordsIn, groundItemData, verifyFacts } from "@/lib/record/verify"
 import { itemTitle, type Fact, type Item, type ItemType, type SourceRow } from "@/lib/record/types"
 
@@ -99,8 +101,10 @@ for (const file of files) {
     const order = output.section_order
     results.push(["projects before jobs", !order.includes("job") || order.indexOf("project") < order.indexOf("job")])
   }
-  for (const n of e.shown ?? []) results.push([`"${n}" shown`, find(n)?.status === "shown"])
-  for (const n of e.hidden ?? []) results.push([`"${n}" hidden (not deleted)`, find(n)?.status === "hidden"])
+  // Says what happened when it isn't the expected state: a different status, or no such item.
+  const state = (n: string) => find(n)?.status ?? "not extracted (omitted or renamed)"
+  for (const n of e.shown ?? []) results.push([`"${n}" shown${state(n) === "shown" ? "" : ` · was ${state(n)}`}`, state(n) === "shown"])
+  for (const n of e.hidden ?? []) results.push([`"${n}" hidden (not deleted)${state(n) === "hidden" ? "" : ` · was ${state(n)}`}`, state(n) === "hidden"])
   for (const n of e.team_project ?? []) {
     const x = output.items.find((i) => norm(itemTitle({ type: i.type, data: i.data })).includes(norm(n)))
     results.push([`"${n}" marked as team project`, !!x?.team_project])
@@ -134,10 +138,24 @@ async function tailorEval(t: NonNullable<Fixture["tailor"]>): Promise<number> {
   const chosen = new Set(plan.items.map((i) => i.item_id))
   const results: [string, boolean][] = [["no evidence cited on the wrong item, no stray names", errors.length === 0]]
   for (const id of t.expect.include ?? []) results.push([`includes ${id}`, chosen.has(id)])
+  // Only the cited facts that name the term are judged: a compound "Go and Node.js" requirement may
+  // rightly cite a Node.js fact from another item for its other half.
+  const factText = new Map(facts.map((f) => [f.id, f.text]))
   for (const [term, allowed] of Object.entries(t.expect.requirement_from ?? {})) {
-    const reqs = plan.requirements.filter((r) => r.text.toLowerCase().includes(term.toLowerCase()) && r.status !== "not_found")
-    results.push([`"${term}" evidence comes only from ${allowed.join("/")}`, reqs.length > 0 && reqs.every((r) => r.fact_ids.length > 0 && r.fact_ids.every((f) => allowed.includes(factItem.get(f) ?? "")))])
+    const reqs = plan.requirements.filter((r) => hasTerm(r.text, term) && r.status !== "not_found")
+    const naming = reqs.flatMap((r) => r.fact_ids.filter((f) => hasTerm(factText.get(f) ?? "", term)))
+    results.push([`"${term}" evidence comes only from ${allowed.join("/")}`, naming.length > 0 && naming.every((f) => allowed.includes(factItem.get(f) ?? ""))])
   }
+
+  // Measured, not pass/fail: claims the cited facts don't support (false positives) and requirements
+  // called missing that the record does show (false negatives), before and after code repair.
+  const measure = (reqs: { text: string; status: string; fact_ids: string[] }[]) => ({
+    falsePositives: reqs.filter((r) => r.status === "covered" && support(r.text, r.fact_ids.map((f) => factText.get(f) ?? "")) === "none").length,
+    falseNegatives: reqs.filter((r) => r.status === "not_found" && facts.some((f) => support(r.text, [f.text]) === "full")).length,
+  })
+  const before = measure(plan.requirements)
+  const after = measure(repairTailorPlan(plan, usable, facts).requirements)
+  console.log(`  unsupported claims: ${before.falsePositives} → ${after.falsePositives} after repair · missed evidence: ${before.falseNegatives} → ${after.falseNegatives}`)
   console.log(`  picked: ${plan.items.map((i) => i.item_id).join(", ")}`)
   for (const e of errors.slice(0, 5)) console.log(`  ! ${e}`)
   let failed = 0
