@@ -48,3 +48,25 @@ export async function remaining(userId: string, step: AiStep): Promise<number | 
   if (!l) return null
   return (await l.getRemaining(userId)).remaining
 }
+
+// Public, signed-out tools (the ATS checker): a daily cap per IP. Uses Upstash when configured,
+// otherwise a per-process map, which is enough to stop a script hammering one server.
+const publicLimiters = new Map<string, Ratelimit>()
+const memoryHits = new Map<string, { day: string; n: number }>()
+
+export async function allowPublic(tool: string, ip: string, perDay: number): Promise<boolean> {
+  if (redis) {
+    let l = publicLimiters.get(tool)
+    if (!l) {
+      l = new Ratelimit({ redis, limiter: Ratelimit.fixedWindow(perDay, "1 d"), prefix: `rl:public:${tool}` })
+      publicLimiters.set(tool, l)
+    }
+    return (await l.limit(ip)).success
+  }
+  const day = new Date().toISOString().slice(0, 10)
+  const key = `${tool}:${ip}`
+  const hit = memoryHits.get(key)
+  const n = hit?.day === day ? hit.n + 1 : 1
+  memoryHits.set(key, { day, n })
+  return n <= perDay
+}
