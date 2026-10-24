@@ -4,7 +4,7 @@ import { isAppEnabled, PUBLIC_PATHS } from "@/lib/access"
 
 // Everything is private except the landing and pricing pages, auth pages, the waitlist API and the
 // Dodo webhook (it checks its own signature).
-const isPublic = createRouteMatcher(["/", "/pricing", "/sign-in(.*)", "/sign-up(.*)", "/api/waitlist", "/api/webhooks/dodo"])
+const isPublic = createRouteMatcher(["/", "/pricing", "/ats-checker", "/sign-in(.*)", "/sign-up(.*)", "/api/ats-check", "/api/waitlist", "/api/webhooks/dodo"])
 
 const clerk = clerkMiddleware(
   async (auth, request) => {

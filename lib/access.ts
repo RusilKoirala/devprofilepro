@@ -4,4 +4,4 @@ export function isAppEnabled() {
   return process.env.APP_ENABLED === "true"
 }
 
-export const PUBLIC_PATHS = new Set(["/", "/pricing", "/api/waitlist"])
+export const PUBLIC_PATHS = new Set(["/", "/pricing", "/ats-checker", "/api/ats-check", "/api/waitlist", "/api/webhooks/dodo"])

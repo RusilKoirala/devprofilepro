@@ -20,6 +20,7 @@ const links = [
   { href: "/#product", label: "Product" },
   { href: "/#features", label: "Features" },
   { href: "/#how-it-works", label: "How it works" },
+  { href: "/ats-checker", label: "ATS checker" },
   { href: "/pricing", label: "Pricing" },
   { href: "/#faq", label: "FAQ" },
 ]
