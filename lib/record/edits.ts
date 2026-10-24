@@ -67,7 +67,7 @@ export async function editLine(supabase: SupabaseClient, resumeId: string, bulle
   const clean = input.trim()
   if (!clean) throw new Error("A line can't be empty. Remove it instead.")
   const [{ data: bullet, error: bulletError }, resume] = await Promise.all([
-    supabase.from("bullets").select("item_id").eq("id", bulletId).single(),
+    supabase.from("bullets").select("item_id,resume_id").eq("id", bulletId).single(),
     resumeOrThrow(supabase, resumeId),
   ])
   must(bulletError)
@@ -75,29 +75,64 @@ export async function editLine(supabase: SupabaseClient, resumeId: string, bulle
   // Edited text is a new user assertion; old quotes no longer prove it.
   const { data: fact, error: factError } = await supabase.from("facts").insert({ item_id: bullet!.item_id, text: clean, label: "user", approx: RANGE.test(clean) }).select("id").single()
   must(factError)
+  // On a tailored resume, editing a shared line makes this resume's own copy; the base resume keeps its wording.
+  if (resume.kind === "tailored" && !bullet!.resume_id) {
+    must((await supabase.from("bullets").insert({ item_id: bullet!.item_id, text: clean, fact_ids: [fact!.id], user_edited: true, resume_id: resumeId, replaces: bulletId })).error)
+    return
+  }
   const { error } = await supabase.from("bullets").update({ text: clean, fact_ids: [fact!.id], user_edited: true, updated_at: now() }).eq("id", bulletId)
   must(error)
 }
 
 // A line typed by the user: saved as a "You told us" fact plus a bullet that cites it.
-export async function addLine(supabase: SupabaseClient, itemId: string, input: string) {
+// On a tailored resume the line belongs to that resume only.
+export async function addLine(supabase: SupabaseClient, itemId: string, input: string, resumeId?: string) {
   const clean = z.string().trim().min(3, "Write a little more.").max(400).parse(input)
+  const resume = resumeId ? await resumeOrThrow(supabase, resumeId) : null
   const { data: fact, error: factError } = await supabase.from("facts").insert({ item_id: itemId, text: clean, label: "user", approx: RANGE.test(clean) }).select("id").single()
   must(factError)
-  const { error } = await supabase.from("bullets").insert({ item_id: itemId, text: clean, fact_ids: [fact!.id], user_edited: true })
+  const { error } = await supabase.from("bullets").insert({ item_id: itemId, text: clean, fact_ids: [fact!.id], user_edited: true, ...(resume?.kind === "tailored" ? { resume_id: resume.id } : {}) })
   must(error)
 }
 
-export const BulletSnapshot = z.object({ item_id: z.string().uuid(), text: z.string().min(1).max(600), fact_ids: z.array(z.string().uuid()).min(1), user_edited: z.boolean() })
+export const BulletSnapshot = z.object({
+  item_id: z.string().uuid(), text: z.string().min(1).max(600), fact_ids: z.array(z.string().uuid()).min(1), user_edited: z.boolean(),
+  resume_id: z.string().uuid().nullable().optional(), replaces: z.string().uuid().nullable().optional(),
+  // A shared line taken off one tailored resume: undo shows it there again.
+  hidden: z.string().uuid().optional(),
+})
 export type DeletedBullet = z.infer<typeof BulletSnapshot>
 
+async function setHidden(supabase: SupabaseClient, resumeId: string, bulletId: string, hidden: boolean) {
+  const resume = await resumeOrThrow(supabase, resumeId)
+  const list = resume.layout.hidden_bullets ?? []
+  const hidden_bullets = hidden ? [...new Set([...list, bulletId])] : list.filter((id) => id !== bulletId)
+  must((await supabase.from("resumes").update({ layout: { ...resume.layout, hidden_bullets }, updated_at: now() }).eq("id", resumeId)).error)
+}
+
 // Facts stay in the Career Record; only the wording goes. Returns what's needed to undo.
-export async function removeLine(supabase: SupabaseClient, bulletId: string): Promise<DeletedBullet> {
-  const { data: bullet, error: bulletError } = await supabase.from("bullets").select("item_id,text,fact_ids,user_edited").eq("id", bulletId).single()
+// On a tailored resume a shared line is only taken off that resume.
+export async function removeLine(supabase: SupabaseClient, bulletId: string, resumeId?: string): Promise<DeletedBullet> {
+  const { data: bullet, error: bulletError } = await supabase.from("bullets").select("item_id,text,fact_ids,user_edited,resume_id,replaces").eq("id", bulletId).single()
   must(bulletError)
+  const resume = resumeId ? await resumeOrThrow(supabase, resumeId) : null
+  if (resume?.kind === "tailored" && !bullet!.resume_id) {
+    await setHidden(supabase, resume.id, bulletId, true)
+    return { ...(bullet as DeletedBullet), hidden: bulletId }
+  }
   const { error } = await supabase.from("bullets").delete().eq("id", bulletId)
   must(error)
+  // This resume's version of a shared line: the shared one mustn't reappear in its place.
+  if (resume?.kind === "tailored" && bullet!.replaces) await setHidden(supabase, resume.id, bullet!.replaces, true)
   return bullet as DeletedBullet
+}
+
+export async function restoreLine(supabase: SupabaseClient, resumeId: string, snapshot: DeletedBullet) {
+  const { hidden, ...row } = BulletSnapshot.parse(snapshot)
+  if (hidden) return setHidden(supabase, resumeId, hidden, false)
+  // The database re-checks that every fact belongs to this user and item.
+  must((await supabase.from("bullets").insert(row)).error)
+  if (row.resume_id && row.replaces) await setHidden(supabase, resumeId, row.replaces, false)
 }
 
 export async function setItemStateIn(supabase: SupabaseClient, resumeId: string | null, itemId: string, patch: { pinned?: boolean; status?: "shown" | "hidden" }) {

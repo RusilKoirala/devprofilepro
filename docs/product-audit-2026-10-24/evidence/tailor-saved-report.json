@@ -1,0 +1,83 @@
+{
+  "auditResume": {
+    "id": "dfe48d24-0a2a-4364-8c42-f9a9aa46a927",
+    "title": "AUDIT - Backend Engineer - 2026-10-24",
+    "selected": [
+      {
+        "id": "ef6f5992-7752-41e7-adc9-4974e02e5601",
+        "type": "job",
+        "name": "Web Application Developer"
+      },
+      {
+        "id": "fcf27171-7333-45e6-b0f3-5114940277c4",
+        "type": "skills",
+        "name": null
+      },
+      {
+        "id": "53768363-9e6f-4be3-90bb-c84c270f7703",
+        "type": "project",
+        "name": "Student API"
+      }
+    ]
+  },
+  "matchReport": {
+    "reasons": [
+      {
+        "reason": "Freelance experience building backend APIs using Node.js and Go for international clients",
+        "item_id": "ef6f5992-7752-41e7-adc9-4974e02e5601"
+      },
+      {
+        "reason": "Open source backend contributor with experience in Go including user role logging and permission key handling for a cloud-native platform",
+        "item_id": "fcf27171-7333-45e6-b0f3-5114940277c4"
+      },
+      {
+        "reason": "Built backend and frontend using express, postgres, and react; deployed uptime monitoring platform",
+        "item_id": "53768363-9e6f-4be3-90bb-c84c270f7703"
+      }
+    ],
+    "summary": "I included the freelance and open source roles demonstrating backend development in Go and Node.js, plus the PulseOps project showing Postgres and API work. There is no explicit mention of Docker or automated testing, so they are marked not found. This selection best matches the backend engineer requirements with evidence from the record.",
+    "requirements": [
+      {
+        "text": "Backend engineering with Go",
+        "status": "covered",
+        "item_ids": [
+          "ef6f5992-7752-41e7-adc9-4974e02e5601",
+          "fcf27171-7333-45e6-b0f3-5114940277c4"
+        ]
+      },
+      {
+        "text": "Backend engineering with Node.js",
+        "status": "covered",
+        "item_ids": [
+          "ef6f5992-7752-41e7-adc9-4974e02e5601",
+          "fcf27171-7333-45e6-b0f3-5114940277c4"
+        ]
+      },
+      {
+        "text": "PostgreSQL usage",
+        "status": "covered",
+        "item_ids": [
+          "53768363-9e6f-4be3-90bb-c84c270f7703"
+        ]
+      },
+      {
+        "text": "Docker experience",
+        "status": "not_found",
+        "item_ids": []
+      },
+      {
+        "text": "API development",
+        "status": "covered",
+        "item_ids": [
+          "ef6f5992-7752-41e7-adc9-4974e02e5601",
+          "53768363-9e6f-4be3-90bb-c84c270f7703"
+        ]
+      },
+      {
+        "text": "Automated testing",
+        "status": "not_found",
+        "item_ids": []
+      }
+    ]
+  }
+}

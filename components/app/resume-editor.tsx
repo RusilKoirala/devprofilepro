@@ -3,10 +3,12 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { ArrowDown, ArrowUp, ChevronDown, Download, EyeOff, GripVertical, Lightbulb, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RotateCcw, Sparkles, Trash2, Wand2 } from "lucide-react"
+import { ArrowDown, ArrowUp, ChevronDown, Copy, Download, EyeOff, GripVertical, Lightbulb, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RotateCcw, Sparkles, Trash2, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { ChecksPanel, ReadinessBadge, useResumeChecks } from "@/components/app/checks-panel"
 import { FactChip, type FactView } from "@/components/app/fact-chip"
+import { offerUpgrade } from "@/components/app/upgrade-prompt"
+import { MatchReport, type MatchView } from "@/components/app/match-report"
 import { QuestionCard, type QuestionView } from "@/components/app/questions-panel"
 import { ResumeChat } from "@/components/app/resume-chat"
 import { Badge } from "@/components/ui/badge"
@@ -20,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
-  addBullet, deleteBullet, editBullet, regenerateItem, restoreBullet, restoreCut, setItemOrder, setItemState, setSectionOrder, updateHeader, updateItemDetails, type ActionResult,
+  addBullet, deleteBullet, deleteResume, duplicateResume, editBullet, regenerateItem, renameResume, restoreBullet, restoreCut, setItemOrder, setItemState, setSectionOrder, updateHeader, updateItemDetails, type ActionResult,
 } from "@/lib/record/actions"
 import { REWRITE_LABELS, type RewriteStyle } from "@/lib/record/rewrite-styles"
 import type { ItemType } from "@/lib/record/types"
@@ -32,8 +34,12 @@ type Details = Record<"role" | "company" | "name" | "url" | "school" | "degree" 
 
 export interface EditorData {
   resumeId: string
+  kind: "base" | "tailored"
   title: string
   version: string
+  // Tailored from a job post or request: what it asked for and how this resume covers it.
+  match: MatchView | null
+  titles: Record<string, string>
   header: { name: string; headline: string; targetRole: string; email: string; phone: string; location: string; website: string; github: string; linkedin: string }
   sections: {
     type: Exclude<ItemType, "contact">
@@ -46,7 +52,7 @@ export interface EditorData {
       reason: string | null
       details: Details
       questions: QuestionView[]
-      bullets: { id: string; text: string; userEdited: boolean; facts: FactView[] }[]
+      bullets: { id: string; text: string; userEdited: boolean; ownCopy: boolean; facts: FactView[] }[]
     }[]
   }[]
   cuts: { itemId: string; bulletText: string | null; title: string; reason: string }[]
@@ -62,6 +68,11 @@ export function ResumeEditor({ data }: { data: EditorData }) {
   const [pending, startTransition] = useTransition()
   const [downloading, setDownloading] = useState(false)
   const [tab, setTab] = useState("preview")
+  // Phones show one column at a time: the editor or the page (preview, checks, match).
+  const [pane, setPane] = useState<"editor" | "page">("editor")
+  const [renaming, setRenaming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const tailored = data.kind === "tailored"
   // The chat swaps in for the editor column, so the live preview stays in view while you talk.
   const [mode, setMode] = useState<"edit" | "chat">("edit")
   const [chatBusy, setChatBusy] = useState(false)
@@ -81,7 +92,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
   const run: Run = (action, after) => {
     startTransition(async () => {
       const res = await action()
-      if (!res.ok) return void toast.error(res.error)
+      if (!res.ok) return void (offerUpgrade(res) || toast.error(res.error))
       after?.(res.data)
       router.refresh()
     })
@@ -160,6 +171,31 @@ export function ResumeEditor({ data }: { data: EditorData }) {
     }
   }
 
+  function showPanel(value: string) {
+    setTab(value)
+    setPane("page")
+    // On phones the panel sits below the editor; bring it into view so the tap visibly does something.
+    requestAnimationFrame(() => document.getElementById("resume-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }))
+  }
+
+  function duplicate() {
+    startTransition(async () => {
+      const res = await duplicateResume(data.resumeId)
+      if (!res.ok) return void toast.error(res.error)
+      toast.success("Copied. You're now editing the copy.")
+      router.push(`/resume/${res.data.resumeId}`)
+    })
+  }
+
+  function remove() {
+    startTransition(async () => {
+      const res = await deleteResume(data.resumeId)
+      if (!res.ok) return void toast.error(res.error)
+      toast.success(`Deleted “${data.title}”. Its downloaded PDFs are still on your Dashboard.`)
+      router.push("/resume")
+    })
+  }
+
   async function openInOverleaf() {
     const tex = await (await fetch(`/api/tex/${data.resumeId}`)).text()
     const form = Object.assign(document.createElement("form"), { method: "POST", action: OVERLEAF_URL, target: "_blank" })
@@ -170,18 +206,25 @@ export function ResumeEditor({ data }: { data: EditorData }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-medium">{data.title}</h2>
-          <div role="tablist" aria-label="Edit or chat" className="inline-flex rounded-full border border-border p-0.5 text-xs">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          {tailored ? (
+            <button type="button" onClick={() => setRenaming(true)} className="group/title flex min-w-0 items-center gap-1.5 text-left" title="Rename">
+              <h2 className="min-w-0 text-lg font-medium break-words">{data.title}</h2>
+              <Pencil className="size-3.5 shrink-0 text-muted-foreground opacity-60 group-hover/title:opacity-100" />
+              <span className="sr-only">Rename</span>
+            </button>
+          ) : (
+            <h2 className="text-lg font-medium">{data.title}</h2>
+          )}
+          <div role="group" aria-label="Edit or chat" className="inline-flex rounded-full border border-border p-0.5 text-xs">
             {(["edit", "chat"] as const).map((m) => (
               <button
                 key={m}
                 type="button"
-                role="tab"
-                aria-selected={mode === m}
-                onClick={() => setMode(m)}
+                aria-pressed={mode === m}
+                onClick={() => { setMode(m); setPane("editor") }}
                 className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 transition-colors ${mode === m ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
               >
                 {m === "edit" ? <Pencil className="size-3" /> : <MessageSquare className="size-3" />}
@@ -189,7 +232,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
               </button>
             ))}
           </div>
-          <ReadinessBadge state={checks} onClick={() => setTab("checks")} />
+          <ReadinessBadge state={checks} onClick={() => showPanel("checks")} />
           {(questions.length > 0 || hinted > 0) && (
             <button
               type="button"
@@ -211,8 +254,12 @@ export function ResumeEditor({ data }: { data: EditorData }) {
               <Button variant="outline">More <ChevronDown /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild><a href={`/api/tex/${data.resumeId}`}>Download .tex</a></DropdownMenuItem>
+              <DropdownMenuItem asChild><a href={`/api/tex/${data.resumeId}`} title="Same content as the PDF in a standard LaTeX template. Spacing differs, so check it still fits one page after compiling.">Download .tex</a></DropdownMenuItem>
               <DropdownMenuItem onSelect={openInOverleaf}>Open in Overleaf</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {tailored && <DropdownMenuItem onSelect={() => setRenaming(true)}><Pencil /> Rename</DropdownMenuItem>}
+              <DropdownMenuItem disabled={pending} onSelect={duplicate}><Copy /> Duplicate</DropdownMenuItem>
+              {tailored && <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}><Trash2 /> Delete resume</DropdownMenuItem>}
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild><Link href="/start/sources">Add sources and update</Link></DropdownMenuItem>
               <DropdownMenuItem asChild><a href="/api/data">Download my data (JSON)</a></DropdownMenuItem>
@@ -221,12 +268,26 @@ export function ResumeEditor({ data }: { data: EditorData }) {
         </div>
       </div>
 
+      <p className="-mt-3 text-xs text-muted-foreground">
+        {tailored
+          ? "Lines you edit, add or remove here change this resume only. Titles, dates, links and contact details are shared with your other resumes."
+          : "Edits here update your Career Record wording, and every tailored resume that hasn't reworded that line in its own way."}
+      </p>
+
+      <div role="group" aria-label="Show the editor or the page" className="grid grid-cols-2 rounded-full border border-border p-0.5 text-sm lg:hidden">
+        {(["editor", "page"] as const).map((p) => (
+          <button key={p} type="button" aria-pressed={pane === p} onClick={() => setPane(p)} className={`rounded-full px-3 py-1.5 transition-colors ${pane === p ? "bg-foreground text-background" : "text-muted-foreground"}`}>
+            {p === "editor" ? (mode === "chat" ? "Chat" : "Edit") : "Preview & checks"}
+          </button>
+        ))}
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className={mode === "chat" ? "lg:sticky lg:top-20 lg:self-start" : "hidden"}>
+        <div className={`min-w-0 ${mode === "chat" ? "lg:sticky lg:top-20 lg:self-start" : "hidden"} ${pane === "page" ? "max-lg:hidden" : ""}`}>
           <ResumeChat resumeId={data.resumeId} onBusy={setChatBusy} />
         </div>
         {/* Editor */}
-        <div className={mode === "edit" ? "space-y-6" : "hidden"}>
+        <div className={`min-w-0 ${mode === "edit" ? "space-y-6" : "hidden"} ${pane === "page" ? "max-lg:hidden" : ""}`}>
           <HeaderCard resumeId={data.resumeId} header={data.header} pending={pending} run={run} />
 
           {sections.map((section, si) => {
@@ -245,7 +306,7 @@ export function ResumeEditor({ data }: { data: EditorData }) {
                 onDrop={(e) => { e.preventDefault(); drop() }}
               >
                 {target && <div className={`pointer-events-none absolute inset-x-0 h-0.5 rounded-full bg-primary ${drag.after ? "-bottom-3" : "-top-3"}`} />}
-                <div className="group/section flex h-8 items-center justify-between">
+                <div className="group/section flex h-8 min-w-0 items-center justify-between gap-2">
                   <div
                     draggable={!pending}
                     onDragStart={(e) => {
@@ -254,13 +315,13 @@ export function ResumeEditor({ data }: { data: EditorData }) {
                       setDrag({ type: section.type, over: null, after: false })
                     }}
                     onDragEnd={() => setDrag(null)}
-                    className="flex cursor-grab md:-ml-5 items-center gap-1 rounded-md py-1 pr-2 text-muted-foreground active:cursor-grabbing"
+                    className="flex min-w-0 cursor-grab md:-ml-5 items-center gap-1 rounded-md py-1 pr-2 text-muted-foreground active:cursor-grabbing"
                     title="Drag to reorder sections"
                   >
                     <GripVertical className="size-3.5 transition-opacity md:opacity-0 md:group-hover/section:opacity-100" />
                     <h2 className="text-xs font-medium tracking-wider uppercase">{section.title}</h2>
                   </div>
-                  <div className="flex transition-opacity md:opacity-0 md:group-hover/section:opacity-100 md:focus-within:opacity-100">
+                  <div className="flex shrink-0 transition-opacity md:opacity-0 md:group-hover/section:opacity-100 md:focus-within:opacity-100">
                     <IconButton label="Move section up" disabled={pending || si === 0} onClick={() => move(section.type, si - 1)}><ArrowUp /></IconButton>
                     <IconButton label="Move section down" disabled={pending || si === sections.length - 1} onClick={() => move(section.type, si + 1)}><ArrowDown /></IconButton>
                   </div>
@@ -349,11 +410,12 @@ export function ResumeEditor({ data }: { data: EditorData }) {
         </div>
 
         {/* Preview + checks */}
-        <div className="lg:sticky lg:top-20 lg:self-start">
+        <div id="resume-panel" className={`min-w-0 scroll-mt-20 lg:sticky lg:top-20 lg:self-start ${pane === "editor" ? "max-lg:hidden" : ""}`}>
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="preview">Preview</TabsTrigger>
               <TabsTrigger value="checks">Checks</TabsTrigger>
+              {data.match && <TabsTrigger value="match">Job match</TabsTrigger>}
             </TabsList>
             <TabsContent value="preview">
               <div className="relative">
@@ -373,10 +435,52 @@ export function ResumeEditor({ data }: { data: EditorData }) {
             <TabsContent value="checks">
               <ChecksPanel state={checks} />
             </TabsContent>
+            {data.match && (
+              <TabsContent value="match">
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <MatchReport match={data.match} titles={new Map(Object.entries(data.titles))} onPage={new Set(data.sections.flatMap((s) => s.entries.map((e) => e.itemId)))} />
+                </div>
+              </TabsContent>
+            )}
           </Tabs>
         </div>
       </div>
+
+      <RenameDialog open={renaming} onOpenChange={setRenaming} title={data.title} pending={pending} onSave={(title) => run(() => renameResume(data.resumeId, title), () => setRenaming(false))} />
+      <Dialog open={deleting} onOpenChange={setDeleting}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete “{data.title}”?</DialogTitle>
+            <DialogDescription>
+              This resume and the wording only it uses are deleted. Your Career Record, your other resumes, and every PDF you downloaded from it stay.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleting(false)}>Cancel</Button>
+            <Button variant="destructive" disabled={pending} onClick={() => { setDeleting(false); remove() }}>Delete resume</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+function RenameDialog({ open, onOpenChange, title, pending, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; pending: boolean; onSave: (title: string) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Rename resume</DialogTitle>
+          <DialogDescription>Only you see this name. The PDF file is named from it.</DialogDescription>
+        </DialogHeader>
+        <form action={(form) => onSave(String(form.get("title") ?? ""))} className="space-y-3">
+          <Field name="title" label="Name" value={title} />
+          <DialogFooter>
+            <Button type="submit" disabled={pending}>{pending && <Spinner />} Save</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -397,11 +501,11 @@ function HeaderCard({ resumeId, header, pending, run }: { resumeId: string; head
         <div className="min-w-0">
           <div className="text-lg font-semibold">{header.name || <span className="text-muted-foreground">Your name</span>}</div>
           {header.headline && <div className="text-sm">{header.headline}</div>}
-          <div className="mt-1 text-sm text-muted-foreground">{contact.join(" · ") || "No contact details yet"}</div>
+          <div className="mt-1 text-sm break-words text-muted-foreground [overflow-wrap:anywhere]">{contact.join(" · ") || "No contact details yet"}</div>
           {header.targetRole && <div className="mt-2 text-xs text-muted-foreground">Aimed at: <span className="text-foreground">{header.targetRole}</span></div>}
           {missing.length > 0 && <div className="mt-2 text-xs text-amber-400">Add {missing.join(", ")} so recruiters can reach you.</div>}
         </div>
-        <Button size="sm" variant={missing.length ? "secondary" : "ghost"} className={missing.length ? "" : "text-muted-foreground"} disabled={pending} onClick={() => setOpen(true)}><Pencil /> Edit</Button>
+        <Button size="sm" variant={missing.length ? "secondary" : "ghost"} className={`shrink-0 ${missing.length ? "" : "text-muted-foreground"}`} disabled={pending} onClick={() => setOpen(true)}><Pencil /> Edit</Button>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
@@ -482,7 +586,7 @@ function EntryCard({ resumeId, type, entry, position, allBullets, pending, run, 
       )}
       <div className="flex items-start justify-between gap-3">
         <button type="button" className="min-w-0 text-left" onClick={() => setEditing(true)} title="Edit title, dates and links">
-          <div className="font-medium">{entry.title}</div>
+          <div className="font-medium break-words">{entry.title}</div>
           {entry.subtitle && <div className="truncate text-sm text-muted-foreground">{entry.subtitle}</div>}
         </button>
         <div className="flex shrink-0 items-center">
@@ -666,12 +770,13 @@ function BulletRow({ bullet, hint, disabled, onSave, onDelete }: {
     <li className="group flex gap-2 text-sm leading-relaxed">
       <span className="mt-[0.55em] size-1 shrink-0 rounded-full bg-muted-foreground" />
       <div className="min-w-0 flex-1">
-        <button type="button" className="text-left hover:text-foreground/80" onClick={() => setEditing(true)} title="Click to edit">
+        <button type="button" className="text-left break-words hover:text-foreground/80" onClick={() => setEditing(true)} title="Click to edit">
           {bullet.text}
         </button>
         <span className="mt-1 flex flex-wrap items-center gap-1">
           {bullet.facts.map((f) => <FactChip key={f.id} fact={f} />)}
           {bullet.userEdited && <Badge variant="outline" className="text-[10px]">edited by you</Badge>}
+          {bullet.ownCopy && <Badge variant="outline" className="text-[10px]">this resume only</Badge>}
           {hint && (
             <Tooltip>
               <TooltipTrigger asChild>

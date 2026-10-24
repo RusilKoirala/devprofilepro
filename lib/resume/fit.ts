@@ -16,15 +16,17 @@ export interface FitResult {
 const MAX_STEPS = 60
 
 // Render, count pages, and remove the weakest unpinned content until it fits on one page.
-export async function fitToOnePage(layout: ResumeLayout, record: Pick<CareerRecord, "items" | "bullets">): Promise<FitResult> {
+// `relevance` (a tailored resume's items, most relevant to the job first) replaces general strength.
+export async function fitToOnePage(layout: ResumeLayout, record: Pick<CareerRecord, "items" | "bullets">, relevance?: string[]): Promise<FitResult> {
   const items = new Map(record.items.map((i) => [i.id, i]))
+  const weight = weigher(relevance)
   const current: ResumeLayout = { ...layout, items: layout.items.map((li) => ({ ...li, bullet_ids: [...li.bullet_ids] })) }
   const cuts: CutEntry[] = []
 
   for (let step = 0; step < MAX_STEPS; step++) {
     const pdf = await renderPdf(buildResume(current, record))
     const pages = await pageCount(pdf)
-    if (pages <= 1) return { layout: current, cuts: explain(cuts, current, items), pages, pdf, pinnedOverflow: false }
+    if (pages <= 1) return { layout: current, cuts: explain(cuts, current, items, weight), pages, pdf, pinnedOverflow: false }
 
     // Weakest unpinned item that still has something to cut (skills/education are cut last).
     const candidates = current.items
@@ -32,7 +34,7 @@ export async function fitToOnePage(layout: ResumeLayout, record: Pick<CareerReco
       .filter(({ item }) => item && !item.pinned && item.type !== "contact")
       .sort((a, b) => weight(a.item!) - weight(b.item!))
     const target = candidates[0]
-    if (!target) return { layout: current, cuts: explain(cuts, current, items), pages, pdf, pinnedOverflow: true }
+    if (!target) return { layout: current, cuts: explain(cuts, current, items, weight), pages, pdf, pinnedOverflow: true }
 
     if (target.li.bullet_ids.length > 1) {
       const bulletId = target.li.bullet_ids.pop()!
@@ -45,21 +47,28 @@ export async function fitToOnePage(layout: ResumeLayout, record: Pick<CareerReco
     }
   }
   const pdf = await renderPdf(buildResume(current, record))
-  return { layout: current, cuts: explain(cuts, current, items), pages: await pageCount(pdf), pdf, pinnedOverflow: false }
+  return { layout: current, cuts: explain(cuts, current, items, weight), pages: await pageCount(pdf), pdf, pinnedOverflow: false }
 }
 
 // Each cut names the weakest item of the same kind that stayed on the final page.
-function explain(cuts: CutEntry[], layout: ResumeLayout, items: Map<string, Item>): CutEntry[] {
-  const onPage = layout.items.map((li) => items.get(li.item_id)).filter((i): i is Item => !!i).sort((a, b) => a.rank - b.rank)
+function explain(cuts: CutEntry[], layout: ResumeLayout, items: Map<string, Item>, weight: (item: Item) => number): CutEntry[] {
+  const onPage = layout.items.map((li) => items.get(li.item_id)).filter((i): i is Item => !!i).sort((a, b) => weight(a) - weight(b))
   return cuts.map((c) => {
     const type = items.get(c.item_id)?.type
     const other = onPage.find((i) => i.type === type && i.id !== c.item_id)
     const what = c.bullet_id ? "Bullet cut" : "Cut"
-    return { ...c, reason: other ? `${what} to fit one page. Ranked below "${itemTitle(other)}".` : `${what} to fit one page. Lowest ranked content.` }
+    const ranked = weight === rankWeight ? "Ranked below" : "Less relevant to this job than"
+    return { ...c, reason: other ? `${what} to fit one page. ${ranked} "${itemTitle(other)}".` : `${what} to fit one page. Lowest ranked content.` }
   })
 }
 
-function weight(item: { type: string; rank: number }) {
-  // Never cut education or skills before projects and jobs.
-  return item.rank + (item.type === "education" || item.type === "skills" ? 1000 : 0)
+// Never cut education or skills before projects and jobs.
+const keepLast = (item: { type: string }) => (item.type === "education" || item.type === "skills" ? 1000 : 0)
+const rankWeight = (item: { id: string; type: string; rank: number }) => item.rank + keepLast(item)
+
+export function weigher(relevance?: string[]): (item: { id: string; type: string; rank: number }) => number {
+  if (!relevance?.length) return rankWeight
+  const position = new Map(relevance.map((id, n) => [id, n]))
+  // Most relevant scores 100, least relevant near 0; anything not chosen for the job goes first.
+  return (item) => (position.has(item.id) ? 100 - (position.get(item.id)! * 100) / relevance.length : -1) + keepLast(item)
 }

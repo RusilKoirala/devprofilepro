@@ -42,11 +42,12 @@ test("a scanned image fails on unreadable text and stops there", () => {
   assert.deepEqual(report.checks.map((c) => [c.id, c.status]), [["text", "fail"]])
 })
 
-test("missing email and headings fail; icon glyphs and mixed dates warn", () => {
+test("missing email and headings fail as missing information, not as an unreadable file", () => {
   const lines = ["Maya Chen", " +1 415 555 0134  ", "My Journey", "Intern, Acme 06/2025 – Aug 2025", "Toolbox", "React"]
   const report = analyzeResume(pdf(lines))
+  assert.equal(report.verdict, "pass")
+  assert.deepEqual(report.missingInfo, ["contact details", "standard section headings"])
   const status = Object.fromEntries(report.checks.map((c) => [c.id, c.status]))
-  assert.equal(report.verdict, "fail")
   assert.equal(status.contact, "fail")
   assert.equal(status.sections, "fail")
   assert.equal(status.glyphs, "warn")
@@ -79,4 +80,20 @@ test("keyword match finds tools across spellings and lists what's missing", () =
   assert.deepEqual(m.missing.sort(), ["Kafka", "Kubernetes", "Snowflake"])
   assert.equal(m.found.length, 4)
   assert.equal(matchKeywords("too short", "anything"), null)
+})
+
+test("short but selectable text is read, not called a scanned image", () => {
+  const text = "Alex Example alex@example.com github.com/alex Experience Built APIs with Go. Education Example University Skills Go"
+  const report = analyzeResume({ pages: 1, text, lines: text.split(". ").map((t) => line(t)), links: [] })
+  assert.equal(report.verdict, "pass")
+  assert.equal(report.checks.find((c) => c.id === "text")?.status, "warn")
+})
+
+test("Go is recognised as a language, and aliases count for the canonical name", () => {
+  const post = "Backend role. You will build services in Go, work with Postgres and Docker, and design APIs. Go to market is a bonus."
+  const match = matchKeywords(post, "Built a REST API in Golang with PostgreSQL and Docker")!
+  assert.ok(match.found.includes("Go"))
+  assert.ok(match.found.includes("PostgreSQL"))
+  assert.deepEqual(match.missing, [])
+  assert.equal(matchKeywords("Join us and go beyond what you thought possible. We use React and TypeScript every day for our users.", "React")!.found.includes("Go"), false)
 })

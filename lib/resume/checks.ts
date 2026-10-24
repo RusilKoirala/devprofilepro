@@ -30,7 +30,71 @@ export async function testLink(url: string): Promise<LinkStatus> {
   }
 }
 
-export async function runChecks(doc: ResumeDoc, opts: { pages: number; allBulletsSourced: boolean }): Promise<{ results: CheckResult[]; ready: boolean }> {
+// Lines that only repeat what the entry's heading already says, or only give a link.
+const DEPLOY_ONLY = /^(deployed|hosted|live|available|launched|published)\b[^.]{0,40}\b(at|on|to)\b\s*(https?:\/\/|www\.|[a-z0-9-]+\.(?:app|dev|com|io|me|vercel\.app|netlify\.app))/i
+const URL_ONLY = /^\S*(https?:\/\/|www\.)\S+\.?$/i
+
+function words(text: string) {
+  return text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 2)
+}
+
+// Writing problems a structure check can catch: entries with nothing under them, lines that repeat
+// the heading or are only a link, the same skill in two groups, a date written twice.
+export function contentChecks(doc: ResumeDoc, opts: { openOwnership?: string[] } = {}): CheckResult[] {
+  const entries = doc.sections.flatMap((s) => s.entries.map((e) => ({ ...e, type: s.type })))
+  const empty = entries.filter((e) => (e.type === "job" || e.type === "project") && !e.bullets.length).map((e) => e.title || e.subtitle)
+  const thin = entries.flatMap((e) =>
+    e.bullets
+      .filter((b) => {
+        const t = b.text.trim()
+        if (DEPLOY_ONLY.test(t) || URL_ONLY.test(t)) return true
+        // Most of the line's words are the title, company and dates already in the heading.
+        const heading = new Set(words([e.title, e.subtitle, e.dates].join(" ")))
+        const own = words(t)
+        return own.length > 0 && own.length <= 14 && own.filter((w) => heading.has(w)).length / own.length >= 0.6
+      })
+      .map((b) => `“${b.text.length > 60 ? `${b.text.slice(0, 57)}…` : b.text}”`)
+  )
+  const groups = doc.sections.filter((s) => s.type === "skills").flatMap((s) => s.entries)
+  const seen = new Map<string, string>()
+  const repeated = new Set<string>()
+  for (const g of groups)
+    for (const sk of g.subtitle.split(/,\s*/).map((x) => x.trim()).filter(Boolean)) {
+      const key = sk.toLowerCase()
+      if (seen.has(key) && seen.get(key) !== g.title) repeated.add(sk)
+      else seen.set(key, g.title)
+    }
+  const twiceDated = entries.filter((e) => e.type === "education" && e.dates && e.dates.split(/\s+[–-]\s+/).some((d) => d && e.subtitle.toLowerCase().includes(d.toLowerCase()))).map((e) => e.title)
+
+  return [
+    {
+      id: "empty",
+      label: "Every job and project says what you did",
+      status: empty.length ? "warn" : "pass",
+      detail: empty.length ? `No lines under: ${empty.join(", ")}` : undefined,
+    },
+    {
+      id: "thin",
+      label: "Lines add something new",
+      status: thin.length ? "warn" : "pass",
+      detail: thin.length ? `Only repeats the heading or gives a link: ${thin.slice(0, 3).join("; ")}${thin.length > 3 ? ` and ${thin.length - 3} more` : ""}` : undefined,
+    },
+    {
+      id: "repeats",
+      label: "Nothing listed twice",
+      status: repeated.size || twiceDated.length ? "warn" : "pass",
+      detail: [repeated.size && `In more than one skills group: ${[...repeated].join(", ")}`, twiceDated.length && `Date written twice in ${twiceDated.join(", ")}`].filter(Boolean).join(" · ") || undefined,
+    },
+    {
+      id: "ownership",
+      label: "Team projects say what you built",
+      status: opts.openOwnership?.length ? "warn" : "pass",
+      detail: opts.openOwnership?.length ? `Answer the question on ${opts.openOwnership.join(", ")} so its lines are about your part.` : undefined,
+    },
+  ]
+}
+
+export async function runChecks(doc: ResumeDoc, opts: { pages: number; allBulletsSourced: boolean; openOwnership?: string[] }): Promise<{ results: CheckResult[]; ready: boolean }> {
   const results: CheckResult[] = []
 
   results.push({ id: "pages", label: "Fits on one page", status: opts.pages === 1 ? "pass" : "fail", detail: opts.pages === 1 ? undefined : `${opts.pages} pages` })
@@ -94,6 +158,7 @@ export async function runChecks(doc: ResumeDoc, opts: { pages: number; allBullet
   })
 
   results.push({ id: "sources", label: "Every line has a source", status: opts.allBulletsSourced ? "pass" : "fail" })
+  results.push(...contentChecks(doc, opts))
 
   const order: Record<CheckStatus, number> = { fail: 0, warn: 1, not_checked: 2, pass: 3 }
   results.sort((a, b) => order[a.status] - order[b.status])

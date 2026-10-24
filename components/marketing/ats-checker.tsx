@@ -14,7 +14,8 @@ import type { AtsReport, AtsStatus } from "@/lib/ats/analyze"
 import type { KeywordMatch } from "@/lib/ats/keywords"
 import { cn } from "@/lib/utils"
 
-type Result = AtsReport & { keywords: KeywordMatch | null }
+// A result is tied to the file and job post it was made from, and cleared when either changes.
+type Result = AtsReport & { keywords: KeywordMatch | null; fileName: string; checkedAt: number }
 
 const ICON: Record<AtsStatus, React.ReactNode> = {
   pass: <CheckCircle2 className="size-5 text-emerald-400" />,
@@ -34,7 +35,12 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
   function pick(f: File | undefined | null) {
     setError(null)
     if (!f) return
-    if (f.type && f.type !== "application/pdf") return setError("Choose a PDF. Export your resume as PDF first.")
+    setResult(null)
+    if (f.type && f.type !== "application/pdf") {
+      setFile(null)
+      if (input.current) input.current.value = ""
+      return setError("Choose a PDF. Export your resume as PDF first.")
+    }
     setFile(f)
   }
 
@@ -49,7 +55,7 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
       const res = await fetch("/api/ats-check", { method: "POST", body: form })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? "Something went wrong. Try again.")
-      setResult(data)
+      setResult({ ...data, fileName: file.name, checkedAt: Date.now() })
       requestAnimationFrame(() => document.getElementById("ats-report")?.scrollIntoView({ behavior: "smooth", block: "start" }))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Try again.")
@@ -103,11 +109,13 @@ export function AtsChecker({ cta }: { cta: { href: string; label: string } }) {
               <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
-              <Textarea rows={5} maxLength={20000} value={jobPost} onChange={(e) => setJobPost(e.target.value)} placeholder="Paste the job description here (optional)" />
+              <label htmlFor="ats-job-post" className="sr-only">Job post (optional)</label>
+              <Textarea id="ats-job-post" rows={5} maxLength={20000} value={jobPost} onChange={(e) => { setJobPost(e.target.value); setResult(null) }} placeholder="Paste the job description here (optional)" />
             </CollapsibleContent>
           </Collapsible>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          <div aria-live="polite" className="sr-only">{busy ? "Checking your resume" : result ? `Report ready for ${result.fileName}` : ""}</div>
+          {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
 
           <Button size="lg" onClick={check} disabled={busy} className="group h-11 w-full rounded-full text-[15px] shadow-[0_0_0_1px_rgba(255,255,255,0.1),0_8px_30px_-6px_rgba(255,255,255,0.35)]">
             {busy ? <Spinner /> : <ScanText />} {busy ? "Checking…" : "Check my resume"}
@@ -125,6 +133,8 @@ function Report({ result, onReset, cta }: { result: Result; onReset: () => void;
   const reduce = useReducedMotion()
   const passed = result.verdict === "pass"
   const fixes = result.checks.filter((c) => c.status !== "pass").length
+  const missing = result.missingInfo
+  const good = passed && !missing.length
   return (
     <motion.section
       id="ats-report"
@@ -133,18 +143,32 @@ function Report({ result, onReset, cta }: { result: Result; onReset: () => void;
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className={cn("flex flex-wrap items-center gap-6 rounded-3xl border p-6 md:p-8", passed ? "border-emerald-400/20 bg-emerald-400/[0.04]" : "border-red-400/20 bg-red-400/[0.04]")}>
-        <ScoreRing score={result.score} passed={passed} />
+      <p className="text-sm text-muted-foreground">
+        Report for <span className="text-foreground">{result.fileName}</span>, checked at {new Date(result.checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+      </p>
+      <div className={cn("flex flex-wrap items-center gap-6 rounded-3xl border p-6 md:p-8", good ? "border-emerald-400/20 bg-emerald-400/[0.04]" : passed ? "border-amber-400/20 bg-amber-400/[0.04]" : "border-red-400/20 bg-red-400/[0.04]")}>
+        <ScoreRing score={result.score} passed={good} />
         <div className="min-w-0 flex-1">
-          <Badge variant="outline" className={cn("rounded-full font-normal", passed ? "border-emerald-400/30 text-emerald-300" : "border-red-400/30 text-red-300")}>
-            {passed ? "Passes ATS parsing" : "Likely to fail ATS parsing"}
+          <Badge variant="outline" className={cn("rounded-full font-normal", good ? "border-emerald-400/30 text-emerald-300" : passed ? "border-amber-400/30 text-amber-300" : "border-red-400/30 text-red-300")}>
+            {passed ? "Text extracts cleanly" : "Almost no text extracted"}
           </Badge>
           <h2 className="mt-3 text-2xl font-semibold tracking-tight">
-            {passed ? (fixes ? `Readable, with ${fixes} thing${fixes === 1 ? "" : "s"} to improve` : "Clean and easy to parse") : "An ATS will struggle to read this"}
+            {!passed
+              ? "We could barely read any text from this PDF"
+              : missing.length
+                ? `Readable, but missing ${missing.join(" and ")}`
+                : fixes
+                  ? `Readable, with ${fixes} thing${fixes === 1 ? "" : "s"} to improve`
+                  : "Clean and easy to parse"}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {passed ? "An applicant tracking system can pull your details out of this file." : "Fix the red items first; they stop an ATS from reading your details."}
+            {!passed
+              ? "It is probably an image or a design export. Software that reads resumes would see it as nearly blank."
+              : missing.length
+                ? "Our parser read the file fine, but couldn't find the items marked red. Add them as plain text."
+                : "Our parser could pull your details out of this file."}
           </p>
+          <p className="mt-2 text-xs text-muted-foreground">Based on our own parser and common ATS problems. Every ATS differs, so this can&apos;t promise a result in any particular one.</p>
         </div>
       </div>
 
@@ -202,9 +226,6 @@ function Report({ result, onReset, cta }: { result: Result; onReset: () => void;
           </div>
         </div>
       </SpotlightCard>
-      <p className="text-center text-xs text-muted-foreground">
-        This checks what commonly breaks resume parsing, using our own parser. Every ATS is different, so no tool can promise a pass in all of them.
-      </p>
     </motion.section>
   )
 }

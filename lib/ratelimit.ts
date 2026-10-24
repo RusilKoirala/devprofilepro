@@ -17,14 +17,17 @@ const DAILY_LIMITS: Record<AiStep, number> = {
 const redis =
   process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN ? Redis.fromEnv() : null
 
-const limiters = new Map<AiStep, Ratelimit>()
+// Pro gets three times the daily calls per step; the spend budget still applies.
+const PRO_FACTOR = 3
+const limiters = new Map<string, Ratelimit>()
 
-function limiter(step: AiStep) {
+function limiter(step: AiStep, pro = false) {
   if (!redis) return null
-  let l = limiters.get(step)
+  const key = `${pro ? "pro:" : ""}${step}`
+  let l = limiters.get(key)
   if (!l) {
-    l = new Ratelimit({ redis, limiter: Ratelimit.fixedWindow(DAILY_LIMITS[step], "1 d"), prefix: `rl:${step}` })
-    limiters.set(step, l)
+    l = new Ratelimit({ redis, limiter: Ratelimit.fixedWindow(DAILY_LIMITS[step] * (pro ? PRO_FACTOR : 1), "1 d"), prefix: `rl:${key}` })
+    limiters.set(key, l)
   }
   return l
 }
@@ -35,8 +38,8 @@ export class RateLimitedError extends Error {
   }
 }
 
-export async function checkLimit(userId: string, step: AiStep) {
-  const l = limiter(step)
+export async function checkLimit(userId: string, step: AiStep, pro = false) {
+  const l = limiter(step, pro)
   if (!l) return
   const res = await l.limit(userId)
   if (!res.success) throw new RateLimitedError(step, res.reset)

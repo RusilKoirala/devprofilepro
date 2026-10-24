@@ -21,8 +21,13 @@ export interface ExtractedPdf {
 
 export type AtsStatus = "pass" | "warn" | "fail"
 
+// Three different questions: can software read the file at all, is key information there, and
+// is the writing strong. Only the first decides whether the file "can be read".
+export type AtsGroup = "parsing" | "info" | "content"
+
 export interface AtsCheck {
   id: string
+  group: AtsGroup
   label: string
   status: AtsStatus
   detail: string
@@ -31,14 +36,20 @@ export interface AtsCheck {
 }
 
 export interface AtsReport {
+  // pass: text extracts cleanly. fail: almost nothing could be read.
   verdict: "pass" | "fail"
+  // Things a recruiter needs that weren't found (email, a work section), separate from parsing.
+  missingInfo: string[]
   score: number
   checks: AtsCheck[]
   words: number
   preview: string
 }
 
-const MIN_TEXT_CHARS = 250
+// Below this almost nothing came out of the file: an image or a design export.
+const MIN_TEXT_CHARS = 40
+// Below this it read fine but is short, which can mean parts of it are images.
+const SHORT_TEXT_CHARS = 250
 const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
 const PHONE = /(?:\+?\d[\d\s().-]{7,}\d)/
 const PROFILE = /(linkedin\.com\/in\/|github\.com\/|gitlab\.com\/|https?:\/\/[^\s]+\.(dev|io|me|com|app))/i
@@ -92,12 +103,16 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
   const checks: AtsCheck[] = []
 
   // 1. Selectable text. Everything else depends on it.
-  const readable = text.replace(/\s/g, "").length >= MIN_TEXT_CHARS
+  const chars = text.replace(/\s/g, "").length
+  const readable = chars >= MIN_TEXT_CHARS
   checks.push(
     readable
-      ? { id: "text", label: "Text can be read", status: "pass", detail: `${words.toLocaleString()} words found.` }
+      ? chars < SHORT_TEXT_CHARS
+        ? { id: "text", group: "parsing", label: "Text can be read", status: "warn", detail: `Only ${words.toLocaleString()} words could be read. If your resume has more than this, parts of it may be images.`, fix: "Check that every part of the resume is real text: try selecting it in your PDF viewer." }
+        : { id: "text", group: "parsing", label: "Text can be read", status: "pass", detail: `${words.toLocaleString()} words found.` }
       : {
           id: "text",
+          group: "parsing",
           label: "Text can be read",
           status: "fail",
           detail: "Almost no text could be extracted. This looks like a scanned image or a design export, which most ATSs read as blank.",
@@ -113,6 +128,7 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
   const missing = [!email && "email", !phone && "phone number", !profile && "LinkedIn, GitHub or portfolio link"].filter(Boolean) as string[]
   checks.push({
     id: "contact",
+    group: "info",
     label: "Contact details",
     status: !email ? "fail" : missing.length ? "warn" : "pass",
     detail: missing.length ? `Couldn't find: ${missing.join(", ")}.` : "Email, phone and a profile link were found.",
@@ -125,8 +141,9 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
   const notFound = SECTIONS.filter((s) => !found.includes(s) && !(s.id === "projects" && found.some((f) => f.id === "experience"))).map((s) => s.name)
   checks.push({
     id: "sections",
+    group: "info",
     label: "Standard section headings",
-    status: !hasWork || !found.some((s) => s.id === "education") ? "fail" : notFound.length ? "warn" : "pass",
+    status: !hasWork ? "fail" : notFound.length ? "warn" : "pass",
     detail: found.length ? `Found ${found.map((s) => s.name).join(", ")}.${notFound.length ? ` Missing ${notFound.join(", ")}.` : ""}` : "No standard headings found.",
     fix: notFound.length ? `Use plain headings an ATS expects: ${SECTIONS.map((s) => s.name).join(", ")}. Creative names like "My Journey" or "Toolbox" often aren't recognised.` : undefined,
   })
@@ -135,6 +152,7 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
   const twoColumn = looksTwoColumn(pdf.lines)
   checks.push({
     id: "layout",
+    group: "parsing",
     label: "Single-column layout",
     status: twoColumn ? "warn" : "pass",
     detail: twoColumn ? "Parts of this resume are laid out in two columns. Many ATSs read straight across, mixing the columns together." : "Reads top to bottom in one column.",
@@ -145,6 +163,7 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
   const glyphs = (text.match(ICON_GLYPHS) ?? []).length
   checks.push({
     id: "glyphs",
+    group: "parsing",
     label: "No unreadable symbols",
     status: glyphs >= 3 ? "warn" : "pass",
     detail: glyphs ? `${glyphs} characters came out as unreadable symbols, usually icons for phone, email or skills.` : "No icon glyphs or broken characters.",
@@ -156,6 +175,7 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
   const anyDates = formats.length > 0 || /\b(19|20)\d{2}\b/.test(text)
   checks.push({
     id: "dates",
+    group: "info",
     label: "Dates are readable",
     status: !anyDates || formats.length > 1 ? "warn" : "pass",
     detail: !anyDates ? "No dates found for your jobs, projects or education." : formats.length > 1 ? `Dates are written in different ways (${formats.join(", ")}).` : "Dates use one consistent format.",
@@ -165,6 +185,7 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
   // 7. Length.
   checks.push({
     id: "length",
+    group: "content",
     label: "Length",
     status: pdf.pages > 2 || words < 200 ? "warn" : "pass",
     detail: `${pdf.pages} page${pdf.pages === 1 ? "" : "s"}, ${words.toLocaleString()} words.`,
@@ -178,16 +199,18 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
   const buzz = [...new Set(bannedWordsIn(text))]
   const resultsShare = bullets.length ? withNumbers.length / bullets.length : 0
   const contentIssues = [
+    !bullets.length && "no bullet points found",
     bullets.length >= 4 && resultsShare < 0.25 && `only ${withNumbers.length} of ${bullets.length} bullets include a number`,
     weak > 0 && `${weak} line${weak === 1 ? " starts" : "s start"} with "Responsible for", "Worked on" or "Helped"`,
     buzz.length > 0 && `buzzwords: ${buzz.join(", ")}`,
   ].filter(Boolean) as string[]
   checks.push({
     id: "content",
+    group: "content",
     label: "Specific, result-focused bullets",
     status: contentIssues.length ? "warn" : "pass",
-    detail: contentIssues.length ? `${contentIssues.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : bullets.length ? "Bullets lead with action and show results." : "No bullet points found.",
-    fix: contentIssues.length ? "Start each bullet with what you built or changed, name the tools, and add a number when you know one (users, speed, time saved)." : undefined,
+    detail: contentIssues.length ? `${contentIssues.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()) : "Bullets lead with action and show results.",
+    fix: !bullets.length ? "Under each job and project, list what you did as short bullet points, each starting with what you built or changed." : contentIssues.length ? "Start each bullet with what you built or changed, name the tools, and add a number when you know one (users, speed, time saved)." : undefined,
   })
 
   return finish(checks, words, text)
@@ -197,8 +220,10 @@ function finish(checks: AtsCheck[], words: number, text: string): AtsReport {
   const order: Record<AtsStatus, number> = { fail: 0, warn: 1, pass: 2 }
   checks.sort((a, b) => order[a.status] - order[b.status])
   const points = checks.reduce((n, c) => n + (c.status === "pass" ? 1 : c.status === "warn" ? 0.5 : 0), 0)
+  const missingInfo = checks.filter((c) => c.group === "info" && c.status === "fail").map((c) => c.label.toLowerCase())
   return {
-    verdict: checks.some((c) => c.status === "fail") ? "fail" : "pass",
+    verdict: checks.some((c) => c.group === "parsing" && c.status === "fail") ? "fail" : "pass",
+    missingInfo,
     score: checks.length ? Math.round((points / checks.length) * 100) : 0,
     checks,
     words,

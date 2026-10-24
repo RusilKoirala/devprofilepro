@@ -5,12 +5,12 @@ import { generateInterview, interviewItems } from "@/lib/ai/interview"
 import { generateQuestions, MAX_QUESTIONS } from "@/lib/ai/questions"
 import { writeBullets } from "@/lib/ai/write"
 import { loadRecord, loadResume, type CareerRecord } from "@/lib/record/db"
-import { dedupeKey, itemTitle, type CutEntry, type Item, type ItemType, type ResumeLayout } from "@/lib/record/types"
+import { dedupeKey, itemTitle, type CutEntry, type Item, type ItemType, type ResumeLayout, type ResumeRow } from "@/lib/record/types"
 import { sameFact } from "@/lib/record/dedupe"
 import { groundItemData, looksImportant, verifyFacts } from "@/lib/record/verify"
 import type { RepoMeta } from "@/lib/ingest/types"
 import { byRecency } from "@/lib/resume/dates"
-import { applyItemOrder } from "@/lib/resume/order"
+import { applyItemOrder, resumeBullets, sharedBullets } from "@/lib/resume/order"
 import { fitToOnePage } from "@/lib/resume/fit"
 
 export interface BuildReport {
@@ -23,7 +23,25 @@ export interface BuildReport {
   // What this build changed: new entries, and existing entries that gained facts.
   added: string[]
   updated: string[]
+  // Existing entries that gained facts, by id: candidates for new wording (proposeRewrites).
+  updatedIds: string[]
+  // Details a source read in this update disagrees with. Shown for review, never applied silently.
+  changes: DetailChange[]
 }
+
+export interface DetailChange {
+  item_id: string
+  title: string
+  field: string
+  current: string
+  found: string
+  source: string
+}
+
+// Fields a re-read may correct. Lists (tech, skills) are left out: they grow, they don't conflict.
+const REVIEWABLE = ["role", "company", "name", "url", "school", "degree", "details", "location", "start", "end"] as const
+// Sources read this recently count as part of this update; older ones were already reviewed.
+const FRESH_MS = 30 * 60 * 1000
 
 function countItems(items: Pick<Item, "type" | "status">[]): BuildReport["counts"] {
   const counts: BuildReport["counts"] = {}
@@ -36,7 +54,7 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
   const record = await loadRecord(supabase)
   const sources = record.sources.filter((s) => s.kind !== "win" && s.status !== "failed" && s.raw_text)
   if (!sources.length) {
-    if (record.items.length) return { items: record.items.length, factsKept: 0, factsDropped: 0, skippedReadmes: [], counts: countItems(record.items), added: [], updated: [] }
+    if (record.items.length) return { items: record.items.length, factsKept: 0, factsDropped: 0, skippedReadmes: [], counts: countItems(record.items), added: [], updated: [], updatedIds: [], changes: [] }
     throw new Error("Add at least one source first.")
   }
 
@@ -55,6 +73,11 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
   let factsDropped = 0
   const added = new Set<string>()
   const updated = new Set<string>()
+  const updatedIds = new Set<string>()
+  const changes: DetailChange[] = []
+  const labelById = new Map(sources.map((s) => [s.id, s.label]))
+  const freshIds = new Set(sources.filter((s) => Date.now() - new Date(s.fetched_at).getTime() < FRESH_MS).map((s) => s.id))
+  const squash = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")
   const questionRows: { item_id: string; prompt: string; kind: string; options: string[] }[] = []
 
   for (const extracted of output.items) {
@@ -99,6 +122,17 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
           const { error } = await supabase.from("items").update({ data: merged, updated_at: new Date().toISOString() }).eq("id", itemId)
           if (error) throw new Error(error.message)
         }
+        // A value that differs from an accepted one, read from a source in this update: ask.
+        const freshSources = [...new Set(kept.map((f) => f.source_id).filter((id) => freshIds.has(id)))]
+        if (freshSources.length && existing.type !== "contact") {
+          for (const field of REVIEWABLE) {
+            const old = existing.data[field]
+            const found = data[field]
+            if (!old || !found || squash(old) === squash(found)) continue
+            if (changes.some((c) => c.item_id === itemId && c.field === field)) continue
+            changes.push({ item_id: itemId, title: itemTitle(existing), field, current: String(old), found: String(found), source: labelById.get(freshSources[0]) ?? "a source" })
+          }
+        }
       }
     }
 
@@ -114,7 +148,10 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
       const { error } = await supabase.from("facts").insert(factRows)
       if (error) throw new Error(error.message)
       const existing = record.items.find((i) => i.id === itemId)
-      if (existing && existing.type !== "contact") updated.add(itemTitle(existing))
+      if (existing && existing.type !== "contact") {
+        updated.add(itemTitle(existing))
+        updatedIds.add(existing.id)
+      }
     }
 
     if (teamProject && !record.items.find((i) => i.id === itemId)?.data.ownership_confirmed) {
@@ -138,7 +175,7 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
   if (afterError) throw new Error(afterError.message)
   return {
     items: output.items.length, factsKept, factsDropped, skippedReadmes: skipped, counts: countItems(after as Pick<Item, "type" | "status">[]),
-    added: [...added], updated: [...updated].filter((t) => !added.has(t)),
+    added: [...added], updated: [...updated].filter((t) => !added.has(t)), updatedIds: [...updatedIds], changes,
   }
 }
 
@@ -208,16 +245,20 @@ export async function writeItems(
   supabase: SupabaseClient,
   userId: string,
   record: CareerRecord,
-  opts: { itemIds?: string[]; targetRole?: string; releaseEdits?: boolean; instruction?: string; purpose?: "fix" } = {}
+  opts: { itemIds?: string[]; targetRole?: string; releaseEdits?: boolean; instruction?: string; purpose?: "fix"; resume?: ResumeRow | null } = {}
 ) {
   const { itemIds, targetRole, releaseEdits = false, instruction, purpose } = opts
-  const items = record.items.filter((i) => i.status !== "hidden" && (!itemIds || itemIds.includes(i.id)))
-  const keep = record.bullets.filter((b) => b.user_edited)
+  // A tailored resume rewrites in its own words; the base resume and the record share theirs.
+  const tailored = opts.resume?.kind === "tailored" && itemIds ? opts.resume : null
+  const shared = sharedBullets(record.bullets)
+  const items = record.items.filter((i) => (tailored || i.status !== "hidden") && (!itemIds || itemIds.includes(i.id)))
+  const keep = shared.filter((b) => b.user_edited)
   const keepItems = new Set(keep.map((b) => b.item_id))
   // Rebuilding writes only newly imported items. Existing wording changes only
   // when the user answers a question or explicitly requests regeneration.
-  const toWrite = items.filter((i) => (releaseEdits || !keepItems.has(i.id)) && (itemIds || !record.bullets.some((b) => b.item_id === i.id)))
-  const { headline, bullets } = await writeBullets({ userId, items: toWrite, facts: record.facts, keep: releaseEdits ? [] : keep, targetRole, instruction, purpose })
+  const toWrite = items.filter((i) => (releaseEdits || tailored || !keepItems.has(i.id)) && (itemIds || !shared.some((b) => b.item_id === i.id)))
+  const { headline, bullets } = await writeBullets({ userId, items: toWrite, facts: record.facts, keep: releaseEdits || tailored ? [] : keep, targetRole, instruction, purpose })
+  if (tailored) return { headline, written: await saveOwnBullets(supabase, tailored, bullets) }
 
   const writtenIds = [...new Set(bullets.map((b) => b.item_id))]
   if (writtenIds.length) {
@@ -227,6 +268,27 @@ export async function writeItems(
     if (error) throw new Error(error.message)
   }
   return { headline, written: bullets.length }
+}
+
+// A tailored resume's rewrite: its own lines replace whatever it showed for those items, and the
+// shared wording (and the base resume) stays as it was.
+async function saveOwnBullets(supabase: SupabaseClient, resume: ResumeRow, bullets: { item_id: string; text: string; fact_ids: string[] }[]) {
+  const itemIds = [...new Set(bullets.map((b) => b.item_id))]
+  if (!itemIds.length) return 0
+  // Explicit times keep the written order (rows inserted together would share one timestamp).
+  const start = Date.now()
+  const { data: fresh, error: insertError } = await supabase
+    .from("bullets")
+    .insert(bullets.map((b, n) => ({ item_id: b.item_id, text: b.text, fact_ids: b.fact_ids, resume_id: resume.id, user_edited: false, created_at: new Date(start + n).toISOString() })))
+    .select("id")
+  if (insertError) throw new Error(insertError.message)
+  const keepIds = (fresh ?? []).map((b) => b.id as string)
+  const { error: deleteError } = await supabase.from("bullets").delete().eq("resume_id", resume.id).in("item_id", itemIds).not("id", "in", `(${keepIds.join(",")})`)
+  if (deleteError) throw new Error(deleteError.message)
+  const own_items = [...new Set([...(resume.layout.own_items ?? []), ...itemIds])]
+  const { error } = await supabase.from("resumes").update({ layout: { ...resume.layout, own_items }, updated_at: new Date().toISOString() }).eq("id", resume.id)
+  if (error) throw new Error(error.message)
+  return bullets.length
 }
 
 // Students and interns lead with Education; working developers lead with Experience;
@@ -248,19 +310,20 @@ export function orderItems<T extends Pick<Item, "type" | "rank" | "data">>(items
   })
 }
 
-export function defaultLayout(record: Pick<CareerRecord, "items" | "bullets">, headline: string, include?: string[]): ResumeLayout {
+export function defaultLayout(record: Pick<CareerRecord, "items" | "bullets">, headline: string, include?: string[], resume?: { id: string; hidden_bullets?: string[]; own_items?: string[] }): ResumeLayout {
   const picked = include ? new Set(include) : null
   const shown = record.items.filter((i) => i.type !== "contact" && (picked ? picked.has(i.id) : i.status !== "hidden"))
   return {
     headline,
     section_order: sectionOrder(shown),
-    items: orderItems(shown).map((i) => ({ item_id: i.id, bullet_ids: record.bullets.filter((b) => b.item_id === i.id).map((b) => b.id) })),
+    items: orderItems(shown).map((i) => ({ item_id: i.id, bullet_ids: resumeBullets(record.bullets, i.id, resume).map((b) => b.id) })),
   }
 }
 
 // ⑥ Fit, then save the layout and what was cut.
 export async function fitAndSave(supabase: SupabaseClient, resumeId: string, layout: ResumeLayout, record: Pick<CareerRecord, "items" | "bullets">) {
-  const fit = await fitToOnePage(layout, record)
+  // A tailored resume cuts by its relevance to the job (its include order), not by general strength.
+  const fit = await fitToOnePage(layout, record, layout.include)
   const { error } = await supabase
     .from("resumes")
     .update({ layout: fit.layout, cut_log: fit.cuts satisfies CutEntry[], updated_at: new Date().toISOString() })
@@ -282,7 +345,7 @@ export async function writeBase(supabase: SupabaseClient, userId: string, target
   const { headline, written: writtenNew } = await writeItems(supabase, userId, record, { targetRole: role })
   // Entries that already had bullets are rewritten only when the interview added something to them.
   let written = writtenNew
-  const answered = answeredItemIds.filter((id) => record.bullets.some((b) => b.item_id === id))
+  const answered = answeredItemIds.filter((id) => sharedBullets(record.bullets).some((b) => b.item_id === id))
   if (answered.length) written += (await writeItems(supabase, userId, await loadRecord(supabase), { itemIds: answered, targetRole: role })).written
   const fresh = await loadRecord(supabase)
   const base = defaultLayout(fresh, existing?.layout?.headline || headline)
@@ -310,14 +373,18 @@ export async function writeBase(supabase: SupabaseClient, userId: string, target
 export async function relayoutResume(supabase: SupabaseClient, resumeId: string) {
   const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
   if (!resume) throw new Error("Resume not found")
-  const include = resume.kind === "tailored" ? resume.layout.include : undefined
-  const base = defaultLayout(record, resume.layout.headline, include)
+  const tailored = resume.kind === "tailored"
+  const include = tailored ? resume.layout.include : undefined
+  const own = tailored ? { hidden_bullets: resume.layout.hidden_bullets, own_items: resume.layout.own_items } : {}
+  const base = defaultLayout(record, resume.layout.headline, include, tailored ? { id: resume.id, ...own } : undefined)
   const kept = resume.layout.section_order ?? []
   const layout: ResumeLayout = {
     ...base,
     ...(resume.layout.target_role ? { target_role: resume.layout.target_role } : {}),
     ...(resume.layout.item_order ? { item_order: resume.layout.item_order } : {}),
     ...(include ? { include } : {}),
+    ...(own.hidden_bullets?.length ? { hidden_bullets: own.hidden_bullets } : {}),
+    ...(own.own_items?.length ? { own_items: own.own_items } : {}),
     items: applyItemOrder(base.items, resume.layout.item_order),
     section_order: kept.length ? [...kept, ...base.section_order.filter((t) => !kept.includes(t))] : base.section_order,
   }

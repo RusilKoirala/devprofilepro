@@ -1,0 +1,109 @@
+"use server"
+
+import { auth } from "@clerk/nextjs/server"
+import { revalidatePath } from "next/cache"
+import { z } from "zod"
+import { isAppEnabled } from "@/lib/access"
+import { relayoutResume } from "@/lib/record/pipeline"
+import { createClient } from "@/lib/supabase/server"
+import type { ActionResult } from "@/lib/record/actions"
+
+// The user's control over what we keep: remove one source and everything that came only from it,
+// or delete all of their DevProfile data. Billing records stay with the payment provider.
+
+async function session() {
+  if (!isAppEnabled()) throw new Error("Not available")
+  const { userId } = await auth()
+  if (!userId) throw new Error("Not signed in")
+  return { userId, supabase: await createClient() }
+}
+
+function must(error: { message: string } | null) {
+  if (error) throw new Error(error.message)
+}
+
+function fail(err: unknown): { ok: false; error: string } {
+  console.error(err)
+  return { ok: false, error: err instanceof Error ? err.message : "Something went wrong" }
+}
+
+// Facts read from this source go; lines that cited only them go; entries left with no facts go.
+// Lines that also cite other facts stay, citing those. Every resume is re-fitted afterwards.
+export async function removeSource(sourceId: string): Promise<ActionResult<{ facts: number; entries: number }>> {
+  try {
+    const { supabase } = await session()
+    const id = z.string().uuid().parse(sourceId)
+    const { data: source, error: sourceError } = await supabase.from("sources").select("id,file_path").eq("id", id).single()
+    must(sourceError)
+    const { data: facts, error: factsError } = await supabase.from("facts").select("id,item_id").eq("source_id", id)
+    must(factsError)
+    const gone = new Set((facts ?? []).map((f) => f.id as string))
+    const touchedItems = [...new Set((facts ?? []).map((f) => f.item_id as string))]
+
+    if (gone.size) {
+      const { data: bullets, error: bulletsError } = await supabase.from("bullets").select("id,fact_ids").overlaps("fact_ids", [...gone])
+      must(bulletsError)
+      for (const b of bullets ?? []) {
+        const keep = (b.fact_ids as string[]).filter((f) => !gone.has(f))
+        must(keep.length ? (await supabase.from("bullets").update({ fact_ids: keep }).eq("id", b.id)).error : (await supabase.from("bullets").delete().eq("id", b.id)).error)
+      }
+      must((await supabase.from("facts").delete().in("id", [...gone])).error)
+    }
+
+    // Entries that now have no facts at all came only from this source.
+    let entries = 0
+    if (touchedItems.length) {
+      const { data: left, error: leftError } = await supabase.from("facts").select("item_id").in("item_id", touchedItems)
+      must(leftError)
+      const stillBacked = new Set((left ?? []).map((f) => f.item_id as string))
+      const empty = touchedItems.filter((i) => !stillBacked.has(i))
+      if (empty.length) {
+        must((await supabase.from("items").delete().in("id", empty).neq("type", "contact")).error)
+        entries = empty.length
+      }
+    }
+
+    must((await supabase.from("sources").delete().eq("id", id)).error)
+    if (source?.file_path) {
+      const { error } = await supabase.storage.from("uploads").remove([source.file_path])
+      if (error) console.error(error)
+    }
+
+    const { data: resumes, error: resumesError } = await supabase.from("resumes").select("id")
+    must(resumesError)
+    for (const r of resumes ?? []) await relayoutResume(supabase, r.id as string)
+    revalidatePath("/", "layout")
+    return { ok: true, data: { facts: gone.size, entries } }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+async function removeFolder(supabase: Awaited<ReturnType<typeof createClient>>, bucket: string, folder: string) {
+  for (;;) {
+    const { data, error } = await supabase.storage.from(bucket).list(folder, { limit: 100 })
+    if (error) throw new Error(error.message)
+    if (!data?.length) return
+    must((await supabase.storage.from(bucket).remove(data.map((f) => `${folder}/${f.name}`))).error)
+    if (data.length < 100) return
+  }
+}
+
+// Everything: sources and uploaded files, the Career Record, resumes, job posts, downloaded PDFs
+// and the AI log. The sign-in account itself is deleted from the account menu.
+export async function deleteAllData(confirm: string): Promise<ActionResult> {
+  try {
+    const { userId, supabase } = await session()
+    if (confirm !== "DELETE") throw new Error('Type DELETE to confirm.')
+    // Children before parents, so no foreign key blocks a delete.
+    for (const table of ["exports", "bullets", "questions", "facts", "resumes", "jobs", "items", "source_versions", "sources", "ai_runs"]) {
+      must((await supabase.from(table).delete().eq("user_id", userId)).error)
+    }
+    await removeFolder(supabase, "uploads", userId)
+    await removeFolder(supabase, "exports", userId)
+    revalidatePath("/", "layout")
+    return { ok: true, data: undefined }
+  } catch (err) {
+    return fail(err)
+  }
+}

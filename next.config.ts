@@ -4,8 +4,9 @@ const nextConfig: NextConfig = {
   // react-pdf ships its own font/layout engine; keep it out of the server bundle.
   serverExternalPackages: ["@react-pdf/renderer"],
   experimental: {
-    // Two resume PDFs of up to 5 MB each are uploaded through a server action.
-    serverActions: { bodySizeLimit: "12mb" },
+    // Up to two files go through one server action: 5 MB PDFs or a 10 MB LinkedIn ZIP
+    // (lib/ingest/limits.ts), plus form fields.
+    serverActions: { bodySizeLimit: "21mb" },
   },
 };
 

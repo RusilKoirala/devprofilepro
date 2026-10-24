@@ -4,17 +4,20 @@ import { auth } from "@clerk/nextjs/server"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { AiError } from "@/lib/ai/client"
+import { AllowanceError, recordUsage, requireAllowance } from "@/lib/allowance"
+import type { Allowance } from "@/lib/plans"
 import { BudgetError } from "@/lib/ai/budget"
 import { ingestGitHub, GitHubError } from "@/lib/ingest/github"
 import { ingestPullRequests } from "@/lib/ingest/github-pr"
 import { ingestPaste } from "@/lib/ingest/paste"
 import { ingestLinkedInZip } from "@/lib/ingest/linkedin-zip"
+import { MAX_FILES } from "@/lib/ingest/limits"
 import { ingestPdf } from "@/lib/ingest/pdf"
 import type { IngestedSource } from "@/lib/ingest/types"
 import { RateLimitedError } from "@/lib/ratelimit"
 import { loadRecord, loadResume, saveSources } from "@/lib/record/db"
-import { buildRecord, queueInterview, refreshQuestions, relayoutResume, writeBase, writeItems, type InterviewCard } from "@/lib/record/pipeline"
-import { ItemDataSchema, ITEM_TYPES, type ItemType, type ResumeLayout } from "@/lib/record/types"
+import { buildRecord, queueInterview, refreshQuestions, relayoutResume, writeBase, writeItems, type DetailChange, type InterviewCard } from "@/lib/record/pipeline"
+import { ItemDataSchema, ITEM_TYPES, itemTitle, type ItemType, type ResumeLayout } from "@/lib/record/types"
 import { planTailoredResume, TailorSchema, type TailorPlan } from "@/lib/ai/tailor"
 import { chatTurn, resumeForChat, type ChatMessage } from "@/lib/ai/chat"
 import { checkActions, presentFields, type ChatAction, type ChatContext } from "@/lib/record/chat-actions"
@@ -27,13 +30,15 @@ import { createClient } from "@/lib/supabase/server"
 import { isAppEnabled } from "@/lib/access"
 import { questionFact } from "@/lib/record/question-fact"
 import { findDuplicateFacts } from "@/lib/record/dedupe"
+import { sharedBullets } from "@/lib/resume/order"
 import {
-  addLine, BulletSnapshot, editLine, RANGE, removeLine, setItemOrderIn, setItemStateIn, setSectionOrderIn, updateDetailsIn, updateHeaderIn,
+  addLine, editLine, RANGE, removeLine, restoreLine, setItemOrderIn, setItemStateIn, setSectionOrderIn, updateDetailsIn, updateHeaderIn,
   type DeletedBullet, type DetailsInput, type HeaderInput,
 } from "@/lib/record/edits"
 import { REWRITE_STYLES, type RewriteStyle } from "@/lib/record/rewrite-styles"
 
-export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; error: string }
+// `upgrade` is set when a Free allowance ran out, so the client can offer Pro.
+export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; error: string; upgrade?: Allowance }
 
 async function session() {
   if (!isAppEnabled()) throw new Error("Not available")
@@ -42,8 +47,11 @@ async function session() {
   return { userId, supabase: await createClient() }
 }
 
-function fail(err: unknown): { ok: false; error: string } {
+function fail(err: unknown): { ok: false; error: string; upgrade?: Allowance } {
+  if (err instanceof AllowanceError) return { ok: false, error: err.message, upgrade: err.allowance }
   if (err instanceof RateLimitedError || err instanceof AiError || err instanceof GitHubError || err instanceof BudgetError) return { ok: false, error: err.message }
+  // Validation details are for us; the person gets the one message that says what to change.
+  if (err instanceof z.ZodError) return { ok: false, error: err.issues[0]?.message && !/^(Expected|Invalid|Required)/.test(err.issues[0].message) ? err.issues[0].message : "That didn't look right. Check it and try again." }
   console.error(err)
   return { ok: false, error: err instanceof Error ? err.message : "Something went wrong" }
 }
@@ -55,9 +63,18 @@ export interface CoverageLine {
 }
 
 // ① Ingest everything the user gave us on /start.
+// After the first build, reading sources again is a sync or rebuild: a Free allowance.
+async function hasBaseResume(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { count, error } = await supabase.from("resumes").select("id", { count: "exact", head: true }).eq("kind", "base")
+  if (error) throw new Error(error.message)
+  return (count ?? 0) > 0
+}
+
 export async function addSources(formData: FormData): Promise<ActionResult<CoverageLine[]>> {
   try {
     const { userId, supabase } = await session()
+    // Checked here too, before anything is fetched, so a Free user out of syncs isn't left half way.
+    if (await hasBaseResume(supabase)) await requireAllowance(supabase, "updates")
     const coverage: CoverageLine[] = []
     const sources: IngestedSource[] = []
 
@@ -74,7 +91,7 @@ export async function addSources(formData: FormData): Promise<ActionResult<Cover
       }
     }
 
-    const files = formData.getAll("pdfs").filter((f): f is File => f instanceof File && f.size > 0).slice(0, 2)
+    const files = formData.getAll("pdfs").filter((f): f is File => f instanceof File && f.size > 0).slice(0, MAX_FILES)
     for (const file of files) {
       if (/\.zip$/i.test(file.name) || file.type.includes("zip")) {
         try {
@@ -134,11 +151,15 @@ export async function addSources(formData: FormData): Promise<ActionResult<Cover
 // ②→⑥ Build the base resume in stages, so the client shows real progress instead of a timer.
 
 // ② Extract + ③ quote check.
-export async function stageExtract(): Promise<ActionResult<{ counts: Partial<Record<ItemType, number>>; factsKept: number; factsDropped: number; skipped: string[]; added: string[]; updated: string[] }>> {
+export async function stageExtract(): Promise<ActionResult<{ counts: Partial<Record<ItemType, number>>; factsKept: number; factsDropped: number; skipped: string[]; added: string[]; updated: string[]; updatedIds: string[]; changes: DetailChange[] }>> {
   try {
     const { userId, supabase } = await session()
+    // The first build is free; every read after it counts as a sync or rebuild.
+    const counted = await hasBaseResume(supabase)
+    if (counted) await requireAllowance(supabase, "updates")
     const report = await buildRecord(supabase, userId)
-    return { ok: true, data: { counts: report.counts, factsKept: report.factsKept, factsDropped: report.factsDropped, skipped: report.skippedReadmes, added: report.added, updated: report.updated } }
+    if (counted) await recordUsage(supabase, "updates")
+    return { ok: true, data: { counts: report.counts, factsKept: report.factsKept, factsDropped: report.factsDropped, skipped: report.skippedReadmes, added: report.added, updated: report.updated, updatedIds: report.updatedIds, changes: report.changes } }
   } catch (err) {
     return fail(err)
   }
@@ -215,9 +236,10 @@ export async function stageTailorPlan(brief: string): Promise<ActionResult<Tailo
   try {
     const { userId, supabase } = await session()
     const text = z.string().trim().min(3, "Say a little more about what this resume is for.").max(20000).parse(brief)
+    await requireAllowance(supabase, "tailored")
     const record = await loadRecord(supabase)
     if (!record.items.some((i) => i.type !== "contact")) throw new Error("Your Career Record is empty. Add a source first.")
-    return { ok: true, data: await planTailoredResume(userId, text, record.items, record.facts, record.bullets) }
+    return { ok: true, data: await planTailoredResume(userId, text, record.items, record.facts, sharedBullets(record.bullets)) }
   } catch (err) {
     return fail(err)
   }
@@ -227,6 +249,7 @@ export async function stageTailorSave(brief: string, input: TailorPlan): Promise
   try {
     const { supabase } = await session()
     const plan = TailorSchema.parse(input)
+    await requireAllowance(supabase, "tailored")
     const [record, { data: base, error: baseError }] = await Promise.all([loadRecord(supabase), supabase.from("resumes").select("layout").eq("kind", "base").maybeSingle()])
     if (baseError) throw new Error(baseError.message)
     // The plan came back through the browser: keep only ids that are really in this user's record.
@@ -251,6 +274,8 @@ export async function stageTailorSave(brief: string, input: TailorPlan): Promise
     }
     const { data, error } = await supabase.from("resumes").insert({ kind: "tailored", job_id: job.id, title: plan.title.slice(0, 120) || "New resume", layout }).select("id").single()
     if (error) throw new Error(error.message)
+    // Counted when saved, not when the AI call ran.
+    await recordUsage(supabase, "tailored", data.id as string)
     return { ok: true, data: { resumeId: data.id as string, title: plan.title } }
   } catch (err) {
     return fail(err)
@@ -345,8 +370,10 @@ export async function regenerateItem(resumeId: string, itemId: string, style: Re
   try {
     const { userId, supabase } = await session()
     const instruction = REWRITE_STYLES[z.enum(Object.keys(REWRITE_STYLES) as [RewriteStyle]).parse(style)]
+    await requireAllowance(supabase, "fixes")
     const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
-    await writeItems(supabase, userId, record, { itemIds: [itemId], releaseEdits: true, targetRole: resume?.layout.target_role, instruction, purpose: "fix" })
+    const { written } = await writeItems(supabase, userId, record, { itemIds: [itemId], releaseEdits: true, targetRole: resume?.layout.target_role, instruction, purpose: "fix", resume })
+    if (written) await recordUsage(supabase, "fixes", resumeId)
     await relayout(resumeId)
     return { ok: true, data: undefined }
   } catch (err) {
@@ -363,19 +390,15 @@ export async function updateItemDetails(resumeId: string | null, itemId: string,
 }
 
 export async function addBullet(resumeId: string, itemId: string, input: string): Promise<ActionResult> {
-  return edit(resumeId, (supabase) => addLine(supabase, itemId, input))
+  return edit(resumeId, (supabase) => addLine(supabase, itemId, input, resumeId))
 }
 
 export async function deleteBullet(resumeId: string, bulletId: string): Promise<ActionResult<DeletedBullet>> {
-  return edit(resumeId, (supabase) => removeLine(supabase, bulletId))
+  return edit(resumeId, (supabase) => removeLine(supabase, bulletId, resumeId))
 }
 
 export async function restoreBullet(resumeId: string, snapshot: DeletedBullet): Promise<ActionResult> {
-  // The database re-checks that every fact belongs to this user and item.
-  return edit(resumeId, async (supabase) => {
-    const { error } = await supabase.from("bullets").insert(BulletSnapshot.parse(snapshot))
-    if (error) throw new Error(error.message)
-  })
+  return edit(resumeId, (supabase) => restoreLine(supabase, resumeId, snapshot))
 }
 
 export async function setItemOrder(resumeId: string, sectionIds: string[]): Promise<ActionResult> {
@@ -447,10 +470,16 @@ export async function mergeDuplicateFacts(): Promise<ActionResult<{ merged: numb
   }
 }
 
-export async function markSent(exportId: string, sent: boolean): Promise<ActionResult> {
+export async function markSent(exportId: string, sent: boolean, sentTo?: string): Promise<ActionResult> {
   try {
     const { supabase } = await session()
-    const { error } = await supabase.from("exports").update({ sent_at: sent ? new Date().toISOString() : null }).eq("id", exportId)
+    const to = z.string().trim().max(300).optional().parse(sentTo)
+    const { data: row, error: rowError } = await supabase.from("exports").select("sent_at").eq("id", exportId).single()
+    if (rowError) throw new Error(rowError.message)
+    const patch = sent
+      ? { sent_at: row.sent_at ?? new Date().toISOString(), ...(to !== undefined ? { sent_to: to || null } : {}) }
+      : { sent_at: null, sent_to: null }
+    const { error } = await supabase.from("exports").update(patch).eq("id", exportId)
     if (error) throw new Error(error.message)
     revalidatePath("/home")
     return { ok: true, data: undefined }
@@ -467,16 +496,20 @@ export interface ChatEditResult {
   reason?: string
 }
 
-const ChatHistory = z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(20000) })).min(1).max(30)
+// Only the most recent turns go to the model, so long chats stay cheap and never hit a hard limit.
+const CHAT_TURNS = 12
+const ChatHistory = z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(20000) })).min(1).max(200)
 const HEADER_KEYS = ["name", "headline", "target_role", "email", "phone", "location", "website", "github", "linkedin"] as const
 const DETAIL_KEYS = ["role", "company", "name", "url", "school", "degree", "details", "category", "location", "start", "end", "tech", "skills"] as const
 
 export async function chatWithResume(resumeId: string, messages: ChatMessage[]): Promise<ActionResult<{ reply: string; edits: ChatEditResult[] }>> {
   try {
     const { userId, supabase } = await session()
-    // Only the most recent turns go to the model; long chats stay cheap.
-    const history = ChatHistory.parse(messages).slice(-12)
+    const recent = ChatHistory.parse(messages).slice(-CHAT_TURNS)
+    // The model's conversation must open with the user.
+    const history = recent.slice(Math.max(0, recent.findIndex((m) => m.role === "user")))
     if (history.at(-1)?.role !== "user") throw new Error("Nothing to answer.")
+    await requireAllowance(supabase, "fixes")
     const loaded = await loadResumeDoc(supabase, resumeId)
     if (!loaded) return { ok: false, error: "Resume not found" }
     const { text, ctx: base } = resumeForChat(loaded.resume, loaded.record, loaded.doc)
@@ -514,11 +547,11 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
       try {
         switch (a.type) {
           case "edit_line": await editLine(supabase, resumeId, a.line_id!, a.text!); break
-          case "add_line": await addLine(supabase, a.entry_id!, a.text!); break
-          case "remove_line": await removeLine(supabase, a.line_id!); break
+          case "add_line": await addLine(supabase, a.entry_id!, a.text!, resumeId); break
+          case "remove_line": await removeLine(supabase, a.line_id!, resumeId); break
           case "rewrite_entry": {
             const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
-            await writeItems(supabase, userId, record, { itemIds: [a.entry_id!], releaseEdits: true, targetRole: resume?.layout.target_role, instruction: a.text?.trim() || undefined })
+            await writeItems(supabase, userId, record, { itemIds: [a.entry_id!], releaseEdits: true, targetRole: resume?.layout.target_role, instruction: a.text?.trim() || undefined, resume })
             break
           }
           case "hide_entry":
@@ -563,7 +596,11 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
         edits.push({ label: label(a), ok: false, reason: err instanceof Error ? err.message : "Couldn't apply this" })
       }
     }
-    if (changed) await relayout(resumeId)
+    // A chat message counts only when it changed the resume.
+    if (changed) {
+      await recordUsage(supabase, "fixes", resumeId)
+      await relayout(resumeId)
+    }
     return { ok: true, data: { reply: out.reply, edits } }
   } catch (err) {
     return fail(err)
@@ -598,8 +635,85 @@ export async function runResumeChecks(resumeId: string): Promise<ActionResult<{ 
     const allBulletsSourced = loaded.record.bullets
       .filter((b) => shownBullets.includes(b.id))
       .every((b) => b.fact_ids.length > 0 && b.fact_ids.every((id) => facts.get(id)?.item_id === b.item_id))
-    const { results, ready } = await runChecks(loaded.doc, { pages, allBulletsSourced })
+    const onPage = new Set(loaded.resume.layout.items.map((li) => li.item_id))
+    const titles = new Map(loaded.record.items.map((i) => [i.id, itemTitle(i)]))
+    const openOwnership = [...new Set(loaded.record.questions.filter((q) => q.status === "open" && (q.kind === "ownership" || q.kind === "built") && onPage.has(q.item_id)).map((q) => titles.get(q.item_id) ?? "a project"))]
+    const { results, ready } = await runChecks(loaded.doc, { pages, allBulletsSourced, openOwnership })
     return { ok: true, data: { results, ready, parserText } }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+// Resume library: rename, duplicate, delete. Downloads stay on the Dashboard after a delete.
+export async function renameResume(resumeId: string, title: string): Promise<ActionResult> {
+  try {
+    const { supabase } = await session()
+    const clean = z.string().trim().min(1, "Give it a name.").max(120).parse(title)
+    const { error } = await supabase.from("resumes").update({ title: clean, updated_at: new Date().toISOString() }).eq("id", resumeId).eq("kind", "tailored")
+    if (error) throw new Error(error.message)
+    revalidatePath("/", "layout")
+    return { ok: true, data: undefined }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+// A copy is always a tailored resume (there is one base), with its own copy of any own wording.
+export async function duplicateResume(resumeId: string): Promise<ActionResult<{ resumeId: string }>> {
+  try {
+    const { supabase } = await session()
+    const [resume, record] = await Promise.all([loadResume(supabase, resumeId), loadRecord(supabase)])
+    if (!resume) throw new Error("Resume not found")
+    const layout: ResumeLayout =
+      resume.kind === "tailored"
+        ? resume.layout
+        : { ...resume.layout, include: resume.layout.items.map((li) => li.item_id) }
+    const { data: copy, error } = await supabase
+      .from("resumes")
+      .insert({ kind: "tailored", job_id: resume.job_id, title: `${resume.kind === "base" ? "Base resume" : resume.title} (copy)`.slice(0, 120), layout, cut_log: resume.cut_log })
+      .select("id")
+      .single()
+    if (error) throw new Error(error.message)
+    const own = record.bullets.filter((b) => b.resume_id === resume.id)
+    if (own.length) {
+      // New ids for the copy's own lines, so its layout and hidden list are remapped to them.
+      const ids = new Map(own.map((b) => [b.id, crypto.randomUUID()]))
+      const start = Date.now()
+      const { error: bulletError } = await supabase.from("bullets").insert(
+        own.map((b, n) => ({ id: ids.get(b.id), item_id: b.item_id, text: b.text, fact_ids: b.fact_ids, user_edited: b.user_edited, resume_id: copy.id, replaces: b.replaces ?? null, created_at: new Date(start + n).toISOString() }))
+      )
+      if (bulletError) throw new Error(bulletError.message)
+      const remapped = { ...layout, items: layout.items.map((li) => ({ ...li, bullet_ids: li.bullet_ids.map((id) => ids.get(id) ?? id) })) }
+      const { error: layoutError } = await supabase.from("resumes").update({ layout: remapped }).eq("id", copy.id)
+      if (layoutError) throw new Error(layoutError.message)
+    }
+    revalidatePath("/", "layout")
+    return { ok: true, data: { resumeId: copy.id as string } }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
+export async function deleteResume(resumeId: string): Promise<ActionResult> {
+  try {
+    const { supabase } = await session()
+    const resume = await loadResume(supabase, resumeId)
+    if (!resume) throw new Error("Resume not found")
+    if (resume.kind === "base") throw new Error("The base resume can't be deleted. It is built from your whole Career Record.")
+    // Its own lines go with it (cascade); every PDF downloaded from it stays.
+    const { error } = await supabase.from("resumes").delete().eq("id", resumeId)
+    if (error) throw new Error(error.message)
+    // The job post goes too, unless a copy of this resume still uses it.
+    if (resume.job_id) {
+      const { count } = await supabase.from("resumes").select("id", { count: "exact", head: true }).eq("job_id", resume.job_id)
+      if (count === 0) {
+        const { error: jobError } = await supabase.from("jobs").delete().eq("id", resume.job_id)
+        if (jobError) console.error(jobError)
+      }
+    }
+    revalidatePath("/", "layout")
+    return { ok: true, data: undefined }
   } catch (err) {
     return fail(err)
   }

@@ -18,6 +18,7 @@ const columns = [
     title: "Company",
     links: [
       { href: "/#faq", label: "FAQ" },
+      { href: "/privacy", label: "Privacy" },
       { href: "mailto:dev@rusil.me", label: "Contact" },
     ],
   },

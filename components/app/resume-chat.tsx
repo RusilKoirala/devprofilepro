@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { ArrowUp, CheckCircle2, MinusCircle } from "lucide-react"
+import { offerUpgrade } from "@/components/app/upgrade-prompt"
 import { LogoMark } from "@/components/marketing/logo"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -13,6 +14,20 @@ interface Message {
   content: string
   edits?: ChatEditResult[]
   error?: boolean
+}
+
+// Enough recent turns for the model; older ones stay on screen only.
+const SENT_TURNS = 12
+const KEPT = 60
+const storageKey = (resumeId: string) => `resume-chat:${resumeId}`
+
+function loadMessages(resumeId: string): Message[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey(resumeId)) ?? "[]")
+    return Array.isArray(saved) ? saved.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string") : []
+  } catch {
+    return []
+  }
 }
 
 const SUGGESTIONS = ["Shorten every line a little", "Move Skills to the top", "Lead each project with its impact", "Make it read better for backend roles"]
@@ -29,10 +44,25 @@ export function forModel(m: { role: "user" | "assistant"; content: string; edits
 export function ResumeChat({ resumeId, onBusy }: { resumeId: string; onBusy: (busy: boolean) => void }) {
   const router = useRouter()
   const [messages, setMessages] = useState<Message[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
+
+  // This browser keeps the conversation per resume, so a reload doesn't wipe it. Read after mount:
+  // the server render has no storage, and reading it during render would mismatch on hydration.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMessages(loadMessages(resumeId))
+    setLoaded(true)
+  }, [resumeId])
+  useEffect(() => {
+    if (!loaded) return
+    try {
+      localStorage.setItem(storageKey(resumeId), JSON.stringify(messages.slice(-KEPT)))
+    } catch {}
+  }, [messages, loaded, resumeId])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
@@ -46,10 +76,20 @@ export function ResumeChat({ resumeId, onBusy }: { resumeId: string; onBusy: (bu
     setText("")
     setBusy(true)
     onBusy(true)
-    const res = await chatWithResume(resumeId, next.filter((m) => !m.error).map((m) => ({ role: m.role, content: forModel(m) })))
+    let res: Awaited<ReturnType<typeof chatWithResume>>
+    try {
+      res = await chatWithResume(resumeId, next.filter((m) => !m.error).slice(-SENT_TURNS).map((m) => ({ role: m.role, content: forModel(m) })))
+    } catch {
+      res = { ok: false, error: "We couldn't reach the server. Check your connection and send it again." }
+    }
     setBusy(false)
     onBusy(false)
-    if (!res.ok) return setMessages((all) => [...all, { role: "assistant", content: res.error, error: true }])
+    if (!res.ok) {
+      const error = res.error
+      setText(content)
+      offerUpgrade(res)
+      return setMessages((all) => [...all, { role: "assistant", content: `${error} Your message is back in the box to send again.`, error: true }])
+    }
     setMessages((all) => [...all, { role: "assistant", content: res.data.reply, edits: res.data.edits }])
     if (res.data.edits.some((e) => e.ok)) router.refresh()
     inputRef.current?.focus()
@@ -58,6 +98,11 @@ export function ResumeChat({ resumeId, onBusy }: { resumeId: string; onBusy: (bu
   return (
     <div className="flex h-[calc(100svh-9.5rem)] min-h-[28rem] flex-col rounded-xl border border-border bg-card">
       <div className="flex-1 space-y-5 overflow-y-auto p-4">
+        {messages.length > 0 && !busy && (
+          <div className="flex justify-end">
+            <button type="button" onClick={() => setMessages([])} className="text-xs text-muted-foreground hover:text-foreground">Clear conversation</button>
+          </div>
+        )}
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
             <LogoMark className="size-8" />

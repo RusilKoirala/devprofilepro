@@ -63,9 +63,26 @@ function lineProblem(text: string | null, entryId: string, ctx: ChatContext): st
   if (banned.length) return `It uses filler (${banned.join(", ")}).`
 }
 
-// Every action is checked against the current resume. A failed check skips that action only.
-export function checkActions(actions: ChatAction[], ctx: ChatContext): Checked[] {
-  return actions.map((action): Checked => {
+// Every action is checked against the resume as the earlier actions leave it (put an entry back,
+// then move its section). A failed check skips that action only.
+export function checkActions(actions: ChatAction[], start: ChatContext): Checked[] {
+  const ctx: ChatContext = { ...start, entries: new Map([...start.entries].map(([id, e]) => [id, { ...e }])), sections: [...start.sections] }
+  const place = (entryId: string, onPage: boolean) => {
+    const e = ctx.entries.get(entryId)!
+    e.onPage = onPage
+    const present = [...ctx.entries.values()].some((x) => x.type === e.type && x.onPage)
+    if (present && !ctx.sections.includes(e.type)) ctx.sections.push(e.type)
+    if (!present) ctx.sections = ctx.sections.filter((t) => t !== e.type)
+  }
+  return actions.map((action) => {
+    const checked = checkOne(action, ctx)
+    if (checked.ok && (action.type === "show_entry" || action.type === "hide_entry")) place(action.entry_id!, action.type === "show_entry")
+    return checked
+  })
+}
+
+function checkOne(action: ChatAction, ctx: ChatContext): Checked {
+  {
     const entry = action.entry_id ? ctx.entries.get(action.entry_id) : undefined
     const line = action.line_id ? ctx.lines.get(action.line_id) : undefined
     const bad = (reason: string): Checked => ({ action, ok: false, reason })
@@ -105,7 +122,7 @@ export function checkActions(actions: ChatAction[], ctx: ChatContext): Checked[]
       case "update_header":
         return action.fields ? { action, ok: true } : bad("No header fields to change.")
     }
-  })
+  }
 }
 
 // null = leave as is. Only the given keys reach the edit, so nothing else is cleared by accident.

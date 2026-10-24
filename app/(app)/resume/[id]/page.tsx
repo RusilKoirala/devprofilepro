@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation"
+import type { MatchView } from "@/components/app/match-report"
 import { ResumeEditor, type EditorData } from "@/components/app/resume-editor"
 import type { QuestionView } from "@/components/app/questions-panel"
 import { itemTitle } from "@/lib/record/types"
@@ -11,9 +12,20 @@ export const maxDuration = 300
 
 export default async function ResumePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const loaded = await loadResumeDoc(await createClient(), id)
+  const supabase = await createClient()
+  const loaded = await loadResumeDoc(supabase, id)
   if (!loaded) notFound()
   const { resume, record, doc } = loaded
+  const { data: job } = resume.job_id ? await supabase.from("jobs").select("description,match_report").eq("id", resume.job_id).maybeSingle() : { data: null }
+  const report = job?.match_report as Partial<MatchView> | null
+  const match: MatchView | null = report
+    ? {
+        summary: report.summary ?? "",
+        description: job?.description ?? undefined,
+        reasons: (report.reasons ?? []).map((r) => ({ item_id: r.item_id, reason: r.reason })),
+        requirements: (report.requirements ?? []).map((r) => ({ text: r.text, status: r.status, item_ids: r.item_ids ?? [] })),
+      }
+    : null
 
   const sources = new Map(record.sources.map((s) => [s.id, s]))
   const items = new Map(record.items.map((i) => [i.id, i]))
@@ -28,7 +40,10 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
 
   const data: EditorData = {
     resumeId: resume.id,
-    title: resume.title,
+    kind: resume.kind,
+    title: resume.kind === "base" ? "Base resume" : resume.title,
+    match,
+    titles: Object.fromEntries(record.items.map((i) => [i.id, itemTitle(i)])),
     version: resume.updated_at,
     header: { name: doc.name, headline: doc.headline, targetRole: resume.layout.target_role ?? "", ...doc.contact },
     sections: doc.sections.map((s) => ({
@@ -56,6 +71,7 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
               id: b.id,
               text: b.text,
               userEdited: bullet.user_edited,
+              ownCopy: !!bullet.resume_id,
               facts: record.facts
                 .filter((f) => bullet.fact_ids.includes(f.id))
                 .map((f) => ({ id: f.id, text: f.text, label: f.label, quote: f.quote, source: f.source_id ? (sources.get(f.source_id)?.label ?? null) : null, url: f.source_id ? (sources.get(f.source_id)?.url ?? null) : null })),

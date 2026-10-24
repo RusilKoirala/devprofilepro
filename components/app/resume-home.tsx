@@ -4,8 +4,10 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
-import { ArrowRight, CheckCircle2, CircleDashed, CircleHelp, X, XCircle } from "lucide-react"
+import { ArrowRight, CheckCircle2, CircleDashed, X, XCircle } from "lucide-react"
+import { MatchReport } from "@/components/app/match-report"
 import { NewResumePrompt } from "@/components/app/new-resume-prompt"
+import { offerUpgrade } from "@/components/app/upgrade-prompt"
 import { UpgradeDialog } from "@/components/app/upgrade-dialog"
 import { allowanceStates, type PlanUsage } from "@/lib/plans"
 import { EditList, forModel } from "@/components/app/resume-chat"
@@ -93,9 +95,12 @@ export function ResumeHome({ firstName, resumes, usage }: { firstName: string; r
       { role: "user" as const, content: brief },
     ]
     setTurns((all) => [...all, { kind: "edit", id, resumeId, brief, busy: true }])
-    const res = await chatWithResume(resumeId, history)
+    const res = await chatWithResume(resumeId, history).catch((): ActionResult<{ reply: string; edits: ChatEditResult[] }> => ({ ok: false, error: "We couldn't reach the server. Try again." }))
     const done = (p: Partial<EditTurn>) => setTurns((all) => all.map((t) => (t.id === id && t.kind === "edit" ? { ...t, busy: false, ...p } : t)))
-    if (!res.ok) return done({ reply: res.error, error: true })
+    if (!res.ok) {
+      offerUpgrade(res)
+      return done({ reply: res.error, error: true })
+    }
     done({ reply: res.data.reply, edits: res.data.edits })
     if (!res.data.edits.some((e) => e.ok)) return
     const summary = await resumeSummary(resumeId)
@@ -109,9 +114,10 @@ export function ResumeHome({ firstName, resumes, usage }: { firstName: string; r
 
     async function step<T>(i: number, call: () => Promise<ActionResult<T>>, describe: (d: T) => string): Promise<T | null> {
       patch(id, i, { state: "running" })
-      const res = await call()
+      const res = await call().catch((): ActionResult<T> => ({ ok: false, error: "We couldn't reach the server. Check your connection and try again." }))
       if (!res.ok) {
         patch(id, i, { state: "failed", detail: res.error })
+        offerUpgrade(res)
         return null
       }
       patch(id, i, { state: "done", detail: describe(res.data) })
@@ -127,7 +133,7 @@ export function ResumeHome({ firstName, resumes, usage }: { firstName: string; r
     if (!saved) return
     const fit = await step(2, () => stageFit(saved.resumeId), (d) => (d.pinnedOverflow ? "Pinned items don't fit on one page" : d.cuts ? `One page. Moved ${d.cuts} weaker line${d.cuts === 1 ? "" : "s"} off to fit` : "Fits on one page"))
     if (!fit) return
-    const summary = await step(3, () => resumeSummary(saved.resumeId), (d) => (d.fails ? `${d.fails} to fix before sending` : d.warns ? `Ready, ${d.warns} to review` : "Ready to send"))
+    const summary = await step(3, () => resumeSummary(saved.resumeId), (d) => (d.fails ? `${d.fails} to fix before sending` : d.warns ? `Checks passed, ${d.warns} to review` : "Checks passed"))
     if (!summary) return
     patch(id, 3, {}, { resumeId: saved.resumeId, title: saved.title, doc: summary.doc, plan, fails: summary.fails, warns: summary.warns })
     setActive({ resumeId: saved.resumeId, title: saved.title })
@@ -273,8 +279,7 @@ function TurnView({ turn, doc, reduce }: { turn: CreateTurn; doc?: ResumeDoc; re
 
 function ResultCard({ result, reduce }: { result: NonNullable<CreateTurn["result"]>; reduce: boolean }) {
   const { plan } = result
-  const names = new Map(result.doc.sections.flatMap((s) => s.entries.map((e) => [e.item_id, e.title] as const)))
-  const picks = plan.items.filter((i) => names.has(i.item_id)).slice(0, 5)
+  const titles = new Map(result.doc.sections.flatMap((s) => s.entries.map((e) => [e.item_id, e.title] as const)))
   return (
     <motion.div
       {...(reduce ? {} : { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, delay: 0.1 } })}
@@ -284,39 +289,13 @@ function ResultCard({ result, reduce }: { result: NonNullable<CreateTurn["result
         <ResumeThumbnail doc={result.doc} width={150} />
       </Link>
       <div className="min-w-0 flex-1 space-y-3 text-sm">
-        <div>
-          <p className="font-medium">{result.title}</p>
-          <p className="text-muted-foreground">{plan.summary}</p>
-        </div>
-        {picks.length > 0 && (
-          <ul className="space-y-1">
-            {picks.map((p) => (
-              <li key={p.item_id} className="text-muted-foreground"><span className="text-foreground/90">{names.get(p.item_id)}</span> · {p.reason}</li>
-            ))}
-          </ul>
-        )}
-        {plan.requirements.length > 0 && (
-          <div>
-            <p className="mb-1 text-xs font-medium tracking-wider text-muted-foreground uppercase">From the job post</p>
-            <ul className="space-y-1">
-              {plan.requirements.map((r) => (
-                <li key={r.text} className="flex items-start gap-2">
-                  {r.status === "covered" ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-400" /> : r.status === "unclear" ? <CircleHelp className="mt-0.5 size-3.5 shrink-0 text-amber-400" /> : <CircleDashed className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />}
-                  <span>
-                    {r.text}
-                    {r.status === "not_found" && <span className="text-muted-foreground"> · not in your record yet</span>}
-                    {r.status === "unclear" && <span className="text-muted-foreground"> · partly shown</span>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <p className="font-medium">{result.title}</p>
+        <MatchReport match={{ summary: plan.summary, requirements: plan.requirements, reasons: plan.items }} titles={titles} onPage={new Set(titles.keys())} compact />
         <div className="flex flex-wrap items-center gap-3">
           <Button asChild size="sm">
             <Link href={`/resume/${result.resumeId}`}>Open resume <ArrowRight /></Link>
           </Button>
-          <span className="text-xs text-muted-foreground">Or ask for changes below.</span>
+          <span className="text-xs text-muted-foreground">The match report stays with the resume. Or ask for changes below.</span>
         </div>
       </div>
     </motion.div>
@@ -324,7 +303,7 @@ function ResultCard({ result, reduce }: { result: NonNullable<CreateTurn["result
 }
 
 // Under the prompt on Free: how many tailored resumes are left, at the moment one is being spent.
-// Limits aren't enforced during early access, so running out says so instead of blocking.
+// The server blocks a new tailored resume once Free's allowance is used up; this says so first.
 function TailoredAllowance({ usage }: { usage: PlanUsage }) {
   if (usage.plan !== "free") return null
   const t = allowanceStates(usage).find((a) => a.key === "tailored")!
@@ -332,7 +311,7 @@ function TailoredAllowance({ usage }: { usage: PlanUsage }) {
   return (
     <p className={`mt-3 text-center text-xs ${t.state === "ok" ? "text-muted-foreground" : "text-amber-400"}`}>
       {t.state === "out"
-        ? `You've used this month's ${t.limit} free tailored resumes. You can keep going during early access.`
+        ? `You've used this month's ${t.limit} free tailored resumes. You can still edit the ones you have.`
         : `${t.left} of ${t.limit} free tailored resumes left this month.`}{" "}
       <UpgradeDialog reason={reason}>
         <button type="button" className="font-medium text-foreground underline-offset-4 hover:underline">Unlimited with Pro</button>

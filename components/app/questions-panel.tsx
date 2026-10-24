@@ -35,7 +35,7 @@ export function QuestionCard({ resumeId, question, showItem = false }: { resumeI
     <div id={`q-${question.id}`} data-attention className="scroll-mt-24 rounded-lg border border-primary/25 bg-primary/5 p-3">
       <p className="flex items-start gap-2 text-sm">
         <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" />
-        <span>
+        <span id={`q-${question.id}-prompt`}>
           {showItem && question.item && <span className="text-muted-foreground">{question.item}: </span>}
           {question.prompt}
         </span>
@@ -47,7 +47,7 @@ export function QuestionCard({ resumeId, question, showItem = false }: { resumeI
           ))
         ) : (
           <form className="flex w-full gap-2" onSubmit={(e) => { e.preventDefault(); answer(free) }}>
-            <Input value={free} onChange={(e) => setFree(e.target.value)} placeholder="A sentence is plenty" className="h-8" />
+            <Input aria-labelledby={`q-${question.id}-prompt`} value={free} onChange={(e) => setFree(e.target.value)} placeholder="A sentence is plenty" className="h-8" />
             <Button size="sm" type="submit" disabled={pending || !free.trim()}>Save</Button>
           </form>
         )}

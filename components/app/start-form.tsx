@@ -5,12 +5,14 @@ import { useRef, useState } from "react"
 import { CheckCircle2, Circle, FileText, Github, GitPullRequest, StickyNote, Target, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
+import { offerUpgrade } from "@/components/app/upgrade-prompt"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { MAX_FILES, uploadProblem } from "@/lib/ingest/limits"
 import { addSources, stageExtract, stageFit, stageQuestions, stageWrite, type ActionResult, type CoverageLine } from "@/lib/record/actions"
 import type { ItemType } from "@/lib/record/types"
 
@@ -64,10 +66,10 @@ export function StartForm({ githubLogin, sources, hasRecord, targetRole }: { git
   // Each stage is its own server call, so the list shows where the build really is.
   async function step<T>(i: number, call: () => Promise<ActionResult<T>>, describe: (data: T) => string | undefined): Promise<T | null> {
     set(i, { state: "running" })
-    const res = await call()
+    const res = await call().catch((): ActionResult<T> => ({ ok: false, error: "We couldn't reach the server. Check your connection and try again." }))
     if (!res.ok) {
       set(i, { state: "failed", detail: res.error })
-      toast.error(res.error)
+      if (!offerUpgrade(res)) toast.error(res.error)
       return null
     }
     set(i, { state: "done", detail: describe(res.data) })
@@ -78,16 +80,21 @@ export function StartForm({ githubLogin, sources, hasRecord, targetRole }: { git
     e.preventDefault()
     const form = new FormData(e.currentTarget)
     const role = String(form.get("targetRole") ?? "").trim()
+    const files = form.getAll("pdfs").filter((f): f is File => f instanceof File && f.size > 0)
+    if (files.length > MAX_FILES) return void toast.error(`Add up to ${MAX_FILES} files at a time.`)
+    const problem = files.map(uploadProblem).find(Boolean)
+    if (problem) return void toast.error(problem)
     const fresh = hasInput(form)
     if (!fresh && !readable && !hasRecord) return void toast.error("Add your GitHub, a PDF or some notes first.")
     setStages(STAGES.map((label) => ({ label, state: "pending" })))
 
     if (fresh) {
       set(0, { state: "running" })
-      const res = await addSources(form)
+      const res = await addSources(form).catch((): ActionResult<CoverageLine[]> => ({ ok: false, error: "We couldn't reach the server. Check your connection and try again." }))
       if (!res.ok) {
         set(0, { state: "failed", detail: res.error })
-        return void toast.error(res.error)
+        if (!offerUpgrade(res)) toast.error(res.error)
+        return
       }
       const anyOk = res.data.some((c) => c.ok)
       set(0, { state: anyOk || readable || hasRecord ? "done" : "failed", lines: res.data, detail: res.data.length ? undefined : "Nothing new to read" })
@@ -128,20 +135,20 @@ export function StartForm({ githubLogin, sources, hasRecord, targetRole }: { git
               <Switch id="useGithub" name="useGithub" defaultChecked={!sources.some((s) => s.kind === "github")} />
             </div>
           ) : (
-            <Input name="github" placeholder="GitHub username or profile URL" autoComplete="off" />
+            <Input name="github" aria-label="GitHub username or profile URL" placeholder="GitHub username or profile URL" autoComplete="off" />
           )}
         </SourceRow>
         <SourceRow icon={<FileText />} title="Resume or LinkedIn" hint="Up to 2 files: a resume PDF, LinkedIn's Save to PDF, or its data export ZIP (Settings → Data privacy → Get a copy of your data).">
-          <Input name="pdfs" type="file" accept="application/pdf,.zip,application/zip" multiple />
+          <Input name="pdfs" aria-label="Resume or LinkedIn files" type="file" accept="application/pdf,.zip,application/zip" multiple />
         </SourceRow>
         <SourceRow icon={<StickyNote />} title="Paste anything" hint="Portfolio text, project notes, courses, a job you did that isn't online.">
-          <Textarea name="paste" rows={3} maxLength={20000} placeholder="Paste text here" />
+          <Textarea name="paste" aria-label="Pasted notes" rows={3} maxLength={20000} placeholder="Paste text here" />
         </SourceRow>
         <SourceRow icon={<GitPullRequest />} title="Open-source pull requests" hint="Merged PRs you opened in other people's repos, one per line.">
-          <Textarea name="prs" rows={2} placeholder="https://github.com/owner/repo/pull/123" />
+          <Textarea name="prs" aria-label="Pull request links, one per line" rows={2} placeholder="https://github.com/owner/repo/pull/123" />
         </SourceRow>
         <SourceRow icon={<Target />} title="What are you applying for? (optional)" hint="We lead with what matters for it. We never add skills you don't have.">
-          <Input name="targetRole" defaultValue={targetRole} maxLength={120} placeholder="e.g. Backend engineering internship" autoComplete="off" />
+          <Input name="targetRole" aria-label="What are you applying for?" defaultValue={targetRole} maxLength={120} placeholder="e.g. Backend engineering internship" autoComplete="off" />
         </SourceRow>
       </fieldset>
 

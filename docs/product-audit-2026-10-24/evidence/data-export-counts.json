@@ -1,0 +1,18 @@
+{
+  "counts": {
+    "sources": 18,
+    "items": 26,
+    "facts": 174,
+    "bullets": 35,
+    "questions": 9,
+    "jobs": 2,
+    "resumes": 3,
+    "exports": 3
+  },
+  "auditResume": "dfe48d24-0a2a-4364-8c42-f9a9aa46a927",
+  "exportIds": [
+    "50ca21f9-83f5-43f9-89de-47d9ec343bde",
+    "979e180a-48c8-4f5f-90c5-4d5f7f056f40",
+    "c75ba5cb-0148-42d4-bde0-50f99c2a7421"
+  ]
+}

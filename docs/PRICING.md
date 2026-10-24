@@ -106,7 +106,7 @@ Three layers. Users only ever see layer 1.
 
 | Layer | What it limits | Who sees it | Today in the code |
 | --- | --- | --- | --- |
-| **1. Plan allowances** | Counts per month: tailored resumes, AI fixes, rebuilds, syncs | User ("2 of 3 left") | ❌ New |
+| **1. Plan allowances** | Counts per month: tailored resumes, AI fixes, rebuilds and syncs | User ("2 of 3 left") | ✅ `lib/allowance.ts` + `usage_events` (migration 0005), enforced in `lib/record/actions.ts` |
 | **2. Fair-use cost ceiling** | Each user's real AI $ per month: Free **$3**, Pro **$15** | Nobody, unless hit | Partly: `lib/ai/budget.ts` checks **$ per day** (`AI_USER_DAILY_BUDGET_USD`, default $0.50) |
 | **3. Abuse limits** | Requests per day per step (stops scripts and loops) + whole-server daily $ cap | Nobody | ✅ `lib/ratelimit.ts` (`DAILY_LIMITS`) + `AI_SERVER_DAILY_BUDGET_USD` |
 
@@ -121,7 +121,7 @@ Three layers. Users only ever see layer 1.
 
 1. **Schema** (new migration):
    - `subscriptions`: user_id, plan (`free` | `pro`), source (`monthly` | `pass`), current_period_start, current_period_end, provider_customer_id, provider_subscription_id.
-   - `usage_events`: user_id, kind (`tailor` | `fix` | `rebuild` | `sync`), created_at, plus a reference to the resume or run. Counting rows per period gives layer 1. A separate table, because `ai_runs` logs every attempt, including retries and failures.
+   - `usage_events`: user_id, kind (`tailored` | `fixes` | `updates`, the allowance keys in `lib/plans.ts`; rebuilds and syncs share `updates`), created_at, plus a reference to the resume or run. Counting rows per period gives layer 1. A separate table, because `ai_runs` logs every attempt, including retries and failures.
 2. **`lib/plans.ts`**: one table of allowances per plan, the only place to change them.
 3. **`lib/ai/budget.ts`**: change the per-day check to per-billing-period, with the limit by plan. Return "downgrade" instead of throwing for Pro.
 4. **`lib/ai/model.ts`**: `modelFor(step, { downgraded })` picks Opus, Sonnet or Haiku per the table in section 4.

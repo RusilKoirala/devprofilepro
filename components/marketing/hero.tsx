@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { motion, useReducedMotion } from "motion/react"
-import { ArrowRight, FileText } from "lucide-react"
+import { ArrowRight, FileText, GitPullRequest } from "lucide-react"
 import LightRays from "@/components/LightRays"
 import ShinyText from "@/components/ShinyText"
 import { Badge } from "@/components/ui/badge"
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { ContainerScroll } from "@/components/ui/container-scroll-animation"
 import { cn } from "@/lib/utils"
 import { AppMockup } from "./app-mockup"
-import { GitHubIcon, LinkedInIcon, XIcon } from "./brand-icons"
+import { GitHubIcon, LinkedInIcon } from "./brand-icons"
 
 // Soft top-to-bottom fade on headline text, the way most premium dark heroes do it.
 const textGradient = "bg-gradient-to-b from-white to-white/65 bg-clip-text text-transparent"
@@ -58,7 +58,7 @@ const headline: React.ReactNode[] = [
 const sources = [
   { icon: GitHubIcon, label: "GitHub" },
   { icon: LinkedInIcon, label: "LinkedIn" },
-  { icon: XIcon, label: "X" },
+  { icon: GitPullRequest, label: "Pull requests" },
   { icon: FileText, label: "Any PDF" },
 ]
 
@@ -99,7 +99,8 @@ function FadeIn({ delay, children, className }: { delay: number; children: React
   )
 }
 
-export function Hero() {
+// `open`: the app is taking sign-ups. Otherwise the calls to action go to the waitlist.
+export function Hero({ open }: { open: boolean }) {
   return (
     <section id="product" className="relative isolate overflow-hidden">
       <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[56rem] [mask-image:linear-gradient(to_bottom,black_40%,transparent)]">
@@ -131,13 +132,13 @@ export function Hero() {
         titleComponent={
           <div className="px-2">
             <FadeIn delay={0}>
-              <Link href="#waitlist" className="group inline-block rounded-full focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
+              <Link href={open ? "/ats-checker" : "#waitlist"} className="group inline-block rounded-full focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
                 <Badge
                   variant="outline"
                   className="h-8 gap-2 rounded-full border-white/10 bg-white/[0.03] py-1 pr-3 pl-1 text-sm font-normal shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur transition-colors group-hover:bg-white/[0.06]"
                 >
-                  <Badge className="rounded-full px-2.5">Soon</Badge>
-                  <ShinyText text="Early access is opening in batches" color="#a1a1a1" shineColor="#ffffff" speed={3} />
+                  <Badge className="rounded-full px-2.5">{open ? "Free" : "Soon"}</Badge>
+                  <ShinyText text={open ? "Check your resume against an ATS, no sign-up" : "Early access is opening in batches"} color="#a1a1a1" shineColor="#ffffff" speed={3} />
                   <ArrowRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
                 </Badge>
               </Link>
@@ -149,8 +150,8 @@ export function Hero() {
 
             <FadeIn delay={0.9}>
               <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-pretty text-muted-foreground sm:text-lg">
-                Add your X and an old resume too. DevProfile keeps the facts, writes a clean one-page
-                LaTeX resume, and updates it every time you ship.
+                Add your LinkedIn export and an old resume too. DevProfile keeps the facts, writes a clean
+                one-page LaTeX resume, and refreshes it from GitHub whenever you sync.
               </p>
             </FadeIn>
 
@@ -160,8 +161,8 @@ export function Hero() {
                 size="lg"
                 className="group h-11 rounded-full px-6 text-[15px] shadow-[0_0_0_1px_rgba(255,255,255,0.1),0_8px_30px_-6px_rgba(255,255,255,0.35)]"
               >
-                <Link href="#waitlist">
-                  Join the waitlist
+                <Link href={open ? "/sign-up" : "#waitlist"}>
+                  {open ? "Build my resume free" : "Join the waitlist"}
                   <ArrowRight className="transition-transform group-hover:translate-x-0.5" />
                 </Link>
               </Button>

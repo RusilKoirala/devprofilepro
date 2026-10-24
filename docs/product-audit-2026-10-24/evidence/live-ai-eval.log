@@ -1,0 +1,44 @@
+
+▶ Student with GitHub only, 3 small repos (github-only-student.json)
+  facts: 15/15 kept by quote check (0% dropped)
+  bullets: 6 written, 0 fell back to fact text, 0 still failing checks
+  questions: [users] Approximately how many users have used Study Buddy? | [outcome] What measurable improvement did Study Buddy provide to its users? | [speed] What measurable performance improvement does rust-ray have? | [team] Was rust-ray built solo or as part of a team?
+  ✓ no job items
+  ✓ projects before jobs
+  ✓ "study-buddy" shown
+  ✓ "todo-app" hidden (not deleted)
+  ✓ never says "intern"
+  ✓ never says "engineer at"
+  ✓ every shown job/project has bullets
+  ✓ no banned words
+  ✓ at most 5 questions
+
+▶ Resume PDF only, no GitHub (resume-only.json)
+  facts: 11/11 kept by quote check (0% dropped)
+  bullets: 6 written, 0 fell back to fact text, 0 still failing checks
+  questions: [users] How many people used the internal dashboard you built at Shopify? | [outcome] By how much did you reduce flaky test runs in the payments CI pipeline at Shopify? | [ownership] Was the Shopify internal dashboard a solo project or a team effort? | [team] How big was the team you worked with at Wealthsimple on the document ingestion services? | [users] Approximately how many users did the CampusMap app have?
+  ✓ has job items
+  ✓ has education items
+  ✓ has project items
+  ✓ date "May 2024" kept verbatim
+  ✓ date "Aug 2024" kept verbatim
+  ✓ date "Jan 2023" kept verbatim
+  ✓ never says "spearheaded"
+  ✓ never says "leveraged"
+  ✓ every shown job/project has bullets
+  ✓ no banned words
+  ✓ at most 5 questions
+
+▶ Team project README (asks what you built) (team-project.json)
+  facts: 6/6 kept by quote check (0% dropped)
+  bullets: 0 written, 0 fell back to fact text, 0 still failing checks
+  questions: [ownership] What part of Hackathon Health did you personally build? | [users] How many users did the Hackathon Health chatbot have during or after HackMIT 2025? | [team] Was your work on Hackathon Health done solo or as part of the 4-person team? | [outcome] Did Hackathon Health improve any measurable outcomes, like faster triage or fewer errors?
+  ✓ "hackathon-health" marked as team project
+  ✓ asks a ownership/team question
+  ✓ never says "single-handedly"
+  ✓ never says "built the entire"
+  ✓ every shown job/project has bullets
+  ✓ no banned words
+  ✓ at most 5 questions
+
+All expectations passed

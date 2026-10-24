@@ -38,7 +38,7 @@ const faqs = [
   },
   {
     q: "What happens if I run out on Free?",
-    a: "Nothing gets locked. You keep editing and downloading everything you've made. Your tailored resumes and AI fixes refill on the 1st of every month.",
+    a: "New tailored resumes, AI fixes and syncs pause until the 1st of the month, when they refill. Nothing you've made gets locked: you keep editing by hand, running checks and downloading every resume.",
   },
   {
     q: "How is the 3-month pass different from monthly?",
@@ -46,7 +46,7 @@ const faqs = [
   },
   {
     q: "What does unlimited mean on Pro?",
-    a: "As many tailored resumes and AI fixes as a real job search needs. If an account uses far more than that, for example automated use, we may switch it to a faster model for the rest of the month instead of cutting it off.",
+    a: "As many tailored resumes and AI fixes as a real job search needs. On a very heavy day, far past normal use, Pro switches to a faster model until midnight UTC instead of cutting you off. Only automated or abusive use, many times more than that, is paused for the day.",
   },
   {
     q: "Can I get a refund?",

@@ -5,6 +5,7 @@ import { AppClerkProvider } from "@/components/app/clerk-provider"
 import { AppSidebar, type ResumeLink } from "@/components/app/app-sidebar"
 import { PageTitle } from "@/components/app/page-title"
 import { SetupNotice } from "@/components/app/setup-notice"
+import { UpgradeHost } from "@/components/app/upgrade-prompt"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server"
 import { loadPlanUsage } from "@/lib/usage"
@@ -51,6 +52,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="flex-1 px-4 pb-10 md:px-8">{isSupabaseConfigured() ? children : <SetupNotice />}</div>
         </SidebarInset>
       </SidebarProvider>
+      <UpgradeHost />
     </AppClerkProvider>
   )
 }

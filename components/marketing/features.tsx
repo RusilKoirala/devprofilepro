@@ -1,9 +1,9 @@
-import { FileText, GitCommitHorizontal, Link2, Ruler, Target } from "lucide-react"
+import { FileText, GitCommitHorizontal, GitPullRequest, Link2, Ruler, Target } from "lucide-react"
 import SpotlightCard from "@/components/SpotlightCard"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
-import { GitHubIcon, LinkedInIcon, XIcon } from "./brand-icons"
+import { GitHubIcon, LinkedInIcon } from "./brand-icons"
 
 function Feature({
   title,
@@ -32,7 +32,7 @@ const sourceRows = [
   { icon: GitHubIcon, label: "github.com/mayachen", meta: "42 repos, 8 READMEs" },
   { icon: LinkedInIcon, label: "LinkedIn export", meta: "4 roles, 2 schools" },
   { icon: FileText, label: "resume-2023.pdf", meta: "2 pages" },
-  { icon: XIcon, label: "x.com/mayabuilds", meta: "Bio, 20 posts" },
+  { icon: GitPullRequest, label: "Merged pull requests", meta: "6 PRs to open source" },
 ]
 
 export function Features() {
@@ -52,7 +52,7 @@ export function Features() {
         <Feature
           className="md:col-span-2"
           title="Reads everything you've already written"
-          body="Repos and READMEs, your LinkedIn export, an old PDF, your X bio. Use one source or all of them."
+          body="Repos and READMEs, your LinkedIn export, an old PDF, merged pull requests, or notes you paste. Use one source or all of them."
         >
           <div className="grid w-full gap-2 sm:grid-cols-2">
             {sourceRows.map(({ icon: Icon, label, meta }) => (
@@ -100,8 +100,8 @@ export function Features() {
 
         <Feature
           className="md:col-span-2"
-          title="Updates when you ship"
-          body="DevProfile watches your GitHub. A new project or a big milestone becomes a new line, and you get a fresh PDF."
+          title="One click to catch up after you ship"
+          body="Sync GitHub when you've shipped something. A new project or a big milestone becomes a new line, and you get a fresh PDF."
         >
           <div className="w-full space-y-2 font-mono text-[13px]">
             <div className="flex items-center gap-3 rounded-xl border bg-background/60 px-3 py-2.5 text-muted-foreground">

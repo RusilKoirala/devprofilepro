@@ -1,0 +1,73 @@
+{
+  "generated": "2026-10-24",
+  "model": "gpt-4.1-mini",
+  "seconds": 16,
+  "pages": 1,
+  "sources": [
+    {
+      "label": "alexdev",
+      "summary": "CS student at State University. I like building tools."
+    },
+    {
+      "label": "study-buddy",
+      "summary": "Flashcard app with spaced repetition"
+    },
+    {
+      "label": "rust-ray",
+      "summary": "A small ray tracer"
+    },
+    {
+      "label": "todo-app",
+      "summary": ""
+    }
+  ],
+  "factsKept": 19,
+  "factsDropped": 0,
+  "hidden": [
+    {
+      "title": "todo-app",
+      "reason": "Tutorial project with only 2 commits"
+    }
+  ],
+  "draft": [
+    {
+      "title": "study-buddy",
+      "lines": [
+        "Built a flashcard app with SM-2 spaced repetition, enabling scheduled reviews for effective learning.",
+        "Implemented the frontend and backend using TypeScript, Next.js, Supabase, and styled with Tailwind CSS.",
+        "Maintained the project as a solo contributor with 84 commits and deployed it live at study-buddy.vercel.app."
+      ]
+    },
+    {
+      "title": "rust-ray",
+      "lines": [
+        "Developed a small ray tracer in Rust based on the Ray Tracing in One Weekend book to gain expertise in graphics programming.",
+        "Solely managed the rust-ray repository with 23 commits, demonstrating focused development and ownership."
+      ]
+    }
+  ],
+  "question": {
+    "entry": "study-buddy",
+    "prompt": "What did you build in study-buddy?",
+    "options": [
+      "Google sign-in",
+      "Deck creation",
+      "CSV import",
+      "Spaced repetition scheduler"
+    ],
+    "answer": "SM-2 review scheduling and the CSV import. About 40 classmates used it before the CS 314 final."
+  },
+  "after": {
+    "title": "study-buddy",
+    "before": [
+      "Built a flashcard app with SM-2 spaced repetition, enabling scheduled reviews for effective learning.",
+      "Implemented the frontend and backend using TypeScript, Next.js, Supabase, and styled with Tailwind CSS.",
+      "Maintained the project as a solo contributor with 84 commits and deployed it live at study-buddy.vercel.app."
+    ],
+    "lines": [
+      "Built SM-2 spaced repetition review scheduling and CSV import features with TypeScript and Next.js used by ~40 classmates for CS 314 exam preparation",
+      "Developed a flashcard app with Supabase backend supporting Google sign-in and deck creation, styling UI using Tailwind CSS",
+      "Sole contributor maintaining codebase through 84 commits and deployed live version at study-buddy.vercel.app"
+    ]
+  }
+}
