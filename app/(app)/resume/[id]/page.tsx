@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import type { MatchView } from "@/components/app/match-report"
 import { ResumeEditor, type EditorData } from "@/components/app/resume-editor"
 import type { QuestionView } from "@/components/app/questions-panel"
+import { pageEvidence } from "@/lib/record/evidence"
 import { itemTitle } from "@/lib/record/types"
 import { loadResumeDoc } from "@/lib/resume/load"
 import { createClient } from "@/lib/supabase/server"
@@ -50,6 +51,7 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
     chat: (chat ?? []).reverse().map((m) => ({ role: m.role, content: m.content, edits: m.edits ?? undefined })),
     title: resume.kind === "base" ? "Base resume" : resume.title,
     match,
+    page: pageEvidence(doc, Object.fromEntries(record.bullets.map((b) => [b.id, b.fact_ids]))),
     titles: Object.fromEntries(record.items.map((i) => [i.id, itemTitle(i)])),
     version: resume.updated_at,
     header: { name: doc.name, headline: doc.headline, targetRole: resume.layout.target_role ?? "", ...doc.contact },

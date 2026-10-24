@@ -59,10 +59,17 @@ export function checkTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]): 
   return errors
 }
 
-// The text an entry contributes as evidence besides its facts: its tech, skills and headings.
+// The text an entry contributes as evidence besides its facts: what its heading prints on a resume
+// (lib/resume/build.ts and the templates). Tech stored on a job or skills group isn't printed.
 function itemText(item: Item) {
   const d = item.data
-  return [d.name, d.role, d.company, d.degree, d.details, d.category, ...(d.tech ?? []), ...(d.skills ?? [])].filter(Boolean).join(", ")
+  const printed =
+    item.type === "project" || item.type === "award" ? [d.name, ...(d.tech ?? [])]
+    : item.type === "job" ? [d.role, d.company]
+    : item.type === "education" ? [d.school, d.degree, d.details]
+    : item.type === "skills" ? [d.category, ...(d.skills ?? [])]
+    : []
+  return printed.filter(Boolean).join(", ")
 }
 
 const RANK: Record<Support, number> = { full: 2, partial: 1, unknown: 0, none: 0 }

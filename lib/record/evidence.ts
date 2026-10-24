@@ -1,4 +1,5 @@
 import { hasTerm, knownTermsIn } from "@/lib/ats/keywords"
+import type { ResumeDoc } from "@/lib/resume/schema"
 
 // Does a piece of text actually support a job requirement? Plain code, used twice: when a match
 // report is made (are the facts the AI cited about the requirement at all?) and when it is shown
@@ -114,4 +115,21 @@ export function requirementOnPage(r: { status: string; item_ids: string[]; fact_
   if (s === "none" || (s === "unknown" && !lines.length)) return { state: "lines_cut", itemIds }
   const line = lines.find((l) => support(r.text, [l.text]) !== "none") ?? lines[0]
   return { state: s === "full" && r.status !== "unclear" ? "covered" : "partial", itemIds, line }
+}
+
+// The text an entry actually prints, by the same rules as the PDF and .tex templates: projects and
+// awards print their title and tech, everything else its title and subtitle (a skills group's list).
+// Data the templates don't print, like tech stored on a job or skills group, is never evidence here.
+export function printedText(type: string, entry: { title: string; subtitle: string; tech: string[] }) {
+  const parts = type === "project" || type === "award" ? [entry.title, ...entry.tech] : [entry.title, entry.subtitle]
+  return parts.filter(Boolean).join(", ")
+}
+
+// Page evidence from the rendered document and the facts each printed line cites.
+export function pageEvidence(doc: Pick<ResumeDoc, "sections">, bulletFacts: Record<string, string[]>): PageEvidence {
+  const entries = doc.sections.flatMap((s) => s.entries.map((e) => ({ type: s.type, e })))
+  return {
+    entries: entries.map(({ type, e }) => ({ itemId: e.item_id, text: printedText(type, e) })),
+    lines: entries.flatMap(({ e }) => e.bullets.map((b) => ({ id: b.id, itemId: e.item_id, text: b.text, factIds: bulletFacts[b.id] ?? [] }))),
+  }
 }
