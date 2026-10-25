@@ -7,7 +7,29 @@ import { itemTitle, type Fact, type Item } from "@/lib/record/types"
 // the cited facts have to actually name what the requirement asks for.
 
 // Saved with every match report. Reports from before these checks (no version) are shown as such.
-export const MATCH_REPORT_VERSION = 2
+export const MATCH_REPORT_VERSION = 3
+
+// A verdict about the record, not part of what a job post asks for.
+const VERDICT = /\b(no evidence|not (?:recorded|found|shown|mentioned|listed)|nothing in (?:the|your) record|(?:isn't|is not|aren't|are not) (?:recorded|in (?:the|your) record))\b/i
+
+// A requirement as the post states it. The model sometimes appends its verdict ("… — no evidence
+// anywhere in the record"), which then reads as part of the requirement and next to its status.
+export function requirementText(text: string): string {
+  const m = VERDICT.exec(text)
+  if (!m) return text.trim()
+  const head = text.slice(0, m.index)
+  const cut = Math.max(...[" — ", " – ", " - ", "(", ";", ":"].map((s) => head.lastIndexOf(s)))
+  return (cut >= 0 ? head.slice(0, cut) : head).replace(/[\s,:;—–-]+$/, "").trim() || text.trim()
+}
+
+// A summary sentence about which requirements the record does or doesn't show. Statuses are
+// checked by code and shown next to each requirement, so the summary leaves them out rather than
+// risk saying the opposite.
+const REQUIREMENT_CLAIM = /\b(requirements?|no evidence|not (?:recorded|found|shown|mentioned|listed)|(?:isn't|aren't|doesn't|don't) (?:show|cover|mention|appear|recorded)|missing|lacks?|gaps?|cover(?:s|ed|ing)?)\b/i
+
+export function withoutRequirementClaims(summary: string): string {
+  return summary.split(/(?<=[.!?])\s+/).filter((s) => s.trim() && !REQUIREMENT_CLAIM.test(s)).join(" ").trim()
+}
 
 // Names a summary could use to refer to an item ("Stripe", "PulseOps").
 function names(item: Pick<Item, "type" | "data">): string[] {
@@ -48,6 +70,7 @@ export function checkTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]): 
     }
   }
   for (const r of plan.requirements) {
+    if (requirementText(r.text) !== r.text.trim()) errors.push(`Requirement "${r.text}": give only the requirement as the post states it. Its status already says whether the record shows it.`)
     if (r.status !== "not_found" && !r.fact_ids.length) errors.push(`Requirement "${r.text}" is ${r.status} but cites no facts`)
     for (const f of r.fact_ids) {
       if (!factItem.has(f)) errors.push(`Requirement "${r.text}" cites unknown fact ${f}`)
@@ -96,7 +119,8 @@ export function assessRequirements(requirements: ModelPlan["requirements"], chos
       .sort((a, b) => RANK[b.s] - RANK[a.s] || byId.get(b.f.item_id)!.rank - byId.get(a.f.item_id)!.rank)
       .map((x) => x.f)
 
-  return requirements.slice(0, 10).map((r) => {
+  return requirements.slice(0, 10).map(({ text, ...rest }) => {
+    const r = { ...rest, text: requirementText(text) }
     const cited = r.fact_ids.map((id) => factById.get(id)).filter((f): f is Fact => !!f && chosen.has(f.item_id))
     if (support(r.text, []) === "unknown") {
       // Nothing code can check: the AI's call stands on its cited facts, but never as "covered".
@@ -161,10 +185,12 @@ export function repairTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]):
   return { title: plan.title, company: plan.company, role: plan.role, items: picked, section_order: plan.section_order, requirements, summary: checkedSummary(plan.summary, picked, items) }
 }
 
-// The AI's summary, unless it names an entry that isn't on the resume.
-function checkedSummary(summary: string, picked: { item_id: string }[], items: Item[]) {
+// The AI's summary of what it chose, without its claims about requirements, unless it names an
+// entry that isn't on the resume.
+export function checkedSummary(summary: string, picked: { item_id: string }[], items: Item[]) {
   const byId = new Map(items.map((i) => [i.id, i]))
-  if (!strayMentions({ items: picked, summary }, items).length) return summary
+  const kept = withoutRequirementClaims(summary)
+  if (kept && !strayMentions({ items: picked, summary: kept }, items).length) return kept
   return `Chose ${picked.length} entr${picked.length === 1 ? "y" : "ies"} for this: ${picked.slice(0, 4).map((i) => itemTitle(byId.get(i.item_id)!)).join("; ")}${picked.length > 4 ? "; and more" : ""}.`
 }
 

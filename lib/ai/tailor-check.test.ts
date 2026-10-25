@@ -90,7 +90,7 @@ test("a correctly owned fact that doesn't name the skill can't cover it", () => 
 
 test("a re-checked report is versioned and judged against the resume's own entries", () => {
   const report = reportForResume({ ...backend, items: [...backend.items, { item_id: "pulse", reason: "Postgres monitoring", fact_ids: ["f-pulse"] }] }, ["api", "edu"], items, facts)
-  assert.equal(report.version, 2)
+  assert.equal(report.version, 3)
   assert.ok(!report.reasons.some((r) => r.item_id === "pulse"))
   assert.equal(report.requirements[1].status, "elsewhere")
 })
@@ -101,4 +101,28 @@ test("merging entries moves report citations onto the kept entry", () => {
   assert.deepEqual(out.reasons, [{ item_id: "keep", reason: "Go API", fact_ids: ["a", "b"] }])
   assert.deepEqual(out.requirements[0].item_ids, ["keep"])
   assert.equal(remapReport(report, "other", "keep"), null)
+})
+
+// The 2026-10-25 audit: "OpenAI or Anthropic LLM API integration — no evidence anywhere in the
+// record" was a green check against a generic API line, and the summary said the opposite.
+test("a requirement's verdict is cut from its text, and generic API work doesn't cover LLM integration", async () => {
+  const { requirementText } = await import("./tailor-check.ts")
+  assert.equal(requirementText("OpenAI or Anthropic LLM API integration — no evidence anywhere in the record"), "OpenAI or Anthropic LLM API integration")
+  assert.equal(requirementText("Automated integration tests (not recorded in the record)"), "Automated integration tests")
+  assert.equal(requirementText("Experience with REST APIs"), "Experience with REST APIs")
+
+  const audit = [item("web", "job", { role: "Web Application Developer", company: "Freelance" }), item("sk", "skills", { category: "Languages", skills: ["Go"] })]
+  const auditFacts = [fact("f-web", "web", "Implemented responsive user interfaces and robust backend APIs optimized for client operational needs using Node.js and Go")]
+  const llm: ModelPlan = {
+    title: "Example Labs — Backend Engineer", company: "Example Labs", role: "Backend Engineer",
+    items: [{ item_id: "web", reason: "Backend APIs with Node.js and Go", fact_ids: ["f-web"] }],
+    section_order: ["job"],
+    requirements: [{ text: "OpenAI or Anthropic LLM API integration — no evidence anywhere in the record", status: "covered", fact_ids: ["f-web"] }],
+    summary: "Leads with your freelance backend work. LLM integrations are not recorded anywhere in your record.",
+  }
+  assert.ok(checkTailorPlan(llm, audit, auditFacts).some((e) => e.includes("give only the requirement")))
+  const out = repairTailorPlan(llm, audit, auditFacts)
+  assert.equal(out.requirements[0].text, "OpenAI or Anthropic LLM API integration")
+  assert.notEqual(out.requirements[0].status, "covered")
+  assert.equal(out.summary, "Leads with your freelance backend work.")
 })

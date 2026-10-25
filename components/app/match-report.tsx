@@ -4,6 +4,7 @@ import { useState } from "react"
 import { CheckCircle2, CircleDashed, CircleHelp, CirclePlus, RotateCcw, Scissors } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
+import { requirementText, withoutRequirementClaims } from "@/lib/ai/tailor-check"
 import { requirementOnPage, type PageEvidence } from "@/lib/record/evidence"
 
 export { pageEvidence, type PageEvidence } from "@/lib/record/evidence"
@@ -70,7 +71,8 @@ export function MatchReport({
           )}
         </div>
       )}
-      {match.summary && !legacy && <p className="text-muted-foreground">{match.summary}</p>}
+      {/* Reports saved before these checks may carry verdicts in their text; they're cleaned here too. */}
+      {match.summary && !legacy && withoutRequirementClaims(match.summary) && <p className="text-muted-foreground">{withoutRequirementClaims(match.summary)}</p>}
       {reasons.length > 0 && (
         <ul className="space-y-1">
           {reasons.map((p) => (
@@ -83,7 +85,8 @@ export function MatchReport({
         <div>
           <p className="mb-1 text-xs font-medium tracking-wider text-muted-foreground uppercase">{match.description ? "From the job post" : "What you asked for"}</p>
           <ul className="space-y-1.5">
-            {match.requirements.map((r) => {
+            {match.requirements.map(({ text, ...rest }) => {
+              const r = { ...rest, text: requirementText(text) }
               const shown = requirementOnPage(r, page, legacy)
               return (
                 <li key={r.text} className="flex items-start gap-2">

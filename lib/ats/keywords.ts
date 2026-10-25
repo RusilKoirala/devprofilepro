@@ -50,6 +50,22 @@ export function knownTermsIn(text: string): string[] {
   return KNOWN.filter((k) => hasTerm(text, k))
 }
 
+// Where each known term first appears in the text, in reading order. A term inside a longer one
+// ("CI" in "CI/CD", "Testing" in "Unit testing") is left out.
+export function termSpans(text: string): { term: string; start: number; end: number }[] {
+  const spans = knownTermsIn(text).flatMap((term) => {
+    const patterns = term === "Go"
+      ? [/\bGo\b|\b[Gg]olang\b/]
+      : [term, ...(ALIASES[term] ?? [])].flatMap((t) => (/[a-z]s$/i.test(t) && t.length > 3 ? [t, t.slice(0, -1)] : [t])).map((t) => new RegExp(`(?<![A-Za-z0-9+#.])${escape(t)}(?![A-Za-z0-9+#])`, "i"))
+    const found = patterns.map((p) => p.exec(text)).filter((m): m is RegExpExecArray => !!m)
+    if (!found.length) return []
+    const first = found.reduce((a, b) => (b.index < a.index || (b.index === a.index && b[0].length > a[0].length) ? b : a))
+    return [{ term, start: first.index, end: first.index + first[0].length }]
+  })
+  spans.sort((a, b) => a.start - b.start || b.end - a.end)
+  return spans.filter((s, i) => !spans.some((o, j) => j !== i && o.start <= s.start && o.end >= s.end && (o.end - o.start > s.end - s.start || j < i)))
+}
+
 // Words that look like skills when capitalised but aren't.
 const STOP = new Set(["The", "We", "You", "Our", "This", "Your", "Experience", "About", "Team", "Role", "Requirements", "Responsibilities", "Bonus", "Nice", "Strong", "Benefits", "Apply", "Remote", "Senior", "Junior", "Engineer", "Developer", "Software", "Years", "Ability", "Plus", "Must", "Work", "Working", "Job", "Company", "What", "Who", "How", "And", "Or", "If", "In", "On", "At", "For", "With", "To", "Of", "A", "An", "Is", "Are", "Will", "Be", "As", "It", "Us", "All", "New", "Help", "Build", "Building"])
 

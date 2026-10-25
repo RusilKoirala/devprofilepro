@@ -22,7 +22,7 @@ const ModelSchema = z.object({
     .describe("Items to include, most relevant first"),
   section_order: z.array(z.enum(SECTION_TYPES)),
   requirements: z
-    .array(z.object({ text: z.string(), status: RequirementStatus, fact_ids: z.array(z.string()).describe("Facts that show it, from anywhere in the record; empty for not_found") }))
+    .array(z.object({ text: z.string().describe("The requirement as the post states it, nothing about whether the record shows it"), status: RequirementStatus, fact_ids: z.array(z.string()).describe("Facts that show it, from anywhere in the record; empty for not_found") }))
     .describe("Key requirements (max 10). Empty if the request names none."),
   summary: z.string().describe("One or two plain sentences to the user on what you chose and why. Name only items you included."),
 })
@@ -56,7 +56,8 @@ Rules:
   - "elsewhere": only facts of items you did NOT include show it. Cite them. Better still, include the item if it fits.
   - "not_found": no fact anywhere shows it. That isn't proof they lack it, just that it isn't recorded.
   Split a compound requirement ("Go and Node.js APIs") into one per skill when the record shows them differently.
-- summary: name only items you included.
+- requirement text is only what the post asks for. Never add your verdict to it ("— not in the record"); the status says that.
+- summary: what you chose and why, naming only items you included. Don't say which requirements are or aren't shown: code checks that and lists it next to each one.
 - Never claim a skill, title or number that the facts don't contain: a cited fact must name the skill itself, not something near it. Don't keyword-stuff.
 - Reasons describe what the item shows, never its status (don't say "hidden").
 - title: short, e.g. "Stripe — Backend Intern" for a job post, or "Frontend roles" for a direction.`
@@ -73,7 +74,7 @@ export async function draftTailorPlan(userId: string, brief: string, usable: Ite
     step: "tailor",
     userId,
     schema: ModelSchema,
-    effort: "medium",
+    effort: "high",
     maxTokens: 16000,
     system: SYSTEM,
     content: [

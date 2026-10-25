@@ -1,4 +1,4 @@
-import { hasTerm, knownTermsIn } from "@/lib/ats/keywords"
+import { hasTerm, knownTermsIn, termSpans } from "@/lib/ats/keywords"
 import type { ResumeDoc } from "@/lib/resume/schema"
 
 // Does a piece of text actually support a job requirement? Plain code, used twice: when a match
@@ -57,26 +57,90 @@ function termScore(term: string, evidence: string): number {
   return (WEAK[term] ?? []).some((w) => hasTerm(evidence, w)) ? 0.5 : 0
 }
 
-// What a requirement asks for: the skills and tools it names, or when it names none, its own
-// content words ("deploying", "remotely").
-export function requirementTerms(requirement: string): { terms: string[]; words: string[]; anyOf: boolean } {
-  const terms = knownTermsIn(requirement)
-  const words = terms.length ? [] : [...new Set(tokens(requirement).filter((w) => w.length > 2 && !FILLER.has(w)))]
-  return { terms, words, anyOf: /\bor\b|\//i.test(requirement) }
+// One thing a requirement can be shown by: a known skill or tool, or a plain word.
+export type Operand = { term: string } | { word: string }
+interface Span { operand: Operand; start: number; end: number }
+
+const OR_LINK = /^\s*,?\s*(?:\/|\bor\b)\s*$/i
+const AND_LINK = /^\s*,?\s*(?:&|\band\b)\s*$/i
+const COMMA_LINK = /^\s*,\s*$/
+const WORD_AFTER_OR = /^\s*(?:\/|\bor\b)\s*([A-Za-z][A-Za-z0-9+#]*)/i
+const WORD_BEFORE_OR = /([A-Za-z][A-Za-z0-9+#]*)\s*(?:\/|\bor\b)\s*$/i
+
+// What a requirement asks for, as groups that each need one match. Only the operands joined by
+// "or" or "/" are alternatives: "Go and Node.js" is [[Go], [Node.js]], "LLM/AI APIs" is
+// [[LLM, AI], [APIs]], and "OpenAI or Anthropic LLM APIs" still needs LLM and APIs. A list
+// ending in "or" ("Python, Go, or Java") is one group. With no known skills or tools, its own
+// content words ("deploying", "remotely") are the operands.
+export function requirementTerms(requirement: string): Operand[][] {
+  let spans: Span[] = termSpans(requirement).map((s) => ({ operand: { term: s.term }, start: s.start, end: s.end }))
+  const extra = new Map<number, Operand[]>()
+  if (spans.length) {
+    // A plain word offered as the other choice ("LLM/AI", "Docker or containerization").
+    const inSpan = (at: number) => spans.some((s) => at >= s.start && at < s.end)
+    spans.forEach((s, i) => {
+      const words: Operand[] = []
+      const after = WORD_AFTER_OR.exec(requirement.slice(s.end))
+      if (after) {
+        const at = s.end + after[0].length - after[1].length
+        if (!inSpan(at) && !FILLER.has(after[1].toLowerCase())) words.push({ word: after[1].toLowerCase() })
+      }
+      const before = WORD_BEFORE_OR.exec(requirement.slice(0, s.start))
+      if (before && !inSpan(before.index) && !FILLER.has(before[1].toLowerCase())) words.push({ word: before[1].toLowerCase() })
+      if (words.length) extra.set(i, words)
+    })
+  } else {
+    spans = [...requirement.matchAll(/[A-Za-z][A-Za-z0-9]+/g)]
+      .filter((m) => m[0].length > 2 && !FILLER.has(m[0].toLowerCase()))
+      .map((m) => ({ operand: { word: m[0].toLowerCase() }, start: m.index, end: m.index + m[0].length }))
+  }
+
+  // Runs of operands joined by "or", "and" or commas. A run with "or" and no "and" is one set of
+  // choices; otherwise only the pairs joined directly by "or" are.
+  const links = spans.slice(1).map((s, i) => {
+    const between = requirement.slice(spans[i].end, s.start)
+    return OR_LINK.test(between) ? "or" : AND_LINK.test(between) ? "and" : COMMA_LINK.test(between) ? "comma" : null
+  })
+  const groups: Operand[][] = []
+  let run: number[] = [0]
+  const close = () => {
+    const kinds = run.slice(1).map((i) => links[i - 1])
+    const oneSet = kinds.includes("or") && !kinds.includes("and")
+    run.forEach((i, n) => {
+      const ops = [spans[i].operand, ...(extra.get(i) ?? [])]
+      if (n > 0 && (oneSet || kinds[n - 1] === "or")) groups[groups.length - 1].push(...ops)
+      else groups.push(ops)
+    })
+  }
+  if (!spans.length) return []
+  links.forEach((link, i) => {
+    if (link) run.push(i + 1)
+    else {
+      close()
+      run = [i + 1]
+    }
+  })
+  close()
+  // The same word twice ("API … APIs") asks for it once.
+  const seen = new Set<string>()
+  return groups.filter((g) => {
+    const key = g.map((o) => ("term" in o ? `t:${o.term}` : `w:${o.word}`)).sort().join("|")
+    return !seen.has(key) && !!seen.add(key)
+  })
 }
 
-// "full": everything the requirement asks for is in the evidence (any one, for "X or Y").
-// "partial": some of it, or only a weaker form. "none": nothing. "unknown": the requirement names
-// nothing checkable ("Strong communication"), so code can't say either way.
+// "full": every group is in the evidence (any one choice of "X or Y" is enough). "partial": some
+// of it, or only a weaker form. "none": nothing. "unknown": the requirement names nothing
+// checkable ("Strong communication"), so code can't say either way.
 export function support(requirement: string, evidence: string[]): Support {
-  const { terms, words, anyOf } = requirementTerms(requirement)
-  if (!terms.length && !words.length) return "unknown"
+  const groups = requirementTerms(requirement)
+  if (!groups.length) return "unknown"
   const text = evidence.join("\n")
   const evidenceWords = tokens(text)
-  const scores = [...terms.map((t) => termScore(t, text)), ...words.map((w) => (evidenceWords.some((e) => sameWord(w, e)) ? 1 : 0))]
-  const best = Math.max(...scores)
-  if (anyOf ? best === 1 : scores.every((s) => s === 1)) return "full"
-  return best > 0 ? "partial" : "none"
+  const score = (o: Operand) => ("term" in o ? termScore(o.term, text) : evidenceWords.some((e) => sameWord(o.word, e)) ? 1 : 0)
+  const scores = groups.map((g) => Math.max(...g.map(score)))
+  if (scores.every((s) => s === 1)) return "full"
+  return scores.some((s) => s > 0) ? "partial" : "none"
 }
 
 // The named skills and tools in a sentence that the evidence never mentions. Used on the short

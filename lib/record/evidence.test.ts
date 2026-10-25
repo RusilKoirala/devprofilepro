@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { requirementOnPage, support, unsupportedTerms, type PageEvidence } from "./evidence.ts"
+import { requirementOnPage, requirementTerms, support, unsupportedTerms, type PageEvidence } from "./evidence.ts"
 
 test("support needs the evidence to name what the requirement asks for", () => {
   assert.equal(support("Production Kubernetes operations", ["Built a JavaScript landing page."]), "none")
@@ -66,4 +66,38 @@ test("only what the templates print counts: tech stored on a skills group or job
   assert.equal(req("Kubernetes", "job"), "lines_cut")
   assert.equal(req("Go", "sk"), "covered")
   assert.equal(req("Experience with PostgreSQL", "pulse"), "covered")
+})
+
+// The 2026-10-25 audit: a generic API line was a green check for LLM integration, because any
+// "or" or "/" made every term in the requirement optional.
+const genericApi = ["Implemented responsive user interfaces and robust backend APIs optimized for client operational needs using Node.js and Go"]
+
+test("generic API evidence doesn't show an LLM or OpenAI/Anthropic requirement", () => {
+  assert.equal(support("Experience with LLM/AI APIs (preferred)", genericApi), "partial")
+  assert.equal(support("Experience with LLM APIs", genericApi), "partial")
+  assert.equal(support("OpenAI or Anthropic LLM API integration", genericApi), "partial")
+  assert.equal(support("OpenAI or Anthropic LLM API integration", ["Built an Anthropic LLM API integration for support replies"]), "full")
+  assert.equal(support("Experience with LLM/AI APIs", ["Called AI APIs to summarize tickets"]), "full")
+})
+
+test("only operands joined by or or / are alternatives", () => {
+  const names = (r: string) => requirementTerms(r).map((g) => g.map((o) => ("term" in o ? o.term : o.word)))
+  assert.deepEqual(names("Experience with LLM/AI APIs"), [["LLM", "ai"], ["APIs"]])
+  assert.deepEqual(names("OpenAI or Anthropic LLM API integration"), [["OpenAI", "anthropic"], ["LLM"], ["APIs"]])
+  assert.deepEqual(names("Python, Go, or Java"), [["Python", "Go", "Java"]])
+  assert.deepEqual(names("Go and Node.js"), [["Go"], ["Node.js"]])
+  assert.deepEqual(names("REST/GraphQL APIs"), [["REST", "GraphQL"], ["APIs"]])
+  assert.deepEqual(names("CI/CD pipelines"), [["CI/CD"]])
+  assert.deepEqual(names("Experience deploying or operating services"), [["deploying", "operating"], ["services"]])
+})
+
+test("a list of choices is shown by any one of them", () => {
+  assert.equal(support("Python, Go, or Java", ["Wrote the Go services behind the API"]), "full")
+  assert.equal(support("REST/GraphQL APIs", ["Built a GraphQL API for the dashboard"]), "full")
+})
+
+test("plain-word requirements need every part unless they're offered as choices", () => {
+  assert.equal(support("Automated integration tests", genericApi), "none")
+  assert.equal(support("Experience deploying or operating services", ["Deployed three services on Fly.io"]), "full")
+  assert.equal(support("Experience deploying or operating services", ["Deployed the landing page"]), "partial")
 })
