@@ -12,7 +12,7 @@ export const MAX_INTERVIEW_QUESTIONS = 8
 // Kinds the UI answers with several picks plus free text, instead of one tap.
 export const MULTI_KINDS = new Set(["built", "ownership"])
 
-const InterviewSchema = z.object({
+export const InterviewSchema = z.object({
   questions: z.array(
     z.object({
       item_id: z.string().describe("Exactly the id attribute of an <item>"),

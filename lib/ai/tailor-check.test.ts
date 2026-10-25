@@ -22,6 +22,7 @@ const facts = [
 const plan: ModelPlan = {
   title: "Backend", company: null, role: "Backend engineer",
   items: [{ item_id: "api", reason: "Uptime monitoring with Express and Postgres", fact_ids: ["f-pulse"] }],
+  backup_items: [],
   section_order: ["project"],
   requirements: [{ text: "Postgres", status: "covered", fact_ids: ["f-pulse"] }],
   summary: "Included PulseOps and your API work.",
@@ -46,6 +47,7 @@ test("repair drops borrowed reasons, points to evidence elsewhere and keeps educ
 const backend: ModelPlan = {
   title: "Backend", company: null, role: null,
   items: [{ item_id: "api", reason: "(Education item hidden but relevant) Go service", fact_ids: ["f-api"] }],
+  backup_items: [],
   section_order: ["project"],
   requirements: [
     { text: "Experience deploying applications", status: "not_found", fact_ids: [] },
@@ -76,6 +78,7 @@ test("a correctly owned fact that doesn't name the skill can't cover it", () => 
   const adversarial: ModelPlan = {
     title: "Example", company: null, role: null,
     items: [{ item_id: "project", reason: "Has production Kubernetes expertise.", fact_ids: ["f"] }],
+    backup_items: [],
     section_order: ["project"],
     requirements: [{ text: "Production Kubernetes operations", status: "covered", fact_ids: ["f"] }],
     summary: "Selected Example API.",
@@ -90,7 +93,7 @@ test("a correctly owned fact that doesn't name the skill can't cover it", () => 
 
 test("a re-checked report is versioned and judged against the resume's own entries", () => {
   const report = reportForResume({ ...backend, items: [...backend.items, { item_id: "pulse", reason: "Postgres monitoring", fact_ids: ["f-pulse"] }] }, ["api", "edu"], items, facts)
-  assert.equal(report.version, 3)
+  assert.equal(report.version, 4)
   assert.ok(!report.reasons.some((r) => r.item_id === "pulse"))
   assert.equal(report.requirements[1].status, "elsewhere")
 })
@@ -116,6 +119,7 @@ test("a requirement's verdict is cut from its text, and generic API work doesn't
   const llm: ModelPlan = {
     title: "Example Labs — Backend Engineer", company: "Example Labs", role: "Backend Engineer",
     items: [{ item_id: "web", reason: "Backend APIs with Node.js and Go", fact_ids: ["f-web"] }],
+    backup_items: [],
     section_order: ["job"],
     requirements: [{ text: "OpenAI or Anthropic LLM API integration — no evidence anywhere in the record", status: "covered", fact_ids: ["f-web"] }],
     summary: "Leads with your freelance backend work. LLM integrations are not recorded anywhere in your record.",

@@ -6,7 +6,7 @@ import type { Fact, Item } from "@/lib/record/types"
 
 export const MAX_QUESTIONS = 5
 
-const QuestionsSchema = z.object({
+export const QuestionsSchema = z.object({
   questions: z.array(
     z.object({
       item_id: z.string(),

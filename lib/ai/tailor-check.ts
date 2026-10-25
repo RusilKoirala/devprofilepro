@@ -7,7 +7,7 @@ import { itemTitle, type Fact, type Item } from "@/lib/record/types"
 // the cited facts have to actually name what the requirement asks for.
 
 // Saved with every match report. Reports from before these checks (no version) are shown as such.
-export const MATCH_REPORT_VERSION = 3
+export const MATCH_REPORT_VERSION = 4
 
 // A verdict about the record, not part of what a job post asks for.
 const VERDICT = /\b(no evidence|not (?:recorded|found|shown|mentioned|listed)|nothing in (?:the|your) record|(?:isn't|is not|aren't|are not) (?:recorded|in (?:the|your) record))\b/i

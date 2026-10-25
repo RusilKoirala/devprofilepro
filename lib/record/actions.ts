@@ -52,6 +52,11 @@ async function session() {
 
 function fail(err: unknown): { ok: false; error: string; upgrade?: Allowance } {
   if (err instanceof AllowanceError) return { ok: false, error: err.message, upgrade: err.allowance }
+  // A provider or schema error means nothing to the person; they get what happened and what to do.
+  if (err instanceof AiError && err.reason !== "refusal") {
+    console.error(err)
+    return { ok: false, error: "The AI step didn't finish, so nothing was changed or counted. Try again in a minute." }
+  }
   if (err instanceof RateLimitedError || err instanceof AiError || err instanceof GitHubError || err instanceof BudgetError) return { ok: false, error: err.message }
   // Validation details are for us; the person gets the one message that says what to change.
   if (err instanceof z.ZodError) return { ok: false, error: err.issues[0]?.message && !/^(Expected|Invalid|Required)/.test(err.issues[0].message) ? err.issues[0].message : "That didn't look right. Check it and try again." }

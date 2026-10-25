@@ -4,7 +4,7 @@ import { useState } from "react"
 import { CheckCircle2, CircleDashed, CircleHelp, CirclePlus, RotateCcw, Scissors } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { requirementText, withoutRequirementClaims } from "@/lib/ai/tailor-check"
+import { MATCH_REPORT_VERSION, requirementText, withoutRequirementClaims } from "@/lib/ai/tailor-check"
 import { requirementOnPage, type PageEvidence } from "@/lib/record/evidence"
 
 export { pageEvidence, type PageEvidence } from "@/lib/record/evidence"
@@ -51,7 +51,9 @@ export function MatchReport({
   rechecking?: boolean
 }) {
   const [showPost, setShowPost] = useState(false)
-  const legacy = !match.version
+  // Made by older checks: its stored verdicts, summary and explanations may say what the current
+  // checks wouldn't, so they're hidden until it's re-checked. Coverage on the page is always live.
+  const legacy = !match.version || match.version < MATCH_REPORT_VERSION
   const names = (ids: string[]) => ids.map((id) => titles.get(id) ?? "an entry").join(", ")
   const onPageIds = new Set(page.entries.map((e) => e.itemId))
   // Explanations from before the checks may describe the wrong entry, so they aren't shown.
@@ -62,8 +64,8 @@ export function MatchReport({
     <div className="space-y-4 text-sm">
       {legacy && (
         <div className="rounded-lg border border-signal/30 bg-signal/5 p-3 text-xs">
-          <p className="text-foreground/90">This report was made before the current evidence checks.</p>
-          <p className="mt-1 text-muted-foreground">Its explanations are hidden because they weren&apos;t checked against your facts, and its coverage is only approximate.</p>
+          <p className="text-foreground/90">This report was made by older evidence checks.</p>
+          <p className="mt-1 text-muted-foreground">Its summary, explanations and suggestions are hidden until it&apos;s re-checked. What each requirement shows on this page is checked now.</p>
           {onRecheck && (
             <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" disabled={rechecking} onClick={onRecheck}>
               {rechecking ? <Spinner /> : <RotateCcw />} Re-check against the job post
@@ -97,7 +99,7 @@ export function MatchReport({
                       {shown.state === "missing" && " · not in your record yet"}
                       {shown.state === "cut" && ` · shown by ${names(shown.itemIds)}, which isn't on this page now`}
                       {shown.state === "lines_cut" && ` · cited from ${names(shown.itemIds)}, but nothing printed there names it now`}
-                      {shown.state === "elsewhere" && ` · in your record (${names(shown.itemIds)}), not on this resume`}
+                      {shown.state === "elsewhere" && (legacy ? " · not on this resume. Re-check to see if your record shows it" : ` · in your record (${names(shown.itemIds)}), not on this resume`)}
                       {shown.state === "covered" && ` · shown by ${names(shown.itemIds)}`}
                       {shown.state === "partial" && (shown.shown?.length || shown.missing?.length
                         ? ` · ${names(shown.itemIds)} shows ${shown.shown?.length ? shown.shown.join(", ") : "part of it"}${shown.missing?.length ? `, not ${shown.missing.join(" or ")}` : ""}`
@@ -112,7 +114,7 @@ export function MatchReport({
                         <span className="mt-0.5 block text-xs text-muted-foreground/80 italic">“{clip(shown.line.text)}”</span>
                       )
                     )}
-                    {shown.state === "elsewhere" && onAdd && (
+                    {shown.state === "elsewhere" && onAdd && !legacy && (
                       <span className="mt-1 flex flex-wrap gap-1.5">
                         {shown.itemIds.map((id) => (
                           <Button key={id} size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => onAdd(id)}>

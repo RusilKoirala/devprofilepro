@@ -13,7 +13,7 @@ const RequirementStatus = z.enum(["covered", "unclear", "elsewhere", "not_found"
 
 // What the model returns. Every reason and every covered requirement cites fact ids, so code can
 // check that the evidence really belongs to the item it is said to explain.
-const ModelSchema = z.object({
+export const ModelSchema = z.object({
   title: z.string().describe("Short name for this resume, e.g. 'Stripe — Backend Intern' or 'Frontend roles'"),
   company: z.string().nullable().describe("Company named in the request, if any"),
   role: z.string().nullable().describe("Role the resume is aimed at, if any"),
@@ -22,8 +22,7 @@ const ModelSchema = z.object({
     .describe("Items to include, most relevant first"),
   backup_items: z
     .array(z.object({ item_id: z.string(), reason: z.string(), fact_ids: z.array(z.string()) }))
-    .optional()
-    .describe("Up to 2 more items that also fit the request, next most relevant, not already in items. Added at the end if the page has room."),
+    .describe("Up to 2 more items that also fit the request, next most relevant, not already in items. Added at the end if the page has room. Empty if none."),
   section_order: z.array(z.enum(SECTION_TYPES)),
   requirements: z
     .array(z.object({ text: z.string().describe("The requirement as the post states it, nothing about whether the record shows it"), status: RequirementStatus, fact_ids: z.array(z.string()).describe("Facts that show it, from anywhere in the record; empty for not_found") }))

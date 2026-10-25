@@ -8,7 +8,7 @@ import { headingOf } from "@/lib/resume/build"
 import { thinLine } from "@/lib/resume/thin"
 
 // Grouped by item: smaller models keep ids straight far better than with one flat list.
-const WriteSchema = z.object({
+export const WriteSchema = z.object({
   headline: z.string(),
   items: z.array(
     z.object({
