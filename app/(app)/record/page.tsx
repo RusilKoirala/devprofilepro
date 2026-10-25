@@ -58,7 +58,7 @@ export default async function RecordPage() {
     rank: i.rank,
     facts: record.facts
       .filter((f) => f.item_id === i.id)
-      .map((f) => ({ id: f.id, text: f.text, label: f.label, quote: f.quote, source: f.source_id ? (sources.get(f.source_id)?.label ?? null) : null, url: f.source_id ? (sources.get(f.source_id)?.url ?? null) : null })),
+      .map((f) => ({ id: f.id, text: f.text, label: f.label, quote: f.quote, source: f.source_id ? (sources.get(f.source_id)?.label ?? null) : null, url: f.source_id ? (sources.get(f.source_id)?.url ?? null) : null, unverified: Boolean(f.source_id && sources.get(f.source_id)?.meta?.unverified) })),
   }))
 
   // Entries that look like the same thing read twice, with where each one's facts came from.

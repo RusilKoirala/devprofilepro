@@ -407,9 +407,9 @@ const TextType = ({
 
   return createElement(
     Component,
+    // Passing a ref object to createElement is fine; the compiler lint reads it as a render-time access.
+    // eslint-disable-next-line react-hooks/refs
     {
-      // Passing a ref object to createElement is fine; the compiler lint reads it as a render-time access.
-      // eslint-disable-next-line react-hooks/refs
       ref: containerRef,
       className: `relative inline-block whitespace-pre-wrap ${className}`,
       ...props

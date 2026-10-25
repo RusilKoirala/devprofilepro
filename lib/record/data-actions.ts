@@ -4,8 +4,9 @@ import { auth } from "@clerk/nextjs/server"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { isAppEnabled } from "@/lib/access"
-import { deleteUserData } from "@/lib/record/delete-user-data"
+import { deleteUserData, scrubAiRuns } from "@/lib/record/delete-user-data"
 import { relayoutResume } from "@/lib/record/pipeline"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import type { ActionResult } from "@/lib/record/actions"
 
@@ -101,6 +102,8 @@ export async function deleteAllData(confirm: string): Promise<ActionResult> {
     const { userId, supabase } = await session()
     if (confirm !== "DELETE") throw new Error('Type DELETE to confirm.')
     await deleteUserData(supabase, userId)
+    // The AI log needs the service key, filtered to the signed-in user's id only.
+    await scrubAiRuns(createAdminClient(), userId)
     revalidatePath("/", "layout")
     return { ok: true, data: undefined }
   } catch (err) {

@@ -1,5 +1,6 @@
 import "server-only"
 import { isProActive, type SubscriptionRow } from "@/lib/billing/events"
+import { redis } from "@/lib/redis"
 import { createClient } from "@/lib/supabase/server"
 
 // Spend guards, on top of whatever hard limit is set in the provider's billing dashboard.
@@ -7,9 +8,10 @@ import { createClient } from "@/lib/supabase/server"
 //   AI_PRO_DAILY_BUDGET_USD     Pro: per user per day at full quality (default $3). Past it, Pro
 //                               keeps working on a faster model instead of stopping.
 //   AI_PRO_HARD_DAILY_USD       Pro: abuse stop, per user per day (default $10)
-//   AI_SERVER_DAILY_BUDGET_USD  per server process per day, all users together (default $2).
-//                               Past it, Free pauses. Pro is never slowed by other people's use:
-//                               only its own day decides its model.
+//   AI_SERVER_DAILY_BUDGET_USD  per day, all users together (default $2). Kept in Upstash Redis
+//                               when configured, so every server instance shares one total;
+//                               otherwise per server process. Past it, Free pauses. Pro is never
+//                               slowed by other people's use: only its own day decides its model.
 export const USER_DAILY = Number(process.env.AI_USER_DAILY_BUDGET_USD ?? 0.5)
 export const PRO_DAILY = Number(process.env.AI_PRO_DAILY_BUDGET_USD ?? 3)
 const PRO_HARD = Number(process.env.AI_PRO_HARD_DAILY_USD ?? 10)
@@ -29,17 +31,40 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
-export function recordSpend(usd: number) {
+const spendKey = (day: string) => `ai:spend:${day}`
+
+export async function recordSpend(usd: number) {
   if (serverDay !== today()) {
     serverDay = today()
     serverSpent = 0
   }
   serverSpent += usd
+  if (!redis || !(usd > 0)) return
+  try {
+    const key = spendKey(serverDay)
+    await redis.incrbyfloat(key, usd)
+    await redis.expire(key, 2 * 24 * 60 * 60)
+  } catch (err) {
+    // This process's own count still applies.
+    console.error("recording server AI spend failed", err)
+  }
+}
+
+// Today's spend across every server instance, or this process's when Redis isn't there.
+async function serverSpentToday(): Promise<number> {
+  const local = serverDay === today() ? serverSpent : 0
+  if (!redis) return local
+  try {
+    return Math.max(local, Number((await redis.get<number | string>(spendKey(today()))) ?? 0))
+  } catch (err) {
+    console.error("reading server AI spend failed", err)
+    return local
+  }
 }
 
 // Whether this call may run, and on which model. `fast` = use the faster model.
 export async function checkBudget(): Promise<{ pro: boolean; fast: boolean }> {
-  const serverOver = serverDay === today() && serverSpent >= SERVER_DAILY
+  const serverOver = (await serverSpentToday()) >= SERVER_DAILY
   let spent = 0
   let pro = false
   try {
