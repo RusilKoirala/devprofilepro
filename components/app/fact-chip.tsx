@@ -10,6 +10,8 @@ export interface FactView {
   quote: string | null
   source: string | null
   url: string | null
+  // From a GitHub profile imported by username, without a connected account to prove it's theirs.
+  unverified?: boolean
 }
 
 export const LABEL_TEXT: Record<FactView["label"], string> = {
@@ -24,7 +26,7 @@ export function FactChip({ fact }: { fact: FactView }) {
     <Popover>
       <PopoverTrigger asChild>
         <button type="button">
-          <Badge variant="secondary" className="cursor-pointer text-[10px] font-normal">{LABEL_TEXT[fact.label]}</Badge>
+          <Badge variant="secondary" className="cursor-pointer text-[10px] font-normal">{fact.unverified ? "From GitHub, not verified" : LABEL_TEXT[fact.label]}</Badge>
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-80 space-y-2 text-sm">
@@ -35,6 +37,9 @@ export function FactChip({ fact }: { fact: FactView }) {
             <>Source: {fact.url ? <a href={fact.url} target="_blank" rel="noreferrer" className="underline underline-offset-4">{fact.source}</a> : fact.source}</>
           )}
         </div>
+        {fact.unverified && (
+          <div className="text-xs text-muted-foreground">This profile was added by username. Connect GitHub on the Record page to show it&apos;s yours.</div>
+        )}
       </PopoverContent>
     </Popover>
   )

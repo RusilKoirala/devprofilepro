@@ -137,7 +137,7 @@ export async function generate<T>(opts: GenerateOptions<T>): Promise<T> {
     }
 
     const cost = estimateCostUsd(model, result.usage)
-    recordSpend(cost)
+    await recordSpend(cost)
     const usage = {
       input_tokens: result.usage.input,
       output_tokens: result.usage.output,

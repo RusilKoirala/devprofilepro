@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { isAppEnabled } from "@/lib/access"
 import { checkBullet, writeBullets } from "@/lib/ai/write"
+import { claimStep, withStep } from "@/lib/record/build-pass"
 import { loadRecord } from "@/lib/record/db"
 import { relayoutResume } from "@/lib/record/pipeline"
 import { itemTitle, type Fact } from "@/lib/record/types"
@@ -37,17 +38,24 @@ export interface RewriteProposal {
 export async function proposeRewrites(itemIds: string[]): Promise<ActionResult<{ proposals: RewriteProposal[]; skipped: string[] }>> {
   try {
     const { userId, supabase } = await session()
-    const ids = z.array(z.string().uuid()).max(30).parse(itemIds)
+    const requested = z.array(z.string().uuid()).max(30).parse(itemIds)
+    // Once per sync, and only for the entries that sync changed.
+    const claimed = await claimStep(userId, "rewrite")
+    if (!claimed) throw new Error("Sync your sources again to get new suggestions.")
+    const ids = requested.filter((id) => claimed.itemIds.includes(id))
     const record = await loadRecord(supabase)
     const shared = sharedBullets(record.bullets)
     const candidates = record.items.filter((i) => ids.includes(i.id) && i.status !== "hidden" && shared.some((b) => b.item_id === i.id))
     // Hand-edited wording stays the person's; say so instead of rewriting around it.
     const edited = candidates.filter((i) => shared.some((b) => b.item_id === i.id && b.user_edited))
     const items = candidates.filter((i) => !edited.includes(i))
-    if (!items.length) return { ok: true, data: { proposals: [], skipped: edited.map(itemTitle) } }
+    if (!items.length) {
+      await claimed.release()
+      return { ok: true, data: { proposals: [], skipped: edited.map(itemTitle) } }
+    }
 
     const { data: base } = await supabase.from("resumes").select("layout").eq("kind", "base").maybeSingle()
-    const { bullets } = await writeBullets({ userId, items, facts: record.facts, targetRole: base?.layout?.target_role })
+    const { bullets } = await withStep(claimed, () => writeBullets({ userId, items, facts: record.facts, targetRole: base?.layout?.target_role }))
     const proposals = items
       .map((i) => ({
         itemId: i.id,

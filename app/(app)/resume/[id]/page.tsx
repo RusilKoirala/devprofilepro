@@ -84,7 +84,7 @@ export default async function ResumePage({ params }: { params: Promise<{ id: str
               ownCopy: !!bullet.resume_id,
               facts: record.facts
                 .filter((f) => bullet.fact_ids.includes(f.id))
-                .map((f) => ({ id: f.id, text: f.text, label: f.label, quote: f.quote, source: f.source_id ? (sources.get(f.source_id)?.label ?? null) : null, url: f.source_id ? (sources.get(f.source_id)?.url ?? null) : null })),
+                .map((f) => ({ id: f.id, text: f.text, label: f.label, quote: f.quote, source: f.source_id ? (sources.get(f.source_id)?.label ?? null) : null, url: f.source_id ? (sources.get(f.source_id)?.url ?? null) : null, unverified: Boolean(f.source_id && sources.get(f.source_id)?.meta?.unverified) })),
             }
           }),
         }

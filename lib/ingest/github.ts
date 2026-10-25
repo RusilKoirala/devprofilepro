@@ -158,6 +158,12 @@ export async function ingestGitHub(opts: { userId: string; username?: string }):
   const username = normalizeGitHubUsername(opts.username || login || "")
   if (!username) throw new GitHubError("No GitHub username", 400)
   if (!/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(username)) throw new GitHubError("Invalid GitHub username", 400)
+  // A connected account proves whose profile this is, so only that one can be imported. Without
+  // one, a typed username still works, but its sources are marked unverified (shown on its facts).
+  if (login && username.toLowerCase() !== login.toLowerCase()) {
+    throw new GitHubError(`You're connected to GitHub as @${login}, so only that profile can be imported.`, 403)
+  }
+  const unverified = !login
   const { gh, raw, count } = makeFetch(token)
 
   const user = await gh<GitHubUser>(`/users/${username}`)
@@ -264,5 +270,5 @@ export async function ingestGitHub(opts: { userId: string; username?: string }):
     })
   }
 
-  return sources
+  return unverified ? sources.map((s) => ({ ...s, meta: { ...s.meta, unverified: true } })) : sources
 }
