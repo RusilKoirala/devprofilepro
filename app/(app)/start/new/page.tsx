@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import { currentUser } from "@clerk/nextjs/server"
 import { FirstResumeFlow, type Resume } from "@/components/app/first-resume-flow"
-import { aiProvider } from "@/lib/ai/model"
+import { aiProviderLabel } from "@/lib/ai/model"
 import { interviewItems } from "@/lib/ai/interview"
 import { loadRecord } from "@/lib/record/db"
 import { itemTitle } from "@/lib/record/types"
@@ -32,6 +32,6 @@ export default async function FirstResumePage() {
     : { at: "write" }
 
   const githubLogin = user?.externalAccounts.find((a) => a.provider.includes("github") && a.verification?.status === "verified")?.username ?? null
-  const provider = aiProvider() === "openai" ? "OpenAI" : aiProvider() === "anthropic" ? "Anthropic (Claude)" : "your configured AI provider"
+  const provider = aiProviderLabel()
   return <FirstResumeFlow githubLogin={githubLogin} provider={provider} resume={resume} />
 }

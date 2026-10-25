@@ -105,7 +105,7 @@ export function DataControls({ sources }: { sources: SourceListItem[] }) {
           <DialogHeader>
             <DialogTitle>Delete all your DevProfile data?</DialogTitle>
             <DialogDescription>
-              Everything goes, including downloaded PDFs we kept for you. Download your data first if you might want it. Your sign-in account and payment records stay. Deleting the account itself (account menu) also deletes everything here.
+              Everything goes, including downloaded PDFs we kept for you. Your sign-in account and payment records stay. Deleting the account itself (account menu) also deletes everything here.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">

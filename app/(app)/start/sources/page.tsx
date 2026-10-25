@@ -1,7 +1,7 @@
 import { currentUser } from "@clerk/nextjs/server"
 import { StartForm } from "@/components/app/start-form"
 import { createClient } from "@/lib/supabase/server"
-import { aiProvider } from "@/lib/ai/model"
+import { aiProviderLabel } from "@/lib/ai/model"
 
 export const metadata = { title: "Add sources · DevProfile" }
 // Reached from "I have a resume to update" and from "Add sources" once a resume exists.
@@ -17,7 +17,7 @@ export default async function StartPage() {
     supabase.from("resumes").select("layout").eq("kind", "base").maybeSingle(),
   ])
   if (sourcesError || itemsError) throw new Error(sourcesError?.message ?? itemsError?.message)
-  const provider = aiProvider() === "openai" ? "OpenAI" : aiProvider() === "anthropic" ? "Anthropic (Claude)" : "your configured AI provider"
+  const provider = aiProviderLabel()
 
   return (
     <div className="mx-auto max-w-3xl pt-4">

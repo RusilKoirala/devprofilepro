@@ -5,7 +5,7 @@ import OpenAI from "openai"
 import { zodResponseFormat } from "openai/helpers/zod"
 import type { z } from "zod"
 import { checkBudget, recordSpend } from "@/lib/ai/budget"
-import { aiProvider, estimateCostUsd, modelFor, type AiStep } from "@/lib/ai/model"
+import { BEDROCK_REGION, estimateCostUsd, modelFor, providersFor, type AiProvider, type AiStep } from "@/lib/ai/model"
 import { checkLimit } from "@/lib/ratelimit"
 import { createClient } from "@/lib/supabase/server"
 
@@ -46,21 +46,31 @@ interface CallResult<T> {
   usage: { input: number; cachedInput: number; output: number }
 }
 
-// gpt-4.1-mini's output limit; cheaper models also get a smaller ceiling so a runaway answer stays cheap.
+// GPT-4.1's output limit. Reasoning models count their thinking as output, so they get room for it.
 const OPENAI_MAX_OUTPUT = 32_768
+const OPENAI_REASONING_MAX_OUTPUT = 100_000
+// GPT-4.1 models don't reason and reject reasoning_effort; every newer GPT model takes it.
+const reasons = (model: string) => !model.startsWith("gpt-4")
 
 let anthropicClient: Anthropic | null = null
+let bedrockClient: Anthropic | null = null
 let openaiClient: OpenAI | null = null
 
-async function callAnthropic<T>(opts: GenerateOptions<T>, content: AiContent[], model: string): Promise<CallResult<T>> {
-  anthropicClient ??= new Anthropic()
+// Claude on Amazon Bedrock speaks the same Messages API at its own endpoint; a Bedrock API key
+// goes where an Anthropic key would.
+function claudeClient(provider: "anthropic" | "bedrock") {
+  if (provider === "anthropic") return (anthropicClient ??= new Anthropic())
+  return (bedrockClient ??= new Anthropic({ apiKey: process.env.AWS_BEARER_TOKEN_BEDROCK, baseURL: `https://bedrock-mantle.${BEDROCK_REGION}.api.aws/anthropic` }))
+}
+
+async function callAnthropic<T>(opts: GenerateOptions<T>, content: AiContent[], model: string, provider: "anthropic" | "bedrock"): Promise<CallResult<T>> {
   // Streaming avoids HTTP timeouts on long outputs; finalMessage() gives the parsed result.
-  const message = await anthropicClient.beta.messages
+  const message = await claudeClient(provider).beta.messages
     .stream({
       model,
       max_tokens: opts.maxTokens ?? 32000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
+      // Bedrock has no server-side fallback; generate() falls back to the other provider instead.
+      ...(provider === "anthropic" ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
       system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
       messages: [
         {
@@ -90,7 +100,8 @@ async function callOpenAI<T>(opts: GenerateOptions<T>, content: AiContent[], mod
   openaiClient ??= new OpenAI()
   const completion = await openaiClient.chat.completions.parse({
     model,
-    max_completion_tokens: Math.min(opts.maxTokens ?? 16000, OPENAI_MAX_OUTPUT),
+    max_completion_tokens: reasons(model) ? Math.min(opts.maxTokens ?? 32000, OPENAI_REASONING_MAX_OUTPUT) : Math.min(opts.maxTokens ?? 16000, OPENAI_MAX_OUTPUT),
+    ...(reasons(model) ? { reasoning_effort: opts.effort ?? "medium" } : {}),
     messages: [
       { role: "system", content: opts.system },
       {
@@ -117,22 +128,30 @@ async function callOpenAI<T>(opts: GenerateOptions<T>, content: AiContent[], mod
 }
 
 export async function generate<T>(opts: GenerateOptions<T>): Promise<T> {
-  const provider = aiProvider()
-  if (!provider) throw new AiError("No AI key configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.", opts.step, "config")
+  const providers = providersFor(opts.step)
+  if (!providers.length) throw new AiError("No AI key configured. Set AWS_BEARER_TOKEN_BEDROCK, ANTHROPIC_API_KEY or OPENAI_API_KEY.", opts.step, "config")
   const { pro, fast } = await checkBudget()
   await checkLimit(opts.userId, opts.step, pro)
-  const model = modelFor(provider, fast)
+  // The provider in use. When a call errors or is declined, the same attempt reruns on the next one.
+  let p = 0
+  const nextProvider = () => p + 1 < providers.length && !!++p
 
   let content = opts.content
   let lastErrors: string[] = []
   const attempts = opts.attempts ?? 2
   for (let attempt = 0; attempt < attempts; attempt++) {
+    const provider: AiProvider = providers[p]
+    const model = modelFor(provider, opts.step, fast)
     const started = Date.now()
     let result: CallResult<T>
     try {
-      result = provider === "anthropic" ? await callAnthropic(opts, content, model) : await callOpenAI(opts, content, model)
+      result = provider === "openai" ? await callOpenAI(opts, content, model) : await callAnthropic(opts, content, model, provider)
     } catch (err) {
       await logRun(opts.step, model, { ms: Date.now() - started, ok: false, meta: { error: String(err) } })
+      if (nextProvider()) {
+        attempt--
+        continue
+      }
       throw new AiError(err instanceof Error ? err.message : "AI API error", opts.step, "api")
     }
 
@@ -147,6 +166,10 @@ export async function generate<T>(opts: GenerateOptions<T>): Promise<T> {
 
     if (result.stop === "refusal") {
       await logRun(opts.step, model, { ...usage, ok: false, meta: { stop: "refusal", cost_usd: cost } })
+      if (nextProvider()) {
+        attempt--
+        continue
+      }
       throw new AiError("The model declined this request.", opts.step, "refusal")
     }
     if (result.stop === "max_tokens") {

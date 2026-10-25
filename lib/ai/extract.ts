@@ -2,7 +2,7 @@ import "server-only"
 import Anthropic from "@anthropic-ai/sdk"
 import { z } from "zod"
 import { generate, UNTRUSTED_NOTE } from "@/lib/ai/client"
-import { aiProvider, CLAUDE_MODEL } from "@/lib/ai/model"
+import { aiProvider, modelFor } from "@/lib/ai/model"
 import { ITEM_TYPES, ItemDataSchema, type SourceRow } from "@/lib/record/types"
 
 export const ExtractSchema = z.object({
@@ -41,7 +41,7 @@ Rules:
 - Hide (show: false) forks with no commits by the user, empty repos, and plain tutorial clones, and say why in reason. Hidden items are kept; the user can show them.
 - Merge duplicates: the same job in the resume and LinkedIn is one item with facts from both.
 - Output one "contact" item if any contact details exist, and group skills into a few "skills" items by category (Languages, Frameworks, Tools). Only list skills the sources show.
-- section_order: Skills, Experience, Education, Projects, Awards.`
+- section_order: only the types you output. Skills, Experience, Education, Projects, Awards; with no jobs, Projects come right after Skills.`
 
 // Fixed order so the packed block is stable for prompt caching.
 const KIND_ORDER = ["resume_pdf", "linkedin_pdf", "paste", "pr_link", "github", "win"]
@@ -57,13 +57,15 @@ export function packSources(sources: SourceRow[]): string {
     .join("\n\n")
 }
 
-// Claude reads the whole record well past this; for the cheap OpenAI path we keep input small to keep cost low.
-const TOKEN_BUDGET = aiProvider() === "openai" ? 60_000 : 150_000
+// The building models read well past this; it keeps the cost of one build bounded (100k is about
+// $0.40 of input on Opus or GPT-6.1 Sol). Only the lowest-scored READMEs are dropped to fit.
+const TOKEN_BUDGET = 100_000
 
 async function countTokens(text: string): Promise<number> {
-  if (aiProvider() !== "anthropic") return Math.ceil((SYSTEM.length + text.length) / 4) // ~4 chars per token
+  // Bedrock has no token-counting endpoint; ~4 characters per token is close enough for a budget.
+  if (aiProvider() !== "anthropic") return Math.ceil((SYSTEM.length + text.length) / 4)
   const { input_tokens } = await new Anthropic().messages.countTokens({
-    model: CLAUDE_MODEL,
+    model: modelFor("anthropic", "extract"),
     system: SYSTEM,
     messages: [{ role: "user", content: text }],
   })

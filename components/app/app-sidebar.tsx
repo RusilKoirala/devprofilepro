@@ -3,9 +3,8 @@
 import Link from "next/link"
 import { useState } from "react"
 import { usePathname } from "next/navigation"
-import { useUser } from "@clerk/nextjs"
 import { ChevronRight, CreditCard, FileText, LayoutDashboard, Library, Plus, Sparkles } from "lucide-react"
-import { AccountButton } from "@/components/app/account-button"
+import { AccountMenu } from "@/components/app/account-menu"
 import { LogoMark } from "@/components/marketing/logo"
 import { UpgradeDialog } from "@/components/app/upgrade-dialog"
 import { Button } from "@/components/ui/button"
@@ -95,7 +94,7 @@ export function AppSidebar({ resumes, usage }: { resumes: ResumeLink[]; usage: P
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <UserRow />
+        <AccountMenu pro={usage?.plan === "pro"} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
@@ -135,18 +134,6 @@ function UpgradeCard({ usage }: { usage: PlanUsage }) {
         </SidebarMenuItem>
       </SidebarMenu>
     </>
-  )
-}
-
-function UserRow() {
-  const { user } = useUser()
-  return (
-    <div className="flex items-center gap-2.5 rounded-md p-1 group-data-[collapsible=icon]:p-0">
-      <AccountButton />
-      <span className="min-w-0 flex-1 truncate text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
-        {user?.primaryEmailAddress?.emailAddress ?? ""}
-      </span>
-    </div>
   )
 }
 
