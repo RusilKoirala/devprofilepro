@@ -126,3 +126,17 @@ test("a requirement's verdict is cut from its text, and generic API work doesn't
   assert.notEqual(out.requirements[0].status, "covered")
   assert.equal(out.summary, "Leads with your freelance backend work.")
 })
+
+// The retest: after Layer5 came off the page, the summary still said the version centred on it.
+test("backups are kept for the end of the page, and the summary drops only sentences naming what isn't on it", () => {
+  const withBackup: ModelPlan = {
+    ...plan,
+    items: [{ item_id: "api", reason: "Go service", fact_ids: ["f-api"] }],
+    backup_items: [{ item_id: "pulse", reason: "Uptime monitoring with Express and Postgres", fact_ids: ["f-pulse"] }, { item_id: "api", reason: "dup", fact_ids: ["f-api"] }],
+    requirements: [],
+    summary: "Leads with your Go API work. Centred on PulseOps monitoring.",
+  }
+  const out = repairTailorPlan(withBackup, items, facts)
+  assert.deepEqual(out.backup.map((i) => i.item_id), ["pulse"])
+  assert.equal(out.summary, "Leads with your Go API work.")
+})

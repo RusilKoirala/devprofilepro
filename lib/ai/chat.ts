@@ -29,6 +29,7 @@ Actions:
 Rules:
 - Never invent. A line may only say what that entry's facts say, or what the user told you in this chat. No new numbers, tools, titles, scale or outcomes. Code rejects numbers it can't find in either place.
 - To reword existing lines, prefer rewrite_entry. Use edit_line for small, precise changes (shorten, fix wording, use the user's exact words) and add_line when the user tells you something new.
+- If a <job_post> is given, this resume is for that job. When asked to fit it better, lead with lines that show what the post asks for, and use show_entry for a <not_on_page> entry whose facts show a requirement the <match_report> marks "elsewhere" or "unclear". Never add a skill or claim from the post that no fact contains; say plainly what the record doesn't show.
 - If the request is unclear or needs information you don't have (a number, what they personally did), ask in reply and return no actions.
 - Keep the resume one page and readable: strong verbs, about 14-22 words per line, no filler or buzzwords.
 - reply: one to three short sentences saying what you're changing (or your question). Don't claim anything that isn't in actions. Plain words, no markdown headings.
@@ -41,8 +42,15 @@ function attrs(o: Record<string, string | undefined | null | boolean>) {
     .join(" ")
 }
 
-// The resume exactly as it is now, with ids, plus what's in the record but not on the page.
-export function resumeForChat(resume: ResumeRow, record: CareerRecord, doc: ResumeDoc): { text: string; ctx: Omit<ChatContext, "userMessages"> } {
+export interface ChatJob {
+  post: string
+  // The saved match report's requirements, so "fit the job better" knows what's still missing.
+  requirements: { text: string; status: string }[]
+}
+
+// The resume exactly as it is now, with ids, plus what's in the record but not on the page, and
+// the job post a tailored resume was made for.
+export function resumeForChat(resume: ResumeRow, record: CareerRecord, doc: ResumeDoc, job?: ChatJob): { text: string; ctx: Omit<ChatContext, "userMessages"> } {
   const items = new Map(record.items.map((i) => [i.id, i]))
   const ctx: Omit<ChatContext, "userMessages"> = { lines: new Map(), entries: new Map(), sections: [], factsByEntry: new Map() }
   for (const f of record.facts) ctx.factsByEntry.set(f.item_id, [...(ctx.factsByEntry.get(f.item_id) ?? []), f.text])
@@ -74,9 +82,16 @@ export function resumeForChat(resume: ResumeRow, record: CareerRecord, doc: Resu
     out.push(`<not_on_page>`)
     for (const i of off) {
       ctx.entries.set(i.id, { type: i.type as ChatContext["sections"][number], title: itemTitle(i), onPage: false })
-      out.push(`  <entry ${attrs({ id: i.id, type: i.type, title: itemTitle(i), status: i.status === "hidden" ? "hidden" : "cut to fit" })} />`)
+      // Its facts too, so the chat can suggest bringing back the entry that shows what's asked for.
+      const facts = record.facts.filter((f) => f.item_id === i.id)
+      const head = `  <entry ${attrs({ id: i.id, type: i.type, title: itemTitle(i), status: i.status === "hidden" ? "hidden" : "cut to fit" })}`
+      out.push(facts.length ? [`${head}>`, ...facts.map((f) => `    <fact>${f.text}</fact>`), `  </entry>`].join("\n") : `${head} />`)
     }
     out.push(`</not_on_page>`)
+  }
+  if (job) {
+    out.push(`<job_post>\n${job.post.slice(0, 12000)}\n</job_post>`)
+    if (job.requirements.length) out.push(`<match_report>\n${job.requirements.map((r) => `  <requirement status="${r.status}">${r.text}</requirement>`).join("\n")}\n</match_report>`)
   }
   return { text: out.join("\n"), ctx }
 }

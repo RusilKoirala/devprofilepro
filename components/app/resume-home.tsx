@@ -58,7 +58,7 @@ interface EditTurn {
 }
 type Turn = CreateTurn | EditTurn
 
-const STEPS = ["Matching your Career Record to the request", "Building the resume", "Fitting it on one page", "Checking it"]
+const STEPS = ["Matching your Career Record to the request", "Writing it for this request", "Fitting it on one page", "Checking it"]
 
 // /resume: a prompt to start a new resume, then a conversation-style timeline of what was done.
 export function ResumeHome({ firstName, resumes, usage }: { firstName: string; resumes: ResumeCard[]; usage: PlanUsage }) {
@@ -135,13 +135,19 @@ export function ResumeHome({ firstName, resumes, usage }: { firstName: string; r
       return `Picked ${p.items.length} item${p.items.length === 1 ? "" : "s"}${p.requirements.length ? ` · ${covered} of ${p.requirements.length} job requirements shown in your record` : ""}`
     })
     if (!plan) return
-    const saved = await step(1, () => stageTailorSave(brief, plan), (d) => `Saved “${d.title}”. Your base resume is unchanged.`)
+    const saved = await step(1, () => stageTailorSave(brief, plan), (d) =>
+      [
+        d.writeFailed ? `Saved “${d.title}” in your base resume's wording; rewriting it didn't work this time, so ask for changes below.` : `Saved “${d.title}” with ${d.written} line${d.written === 1 ? "" : "s"} written for it.`,
+        d.dropped.length ? `Left out ${d.dropped.join(" ")}` : "",
+        "Your base resume is unchanged.",
+      ].filter(Boolean).join(" ")
+    )
     if (!saved) return
     const fit = await step(2, () => stageFit(saved.resumeId), (d) => (d.pinnedOverflow ? "Pinned items don't fit on one page" : d.cuts ? `One page. Moved ${d.cuts} weaker line${d.cuts === 1 ? "" : "s"} off to fit` : "Fits on one page"))
     if (!fit) return
     const summary = await step(3, () => resumeSummary(saved.resumeId), (d) => (d.fails ? `Built · ${d.fails} to fix before sending` : d.warns ? `Built · ${d.warns} to review before sending` : "Built · passed the automatic checks"))
     if (!summary) return
-    patch(id, 3, {}, { resumeId: saved.resumeId, title: saved.title, doc: summary.doc, bulletFacts: summary.bulletFacts, plan, fails: summary.fails, warns: summary.warns })
+    patch(id, 3, {}, { resumeId: saved.resumeId, title: saved.title, doc: summary.doc, bulletFacts: summary.bulletFacts, plan: saved.plan, fails: summary.fails, warns: summary.warns })
     setActive({ resumeId: saved.resumeId, title: saved.title })
     router.refresh() // the sidebar's resume list
   }

@@ -1,5 +1,6 @@
 import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import type { ChatJob } from "@/lib/ai/chat"
 import { extractRecord } from "@/lib/ai/extract"
 import { generateInterview, interviewItems } from "@/lib/ai/interview"
 import { generateQuestions, MAX_QUESTIONS } from "@/lib/ai/questions"
@@ -12,6 +13,11 @@ import type { RepoMeta } from "@/lib/ingest/types"
 import { byRecency } from "@/lib/resume/dates"
 import { applyItemOrder, resumeBullets, sharedBullets } from "@/lib/resume/order"
 import { fitToOnePage } from "@/lib/resume/fit"
+import { dropMessage, skillFocus, tidyTailored } from "@/lib/resume/tidy"
+import { focusedSkills } from "@/lib/resume/build"
+import { unsupportedTerms } from "@/lib/record/evidence"
+import { assessRequirements, checkedSummary, MATCH_REPORT_VERSION } from "@/lib/ai/tailor-check"
+import type { TailorPlan } from "@/lib/ai/tailor"
 
 export interface BuildReport {
   items: number
@@ -241,6 +247,21 @@ export async function queueInterview(supabase: SupabaseClient, userId: string, {
     .map((q) => ({ id: q.id, item_id: q.item_id, item_title: titles.get(q.item_id) ?? "", kind: q.kind ?? "", prompt: q.prompt, options: q.options ?? [] }))
 }
 
+// The job post a tailored resume was made from, if it was saved.
+export async function loadJobPost(supabase: SupabaseClient, jobId: string): Promise<string | undefined> {
+  const { data } = await supabase.from("jobs").select("description").eq("id", jobId).maybeSingle()
+  return data?.description?.trim() || undefined
+}
+
+// The job post plus its saved match report, so the chat knows what the resume still misses.
+export async function loadChatJob(supabase: SupabaseClient, jobId: string): Promise<ChatJob | undefined> {
+  const { data } = await supabase.from("jobs").select("description, match_report").eq("id", jobId).maybeSingle()
+  const post = data?.description?.trim()
+  if (!data || !post) return undefined
+  const requirements = (data.match_report?.requirements ?? []) as { text?: unknown; status?: unknown }[]
+  return { post, requirements: requirements.filter((r) => typeof r.text === "string" && typeof r.status === "string").map((r) => ({ text: r.text as string, status: r.status as string })) }
+}
+
 // ⑤ Write (A3) for some or all shown items, replacing bullets the user didn't edit.
 export async function writeItems(
   supabase: SupabaseClient,
@@ -258,7 +279,9 @@ export async function writeItems(
   // Rebuilding writes only newly imported items. Existing wording changes only
   // when the user answers a question or explicitly requests regeneration.
   const toWrite = items.filter((i) => (releaseEdits || tailored || !keepItems.has(i.id)) && (itemIds || !shared.some((b) => b.item_id === i.id)))
-  const { headline, bullets } = await writeBullets({ userId, items: toWrite, facts: record.facts, keep: releaseEdits || tailored ? [] : keep, targetRole, instruction, purpose })
+  // A tailored rewrite leads with what its job post asks for, not just the role's name.
+  const jobPost = tailored?.job_id ? await loadJobPost(supabase, tailored.job_id) : undefined
+  const { headline, bullets } = await writeBullets({ userId, items: toWrite, facts: record.facts, keep: releaseEdits || tailored ? [] : keep, targetRole, jobPost, instruction, purpose })
   if (tailored) return { headline, written: await saveOwnBullets(supabase, tailored, bullets) }
 
   const writtenIds = [...new Set(bullets.map((b) => b.item_id))]
@@ -269,6 +292,73 @@ export async function writeItems(
     if (error) throw new Error(error.message)
   }
   return { headline, written: bullets.length }
+}
+
+// A new tailored resume in its own words: every chosen job, project and award rewritten for its
+// job post, then the finishing pass (lib/resume/tidy.ts), a Skills list led by what the job asks
+// for, and a match report rebuilt from what is finally on the page. Returns that report's plan and
+// a message for each entry taken off.
+export async function writeTailored(supabase: SupabaseClient, userId: string, resumeId: string, plan: TailorPlan): Promise<{ written: number; dropped: string[]; plan: TailorPlan }> {
+  const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
+  if (!resume || resume.kind !== "tailored") throw new Error("Resume not found")
+  const types = new Map(record.items.map((i) => [i.id, i.type]))
+  const writable = (resume.layout.include ?? []).filter((id) => ["job", "project", "award"].includes(types.get(id) ?? ""))
+  const { written } = writable.length ? await writeItems(supabase, userId, record, { itemIds: writable, targetRole: resume.layout.target_role, resume }) : { written: 0 }
+  const dropped = await tidyResume(supabase, resumeId)
+  return { written, dropped, plan: await finishReport(supabase, resumeId, plan) }
+}
+
+async function tidyResume(supabase: SupabaseClient, resumeId: string): Promise<string[]> {
+  const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
+  if (!resume) throw new Error("Resume not found")
+  const { hide, remove, drop } = tidyTailored(resume, record.items, record.bullets, record.facts)
+  if (remove.length) {
+    const { error } = await supabase.from("bullets").delete().eq("resume_id", resumeId).in("id", remove)
+    if (error) throw new Error(error.message)
+  }
+  if (hide.length || drop.length) {
+    const gone = new Set(drop.map((d) => d.id))
+    const layout: ResumeLayout = {
+      ...resume.layout,
+      include: (resume.layout.include ?? []).filter((id) => !gone.has(id)),
+      ...(resume.layout.item_order ? { item_order: resume.layout.item_order.filter((id) => !gone.has(id)) } : {}),
+      hidden_bullets: [...new Set([...(resume.layout.hidden_bullets ?? []), ...hide])],
+    }
+    const { error } = await supabase.from("resumes").update({ layout, updated_at: new Date().toISOString() }).eq("id", resumeId)
+    if (error) throw new Error(error.message)
+  }
+  const titles = new Map(record.items.map((i) => [i.id, itemTitle(i)]))
+  return drop.map((d) => dropMessage(titles.get(d.id) ?? "An entry", d.reason))
+}
+
+// The report and summary for what the resume finally holds, so neither names an entry that came
+// off, and a Skills explanation only names skills its printed list has.
+async function finishReport(supabase: SupabaseClient, resumeId: string, plan: TailorPlan): Promise<TailorPlan> {
+  const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
+  if (!resume) throw new Error("Resume not found")
+  const usable = record.items.filter((i) => i.type !== "contact")
+  const byId = new Map(usable.map((i) => [i.id, i]))
+  const include = (resume.layout.include ?? []).filter((id) => byId.has(id))
+  const chosen = new Set(include)
+  const requirements = assessRequirements(plan.requirements, chosen, usable, record.facts)
+  const skill_focus = skillFocus(requirements, record.facts, usable, include.map((id) => byId.get(id)!).filter((i) => i.type === "skills"))
+  const printed = (item: Item) => [item.data.category, ...focusedSkills(item.data.skills ?? [], skill_focus[item.id])].filter(Boolean).join(", ")
+  const items = [...plan.items, ...plan.backup]
+    .filter((i) => chosen.has(i.item_id))
+    .map((i) => {
+      const item = byId.get(i.item_id)!
+      return item.type === "skills" && unsupportedTerms(i.reason, [printed(item)]).length ? { ...i, reason: "" } : i
+    })
+  const final: TailorPlan = { ...plan, items, backup: [], requirements, summary: checkedSummary(plan.summary, include.map((item_id) => ({ item_id })), usable) }
+  if (Object.keys(skill_focus).length) {
+    const { error } = await supabase.from("resumes").update({ layout: { ...resume.layout, skill_focus }, updated_at: new Date().toISOString() }).eq("id", resumeId)
+    if (error) throw new Error(error.message)
+  }
+  if (resume.job_id) {
+    const { error } = await supabase.from("jobs").update({ match_report: { version: MATCH_REPORT_VERSION, requirements: final.requirements, summary: final.summary, reasons: final.items } }).eq("id", resume.job_id)
+    if (error) throw new Error(error.message)
+  }
+  return final
 }
 
 // A tailored resume's rewrite: its own lines replace whatever it showed for those items, and the
@@ -385,6 +475,7 @@ export async function relayoutResume(supabase: SupabaseClient, resumeId: string)
     ...(include ? { include } : {}),
     ...(own.hidden_bullets?.length ? { hidden_bullets: own.hidden_bullets } : {}),
     ...(own.own_items?.length ? { own_items: own.own_items } : {}),
+    ...(tailored && resume.layout.skill_focus ? { skill_focus: resume.layout.skill_focus } : {}),
     items: applyItemOrder(base.items, resume.layout.item_order),
     section_order: kept.length ? [...kept, ...base.section_order.filter((t) => !kept.includes(t))] : base.section_order,
   }

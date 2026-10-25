@@ -183,7 +183,9 @@ export async function updateHeaderIn(supabase: SupabaseClient, resumeId: string,
 }
 
 // Titles, companies, dates, links and skill lists.
-export async function updateDetailsIn(supabase: SupabaseClient, itemId: string, input: DetailsInput) {
+// `resumeId`: the resume it was edited from. Editing a skills group's list there replaces that
+// resume's focus for the group, so the list printed is the one just written.
+export async function updateDetailsIn(supabase: SupabaseClient, itemId: string, input: DetailsInput, resumeId?: string | null) {
   const patch = DetailsSchema.parse(input)
   const { data: item, error: itemError } = await supabase.from("items").select("type,data").eq("id", itemId).single()
   must(itemError)
@@ -195,6 +197,11 @@ export async function updateDetailsIn(supabase: SupabaseClient, itemId: string, 
     data[key] = key === "url" ? normalizeLink(value as string | null) : Array.isArray(value) ? (value.length ? value : null) : value || null
   }
   must((await supabase.from("items").update({ data, updated_at: now() }).eq("id", itemId)).error)
+  if (!resumeId || !("skills" in patch)) return
+  const resume = await resumeOrThrow(supabase, resumeId)
+  if (!resume.layout.skill_focus?.[itemId]) return
+  const skill_focus = Object.fromEntries(Object.entries(resume.layout.skill_focus).filter(([id]) => id !== itemId))
+  must((await supabase.from("resumes").update({ layout: { ...resume.layout, skill_focus }, updated_at: now() }).eq("id", resumeId)).error)
 }
 
 // Entry order inside one section. Display order only: what gets cut to fit still follows strength.

@@ -56,9 +56,11 @@ function strayMentions(plan: { items: { item_id: string }[]; summary: string }, 
 export function checkTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]): string[] {
   const ids = new Set(items.map((i) => i.id))
   const factItem = new Map(facts.map((f) => [f.id, f.item_id]))
-  const chosen = new Set(plan.items.map((i) => i.item_id))
+  // Backups end up on the page too when there's room, so they're checked the same way.
+  const listed = [...plan.items, ...(plan.backup_items ?? [])]
+  const chosen = new Set(listed.map((i) => i.item_id))
   const errors: string[] = []
-  for (const i of plan.items) {
+  for (const i of listed) {
     if (!ids.has(i.item_id)) {
       errors.push(`Unknown item_id ${i.item_id}`)
       continue
@@ -164,14 +166,16 @@ export function repairTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]):
   const byId = new Map(items.map((i) => [i.id, i]))
   const factById = new Map(facts.map((f) => [f.id, f]))
   const seen = new Set<string>()
-  const picked = plan.items
-    .filter((i) => byId.has(i.item_id) && !seen.has(i.item_id) && seen.add(i.item_id))
-    .map((i) => {
-      const own = i.fact_ids.map((f) => factById.get(f)).filter((f): f is Fact => f?.item_id === i.item_id)
-      // A reason built on another item's facts describes the wrong thing, so it goes.
-      const borrowed = i.fact_ids.some((f) => factById.has(f) && factById.get(f)!.item_id !== i.item_id)
-      return { item_id: i.item_id, reason: borrowed ? "" : checkedReason(i.reason, byId.get(i.item_id)!, own), fact_ids: own.map((f) => f.id) }
-    })
+  const keep = (list: ModelPlan["items"]) =>
+    list
+      .filter((i) => byId.has(i.item_id) && !seen.has(i.item_id) && seen.add(i.item_id))
+      .map((i) => {
+        const own = i.fact_ids.map((f) => factById.get(f)).filter((f): f is Fact => f?.item_id === i.item_id)
+        // A reason built on another item's facts describes the wrong thing, so it goes.
+        const borrowed = i.fact_ids.some((f) => factById.has(f) && factById.get(f)!.item_id !== i.item_id)
+        return { item_id: i.item_id, reason: borrowed ? "" : checkedReason(i.reason, byId.get(i.item_id)!, own), fact_ids: own.map((f) => f.id) }
+      })
+  const picked = keep(plan.items)
   const hasType = (t: string) => picked.some((i) => byId.get(i.item_id)!.type === t)
   const visible = items.filter((i) => i.status !== "hidden")
   if (!hasType("education")) for (const e of visible.filter((i) => i.type === "education")) picked.push({ item_id: e.id, reason: KEPT.education!, fact_ids: [] })
@@ -182,15 +186,21 @@ export function repairTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]):
 
   const chosen = new Set(picked.map((i) => i.item_id))
   const requirements = assessRequirements(plan.requirements, chosen, items, facts)
-  return { title: plan.title, company: plan.company, role: plan.role, items: picked, section_order: plan.section_order, requirements, summary: checkedSummary(plan.summary, picked, items) }
+  const backup = keep(plan.backup_items ?? []).filter((i) => byId.get(i.item_id)!.type === "job" || byId.get(i.item_id)!.type === "project").slice(0, 2)
+  return { title: plan.title, company: plan.company, role: plan.role, items: picked, backup, section_order: plan.section_order, requirements, summary: checkedSummary(plan.summary, picked, items) }
 }
 
 // The AI's summary of what it chose, without its claims about requirements, unless it names an
 // entry that isn't on the resume.
 export function checkedSummary(summary: string, picked: { item_id: string }[], items: Item[]) {
   const byId = new Map(items.map((i) => [i.id, i]))
+  // Sentences naming an entry that isn't on the resume go, the rest stay.
   const kept = withoutRequirementClaims(summary)
-  if (kept && !strayMentions({ items: picked, summary: kept }, items).length) return kept
+    .split(/(?<=[.!?])\s+/)
+    .filter((s) => s.trim() && !strayMentions({ items: picked, summary: s }, items).length)
+    .join(" ")
+    .trim()
+  if (kept) return kept
   return `Chose ${picked.length} entr${picked.length === 1 ? "y" : "ies"} for this: ${picked.slice(0, 4).map((i) => itemTitle(byId.get(i.item_id)!)).join("; ")}${picked.length > 4 ? "; and more" : ""}.`
 }
 

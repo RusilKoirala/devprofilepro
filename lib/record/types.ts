@@ -112,6 +112,9 @@ export interface ResumeLayout {
   // own words (their shared lines are ignored here).
   hidden_bullets?: string[]
   own_items?: string[]
+  // Tailored resumes only: per skills group, the skills to list first for this job (some may be
+  // added from tools its facts name). The group's own list follows. Cleared when the group is edited.
+  skill_focus?: Record<string, string[]>
   items: { item_id: string; bullet_ids: string[] }[]
 }
 

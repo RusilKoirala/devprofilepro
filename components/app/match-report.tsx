@@ -87,7 +87,7 @@ export function MatchReport({
           <ul className="space-y-1.5">
             {match.requirements.map(({ text, ...rest }) => {
               const r = { ...rest, text: requirementText(text) }
-              const shown = requirementOnPage(r, page, legacy)
+              const shown = requirementOnPage(r, page)
               return (
                 <li key={r.text} className="flex items-start gap-2">
                   {ICON[shown.state]}
@@ -98,7 +98,10 @@ export function MatchReport({
                       {shown.state === "cut" && ` · shown by ${names(shown.itemIds)}, which isn't on this page now`}
                       {shown.state === "lines_cut" && ` · cited from ${names(shown.itemIds)}, but nothing printed there names it now`}
                       {shown.state === "elsewhere" && ` · in your record (${names(shown.itemIds)}), not on this resume`}
-                      {(shown.state === "covered" || shown.state === "partial") && ` · ${shown.state === "partial" ? "partly shown" : "shown"} by ${names(shown.itemIds)}`}
+                      {shown.state === "covered" && ` · shown by ${names(shown.itemIds)}`}
+                      {shown.state === "partial" && (shown.shown?.length || shown.missing?.length
+                        ? ` · ${names(shown.itemIds)} shows ${shown.shown?.length ? shown.shown.join(", ") : "part of it"}${shown.missing?.length ? `, not ${shown.missing.join(" or ")}` : ""}`
+                        : ` · partly shown by ${names(shown.itemIds)}`)}
                     </span>
                     {(shown.state === "covered" || shown.state === "partial") && shown.line && !compact && (
                       onShow ? (

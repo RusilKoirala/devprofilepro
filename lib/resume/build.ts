@@ -1,4 +1,5 @@
 import type { CareerRecord } from "@/lib/record/db"
+import { hasTerm } from "@/lib/ats/keywords"
 import type { Item, ResumeLayout } from "@/lib/record/types"
 import { templateOf } from "@/lib/resume/templates"
 import { SECTION_TITLES, type ResumeDoc, type ResumeEntry, type ResumeSection } from "@/lib/resume/schema"
@@ -8,7 +9,18 @@ function dates(start?: string | null, end?: string | null) {
   return start || end || ""
 }
 
-function entryFor(item: Item, bullets: ResumeEntry["bullets"]): ResumeEntry {
+// Same skill, by name or a known alias ("Postgres" for "PostgreSQL").
+export function sameSkill(a: string, b: string) {
+  return a.trim().toLowerCase() === b.trim().toLowerCase() || hasTerm(a, b) || hasTerm(b, a)
+}
+
+// A skills group's list with this resume's focus first.
+export function focusedSkills(skills: string[], focus: string[] = []): string[] {
+  const lead = focus.filter((f, n) => !focus.slice(0, n).some((g) => sameSkill(f, g)))
+  return [...lead, ...skills.filter((s) => !lead.some((f) => sameSkill(s, f)))]
+}
+
+function entryFor(item: Item, bullets: ResumeEntry["bullets"], focus?: string[]): ResumeEntry {
   const d = item.data
   const base = { item_id: item.id, location: d.location ?? "", dates: dates(d.start, d.end), url: d.url ?? "", tech: d.tech ?? [], bullets }
   switch (item.type) {
@@ -24,10 +36,16 @@ function entryFor(item: Item, bullets: ResumeEntry["bullets"]): ResumeEntry {
       return { ...base, title: d.school ?? "", subtitle, dates: dates(unsaid(d.start), unsaid(d.end)) }
     }
     case "skills":
-      return { ...base, title: d.category ?? "Skills", subtitle: (d.skills ?? []).join(", ") }
+      return { ...base, title: d.category ?? "Skills", subtitle: focusedSkills(d.skills ?? [], focus).join(", ") }
     default:
       return { ...base, title: d.name ?? "", subtitle: "" }
   }
+}
+
+// What an entry's heading prints: its title, subtitle and dates.
+export function headingOf(item: Item): Pick<ResumeEntry, "title" | "subtitle" | "dates"> {
+  const { title, subtitle, dates } = entryFor(item, [])
+  return { title, subtitle, dates }
 }
 
 // layout + record → ResumeDoc. Names, titles and dates always come from the record, never from AI wording.
@@ -45,7 +63,8 @@ export function buildResume(layout: ResumeLayout, record: Pick<CareerRecord, "it
       .map(({ item, li }) =>
         entryFor(
           item,
-          li.bullet_ids.map((id) => bullets.get(id)).filter((b) => b != null).filter((b) => b.item_id === item.id).map((b) => ({ id: b.id, text: b.text }))
+          li.bullet_ids.map((id) => bullets.get(id)).filter((b) => b != null).filter((b) => b.item_id === item.id).map((b) => ({ id: b.id, text: b.text })),
+          layout.skill_focus?.[item.id]
         )
       )
     if (entries.length) sections.push({ type, title: SECTION_TITLES[type], entries })

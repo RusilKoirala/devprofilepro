@@ -20,6 +20,10 @@ const ModelSchema = z.object({
   items: z
     .array(z.object({ item_id: z.string(), reason: z.string().describe("Why it's relevant, in a few words, using only this item's facts"), fact_ids: z.array(z.string()).describe("Ids of this item's own facts that show it") }))
     .describe("Items to include, most relevant first"),
+  backup_items: z
+    .array(z.object({ item_id: z.string(), reason: z.string(), fact_ids: z.array(z.string()) }))
+    .optional()
+    .describe("Up to 2 more items that also fit the request, next most relevant, not already in items. Added at the end if the page has room."),
   section_order: z.array(z.enum(SECTION_TYPES)),
   requirements: z
     .array(z.object({ text: z.string().describe("The requirement as the post states it, nothing about whether the record shows it"), status: RequirementStatus, fact_ids: z.array(z.string()).describe("Facts that show it, from anywhere in the record; empty for not_found") }))
@@ -34,6 +38,8 @@ export const TailorSchema = z.object({
   company: z.string().nullable(),
   role: z.string().nullable(),
   items: z.array(z.object({ item_id: z.string(), reason: z.string(), fact_ids: z.array(z.string()).default([]) })),
+  // Next most relevant items, written too and placed last: one page keeps them only if there's room.
+  backup: z.array(z.object({ item_id: z.string(), reason: z.string(), fact_ids: z.array(z.string()).default([]) })).default([]),
   section_order: z.array(z.enum(SECTION_TYPES)),
   requirements: z.array(z.object({ text: z.string(), status: RequirementStatus, item_ids: z.array(z.string()), fact_ids: z.array(z.string()).default([]) })),
   summary: z.string(),
@@ -47,7 +53,7 @@ ${UNTRUSTED_NOTE}
 
 Rules:
 - Use only the <item> ids given. Include the items most relevant to the request, most relevant first. Hidden items may be included when they fit the request better than shown ones.
-- A one-page resume usually has 1-4 jobs, 2-4 projects, education, and the relevant skill groups. Always keep education and at least one skills item when they exist.
+- A one-page resume usually has 1-4 jobs, 2-4 projects, education, and the relevant skill groups. A short page reads as thin: when the record has more relevant work, include it, and name up to 2 more in backup_items (same rules as items). Always keep education and at least one skills item when they exist.
 - Each item's reason must describe that item only, from its own <fact>s, and fact_ids must be ids of facts inside that same <item>. Never describe one item with another item's facts.
 - section_order: Skills, Experience, Education, Projects, Awards. Change it only when the request asks for a different order.
 - requirements: list the key requirements of a job post, or of the skills a request names (max 10). Search the WHOLE record for each one before deciding, including items you didn't pick:

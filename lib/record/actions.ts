@@ -18,7 +18,7 @@ import type { IngestedSource } from "@/lib/ingest/types"
 import { RateLimitedError } from "@/lib/ratelimit"
 import { claimStep, issueBuildPass, withStep } from "@/lib/record/build-pass"
 import { loadRecord, loadResume, saveSources } from "@/lib/record/db"
-import { buildRecord, queueInterview, refreshQuestions, relayoutResume, writeBase, writeItems, type DetailChange, type InterviewCard } from "@/lib/record/pipeline"
+import { buildRecord, loadChatJob, queueInterview, refreshQuestions, relayoutResume, writeBase, writeItems, writeTailored, type DetailChange, type InterviewCard } from "@/lib/record/pipeline"
 import { ItemDataSchema, ITEM_TYPES, itemTitle, type ItemType, type ResumeLayout } from "@/lib/record/types"
 import { draftTailorPlan, planTailoredResume, TailorSchema, type TailorPlan } from "@/lib/ai/tailor"
 import { MATCH_REPORT_VERSION, reportForResume } from "@/lib/ai/tailor-check"
@@ -264,16 +264,17 @@ export async function stageTailorPlan(brief: string): Promise<ActionResult<Tailo
   }
 }
 
-export async function stageTailorSave(brief: string, input: TailorPlan): Promise<ActionResult<{ resumeId: string; title: string }>> {
+export async function stageTailorSave(brief: string, input: TailorPlan): Promise<ActionResult<{ resumeId: string; title: string; written: number; dropped: string[]; writeFailed: boolean; plan: TailorPlan }>> {
   try {
-    const { supabase } = await session()
+    const { userId, supabase } = await session()
     const plan = TailorSchema.parse(input)
     await requireAllowance(supabase, "tailored")
     const [record, { data: base, error: baseError }] = await Promise.all([loadRecord(supabase), supabase.from("resumes").select("layout").eq("kind", "base").maybeSingle()])
     if (baseError) throw new Error(baseError.message)
     // The plan came back through the browser: keep only ids that are really in this user's record.
     const known = new Set(record.items.filter((i) => i.type !== "contact").map((i) => i.id))
-    const include = plan.items.map((i) => i.item_id).filter((id) => known.has(id))
+    // Backups go last, so fitting one page cuts them first.
+    const include = [...new Set([...plan.items, ...plan.backup].map((i) => i.item_id))].filter((id) => known.has(id))
     if (!include.length) throw new Error("Nothing in your Career Record matched this. Try describing the role differently.")
     const types = new Map(record.items.map((i) => [i.id, i.type]))
     const { data: job, error: jobError } = await supabase
@@ -296,7 +297,13 @@ export async function stageTailorSave(brief: string, input: TailorPlan): Promise
     if (error) throw new Error(error.message)
     // Counted when saved, not when the AI call ran.
     await recordUsage(supabase, "tailored", data.id as string)
-    return { ok: true, data: { resumeId: data.id as string, title: plan.title } }
+    // Written for the job here, in the counted step, so the writing can't be asked for on its own.
+    // If it fails, the resume is kept in the base resume's wording and the chat can rewrite it.
+    const draft = await writeTailored(supabase, userId, data.id as string, plan).catch((err) => {
+      console.error("tailored write failed", err)
+      return null
+    })
+    return { ok: true, data: { resumeId: data.id as string, title: plan.title, written: draft?.written ?? 0, dropped: draft?.dropped ?? [], writeFailed: !draft, plan: draft?.plan ?? plan } }
   } catch (err) {
     return fail(err)
   }
@@ -428,7 +435,7 @@ export async function updateHeader(resumeId: string, input: HeaderInput): Promis
 }
 
 export async function updateItemDetails(resumeId: string | null, itemId: string, input: DetailsInput): Promise<ActionResult> {
-  return edit(resumeId, (supabase) => updateDetailsIn(supabase, itemId, input))
+  return edit(resumeId, (supabase) => updateDetailsIn(supabase, itemId, input, resumeId))
 }
 
 // The person checked a line that lost part of its source and it still holds.
@@ -575,7 +582,8 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
     await requireAllowance(supabase, "fixes")
     const loaded = await loadResumeDoc(supabase, resumeId)
     if (!loaded) return { ok: false, error: "Resume not found" }
-    const { text, ctx: base } = resumeForChat(loaded.resume, loaded.record, loaded.doc)
+    const job = loaded.resume.job_id ? await loadChatJob(supabase, loaded.resume.job_id) : undefined
+    const { text, ctx: base } = resumeForChat(loaded.resume, loaded.record, loaded.doc, job)
     const ctx: ChatContext = { ...base, userMessages: history.filter((m) => m.role === "user").map((m) => m.content) }
     const out = await chatTurn(userId, text, history, ctx)
 
@@ -650,7 +658,7 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
             }
             break
           }
-          case "update_details": await updateDetailsIn(supabase, a.entry_id!, presentFields(a.fields, DETAIL_KEYS) as DetailsInput); break
+          case "update_details": await updateDetailsIn(supabase, a.entry_id!, presentFields(a.fields, DETAIL_KEYS) as DetailsInput, resumeId); break
           case "update_header": await updateHeaderIn(supabase, resumeId, presentFields(a.fields, HEADER_KEYS) as HeaderInput); break
         }
         changed = true

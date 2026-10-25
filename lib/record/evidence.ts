@@ -28,9 +28,15 @@ const FILLER = new Set(
     "have has must should will can comfortable working work professional practical relevant related similar " +
     "build building built develop developing development maintain maintaining application applications app apps software " +
     "modern best practice practices environment environments based level high quality code coding solution solutions " +
-    "backend frontend full stack fullstack web end team teams across within other including new one more"
+    "backend frontend full stack fullstack web end team teams across within other including new one more " +
+    "write writing wrote implement implementing integrate integrating create creating ensure deliver delivering"
   ).split(" ")
 )
+
+// Words a requirement shares with almost any developer's work. They're part of what it asks for
+// ("automated integration tests"), but on their own they show nothing: "responsive interfaces"
+// isn't evidence of "keyboard-friendly interfaces", nor an installer's "automated setups" of tests.
+const GENERIC = ["api", "apis", "interface", "automated", "automation", "integration", "system", "service", "tool", "data", "user", "platform", "feature", "product", "process", "workflow", "setup", "client", "customer", "responsive", "scalable", "performant", "reliable", "robust", "clean", "maintainable", "efficient"]
 
 function stem(word: string) {
   return word.replace(/(ations?|ments?|ings?|ers?|ed|ly|es|s)$/, "") || word
@@ -59,6 +65,12 @@ function termScore(term: string, evidence: string): number {
 
 // One thing a requirement can be shown by: a known skill or tool, or a plain word.
 export type Operand = { term: string } | { word: string }
+
+const GENERIC_TERMS = new Set(["APIs"])
+function generic(o: Operand) {
+  return "term" in o ? GENERIC_TERMS.has(o.term) : GENERIC.some((g) => sameWord(o.word.toLowerCase(), g))
+}
+const label = (o: Operand) => ("term" in o ? o.term : o.word)
 interface Span { operand: Operand; start: number; end: number }
 
 const OR_LINK = /^\s*,?\s*(?:\/|\bor\b)\s*$/i
@@ -83,16 +95,16 @@ export function requirementTerms(requirement: string): Operand[][] {
       const after = WORD_AFTER_OR.exec(requirement.slice(s.end))
       if (after) {
         const at = s.end + after[0].length - after[1].length
-        if (!inSpan(at) && !FILLER.has(after[1].toLowerCase())) words.push({ word: after[1].toLowerCase() })
+        if (!inSpan(at) && !FILLER.has(after[1].toLowerCase())) words.push({ word: after[1] })
       }
       const before = WORD_BEFORE_OR.exec(requirement.slice(0, s.start))
-      if (before && !inSpan(before.index) && !FILLER.has(before[1].toLowerCase())) words.push({ word: before[1].toLowerCase() })
+      if (before && !inSpan(before.index) && !FILLER.has(before[1].toLowerCase())) words.push({ word: before[1] })
       if (words.length) extra.set(i, words)
     })
   } else {
     spans = [...requirement.matchAll(/[A-Za-z][A-Za-z0-9]+/g)]
       .filter((m) => m[0].length > 2 && !FILLER.has(m[0].toLowerCase()))
-      .map((m) => ({ operand: { word: m[0].toLowerCase() }, start: m.index, end: m.index + m[0].length }))
+      .map((m) => ({ operand: { word: m[0] }, start: m.index, end: m.index + m[0].length }))
   }
 
   // Runs of operands joined by "or", "and" or commas. A run with "or" and no "and" is one set of
@@ -124,23 +136,37 @@ export function requirementTerms(requirement: string): Operand[][] {
   // The same word twice ("API … APIs") asks for it once.
   const seen = new Set<string>()
   return groups.filter((g) => {
-    const key = g.map((o) => ("term" in o ? `t:${o.term}` : `w:${o.word}`)).sort().join("|")
+    const key = g.map((o) => ("term" in o ? `t:${o.term}` : `w:${o.word.toLowerCase()}`)).sort().join("|")
     return !seen.has(key) && !!seen.add(key)
   })
 }
 
-// "full": every group is in the evidence (any one choice of "X or Y" is enough). "partial": some
-// of it, or only a weaker form. "none": nothing. "unknown": the requirement names nothing
-// checkable ("Strong communication"), so code can't say either way.
+// "full": every group is in the evidence (any one choice of "X or Y" is enough). "partial": a
+// distinctive part of it, or only a weaker form; matching only generic words ("APIs",
+// "interfaces") doesn't count. "none": nothing. "unknown": the requirement names nothing checkable
+// ("Strong communication"), so code can't say either way.
 export function support(requirement: string, evidence: string[]): Support {
+  return supportDetail(requirement, evidence).support
+}
+
+// The same, with what's shown and what's missing, so a partial match can say which part it is.
+export function supportDetail(requirement: string, evidence: string[]): { support: Support; shown: string[]; missing: string[] } {
   const groups = requirementTerms(requirement)
-  if (!groups.length) return "unknown"
+  if (!groups.length) return { support: "unknown", shown: [], missing: [] }
   const text = evidence.join("\n")
   const evidenceWords = tokens(text)
-  const score = (o: Operand) => ("term" in o ? termScore(o.term, text) : evidenceWords.some((e) => sameWord(o.word, e)) ? 1 : 0)
-  const scores = groups.map((g) => Math.max(...g.map(score)))
-  if (scores.every((s) => s === 1)) return "full"
-  return scores.some((s) => s > 0) ? "partial" : "none"
+  const score = (o: Operand) => ("term" in o ? termScore(o.term, text) : evidenceWords.some((e) => sameWord(o.word.toLowerCase(), e)) ? 1 : 0)
+  const scored = groups.map((g) => {
+    const scores = g.map(score)
+    const best = Math.max(...scores)
+    return { best, generic: g.every(generic), name: best > 0 ? label(g[scores.indexOf(best)]) : g.map(label).join(" or ") }
+  })
+  const shown = scored.filter((g) => g.best === 1).map((g) => g.name)
+  const missing = scored.filter((g) => g.best < 1).map((g) => (g.best > 0 ? `${g.name} (only partly)` : g.name))
+  if (scored.every((g) => g.best === 1)) return { support: "full", shown, missing: [] }
+  // When everything it asks for is generic ("REST APIs" aside, just "APIs"), any of it counts.
+  const counts = scored.every((g) => g.generic) ? scored : scored.filter((g) => !g.generic)
+  return { support: counts.some((g) => g.best > 0) ? "partial" : "none", shown, missing }
 }
 
 // The named skills and tools in a sentence that the evidence never mentions. Used on the short
@@ -159,26 +185,47 @@ export interface PageEvidence {
 
 type Line = PageEvidence["lines"][number]
 export type Shown =
-  | { state: "covered" | "partial"; itemIds: string[]; line?: Line }
+  | { state: "covered" | "partial"; itemIds: string[]; line?: Line; shown?: string[]; missing?: string[] }
   | { state: "cut"; itemIds: string[] }
   | { state: "lines_cut"; itemIds: string[] }
   | { state: "elsewhere"; itemIds: string[] }
   | { state: "missing" }
 
-// A requirement against the page as it is now. Covered needs text on the page that names what
-// it asks for, from the entries and facts the report cited: remove the last such line and it isn't.
-export function requirementOnPage(r: { status: string; item_ids: string[]; fact_ids?: string[]; text: string }, page: PageEvidence, legacy: boolean): Shown {
-  if (r.status === "not_found") return { state: "missing" }
-  const entries = page.entries.filter((e) => r.item_ids.includes(e.itemId))
-  if (!entries.length) return { state: r.status === "elsewhere" ? "elsewhere" : "cut", itemIds: r.item_ids }
-  const cited = new Set(r.fact_ids ?? [])
-  // Old reports cite entries, not facts, so any line of a cited entry may be the evidence.
-  const lines = page.lines.filter((l) => r.item_ids.includes(l.itemId) && (legacy || !cited.size || l.factIds.some((f) => cited.has(f))))
-  const itemIds = entries.map((e) => e.itemId)
-  const s = support(r.text, [...lines.map((l) => l.text), ...entries.map((e) => e.text)])
-  if (s === "none" || (s === "unknown" && !lines.length)) return { state: "lines_cut", itemIds }
-  const line = lines.find((l) => support(r.text, [l.text]) !== "none") ?? lines[0]
-  return { state: s === "full" && r.status !== "unclear" ? "covered" : "partial", itemIds, line }
+// A requirement against the page as it is now. What is printed decides, wherever it is: an edit
+// that keeps the words keeps the match (whatever facts the report first cited), a line added since
+// counts, and removing the last line that names it un-covers it. The entries the report cited are
+// looked at first, so the evidence offered is the one the person expects.
+export function requirementOnPage(r: { status: string; item_ids: string[]; text: string }, page: PageEvidence): Shown {
+  const cited = page.entries.filter((e) => r.item_ids.includes(e.itemId)).map((e) => e.itemId)
+  const evidence = (ids: string[]) => [...page.lines.filter((l) => ids.includes(l.itemId)).map((l) => l.text), ...page.entries.filter((e) => ids.includes(e.itemId)).map((e) => e.text)]
+  const lineFor = (ids: string[]) => {
+    const lines = page.lines.filter((l) => ids.includes(l.itemId))
+    return lines.find((l) => support(r.text, [l.text]) === "full") ?? lines.find((l) => support(r.text, [l.text]) === "partial") ?? lines[0]
+  }
+  const absent = (): Shown =>
+    r.status === "elsewhere" && !cited.length ? { state: "elsewhere", itemIds: r.item_ids }
+    : cited.length ? { state: "lines_cut", itemIds: cited }
+    : r.status === "not_found" || !r.item_ids.length ? { state: "missing" }
+    : { state: "cut", itemIds: r.item_ids }
+
+  if (supportDetail(r.text, []).support === "unknown") {
+    // Nothing code can check ("Strong communication"): the AI's cited entries stand, as partial at most.
+    if (r.status === "not_found" || !cited.length) return absent()
+    return { state: "partial", itemIds: cited, line: lineFor(cited) }
+  }
+
+  const each = page.entries.map((e) => ({ id: e.itemId, ...supportDetail(r.text, evidence([e.itemId])) }))
+  const together = cited.length ? supportDetail(r.text, evidence(cited)) : null
+  if (together?.support === "full") return { state: "covered", itemIds: cited, line: lineFor(cited) }
+  const alone = each.find((e) => e.support === "full")
+  if (alone) return { state: "covered", itemIds: [alone.id], line: lineFor([alone.id]) }
+  // Two entries can show it between them: Go in one job, Node.js in another.
+  const helping = each.filter((e) => e.support === "partial").map((e) => e.id)
+  const all = helping.length > 1 ? supportDetail(r.text, evidence(helping)) : null
+  if (all?.support === "full") return { state: "covered", itemIds: helping, line: lineFor(helping) }
+  const part = together?.support === "partial" ? { ...together, ids: cited } : helping.length ? { ...each.find((e) => e.support === "partial")!, ids: [each.find((e) => e.support === "partial")!.id] } : null
+  if (part) return { state: "partial", itemIds: part.ids, line: lineFor(part.ids), shown: part.shown, missing: part.missing }
+  return absent()
 }
 
 // The text an entry actually prints, by the same rules as the PDF and .tex templates: projects and

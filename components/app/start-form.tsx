@@ -97,8 +97,14 @@ export function StartForm({ githubLogin, sources, hasRecord, targetRole }: { git
         return
       }
       const anyOk = res.data.some((c) => c.ok)
-      set(0, { state: anyOk || readable || hasRecord ? "done" : "failed", lines: res.data, detail: res.data.length ? undefined : "Nothing new to read" })
-      if (!anyOk && !readable && !hasRecord) return void toast.error("We couldn't read any of these. Try pasting the text instead.")
+      // Nothing new was accepted: stop here with the input still in the form, rather than rebuild
+      // from older sources the person didn't ask to process again.
+      if (!anyOk) {
+        set(0, { state: "failed", lines: res.data, detail: res.data.length ? "Nothing was added. Fix what's above and try again." : "Nothing new to read" })
+        return void toast.error(res.data.find((c) => !c.ok)?.detail ?? "We couldn't read any of these. Try pasting the text instead.")
+      }
+      const failed = res.data.filter((c) => !c.ok).length
+      set(0, { state: "done", lines: res.data, detail: failed ? `Added what we could read. ${plural(failed, "item", "items")} above weren't added. Going ahead with the rest.` : undefined })
       formRef.current?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input[type=file], textarea").forEach((el) => (el.value = ""))
       router.refresh()
     } else {
