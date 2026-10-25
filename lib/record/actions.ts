@@ -16,6 +16,7 @@ import { MAX_FILES } from "@/lib/ingest/limits"
 import { ingestPdf } from "@/lib/ingest/pdf"
 import type { IngestedSource } from "@/lib/ingest/types"
 import { RateLimitedError } from "@/lib/ratelimit"
+import { claimStep, issueBuildPass, withStep } from "@/lib/record/build-pass"
 import { loadRecord, loadResume, saveSources } from "@/lib/record/db"
 import { buildRecord, queueInterview, refreshQuestions, relayoutResume, writeBase, writeItems, type DetailChange, type InterviewCard } from "@/lib/record/pipeline"
 import { ItemDataSchema, ITEM_TYPES, itemTitle, type ItemType, type ResumeLayout } from "@/lib/record/types"
@@ -163,6 +164,8 @@ export async function stageExtract(): Promise<ActionResult<{ counts: Partial<Rec
     if (counted) await requireAllowance(supabase, "updates")
     const report = await buildRecord(supabase, userId)
     if (counted) await recordUsage(supabase, "updates")
+    // The AI steps after this one (interview, writing, questions, rewrites) run once on this pass.
+    await issueBuildPass(userId, report.updatedIds)
     return { ok: true, data: { counts: report.counts, factsKept: report.factsKept, factsDropped: report.factsDropped, skipped: report.skippedReadmes, added: report.added, updated: report.updated, updatedIds: report.updatedIds, changes: report.changes } }
   } catch (err) {
     return fail(err)
@@ -175,7 +178,14 @@ export async function stageWrite(targetRole?: string, answeredItemIds: string[] 
     const { userId, supabase } = await session()
     const role = z.string().trim().max(120).optional().parse(targetRole)
     const answered = z.array(z.string().uuid()).max(50).parse(answeredItemIds)
-    return { ok: true, data: await writeBase(supabase, userId, role, answered) }
+    const claimed = await claimStep(userId, "write")
+    if (claimed) return { ok: true, data: await withStep(claimed, () => writeBase(supabase, userId, role, answered)) }
+    // No pass: only a first build that never got its base resume (say, interrupted for longer
+    // than a pass lasts) may still finish. It writes entries with no lines yet, nothing else.
+    const { data: base, error } = await supabase.from("resumes").select("id").eq("kind", "base").maybeSingle()
+    if (error) throw new Error(error.message)
+    if (base) throw new Error("Sync your sources to write new lines. To rewrite an entry, use Rewrite on it.")
+    return { ok: true, data: await writeBase(supabase, userId, role) }
   } catch (err) {
     return fail(err)
   }
@@ -185,7 +195,11 @@ export async function stageWrite(targetRole?: string, answeredItemIds: string[] 
 export async function stageInterview(): Promise<ActionResult<InterviewCard[]>> {
   try {
     const { userId, supabase } = await session()
-    return { ok: true, data: await queueInterview(supabase, userId) }
+    // Without a pass (it was used, or a build is picked up later) the open questions are shown
+    // again, but no new ones are written.
+    const claimed = await claimStep(userId, "interview")
+    if (!claimed) return { ok: true, data: await queueInterview(supabase, userId, { generate: false }) }
+    return { ok: true, data: await withStep(claimed, () => queueInterview(supabase, userId)) }
   } catch (err) {
     if (err instanceof RateLimitedError || err instanceof BudgetError) return fail(err)
     console.error(err)
@@ -215,7 +229,8 @@ export async function submitInterview(answers: { id: string; answer: string | nu
 export async function stageQuestions(): Promise<ActionResult<{ open: number }>> {
   try {
     const { userId, supabase } = await session()
-    await refreshQuestions(supabase, userId).catch((err) => console.error(err))
+    const claimed = await claimStep(userId, "questions").catch((err) => (console.error(err), null))
+    if (claimed) await withStep(claimed, () => refreshQuestions(supabase, userId)).catch((err) => console.error(err))
     const { count } = await supabase.from("questions").select("id", { count: "exact", head: true }).eq("status", "open")
     return { ok: true, data: { open: count ?? 0 } }
   } catch (err) {

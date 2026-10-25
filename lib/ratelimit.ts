@@ -1,7 +1,7 @@
 import "server-only"
 import { Ratelimit } from "@upstash/ratelimit"
-import { Redis } from "@upstash/redis"
 import type { AiStep } from "@/lib/ai/model"
+import { redis } from "@/lib/redis"
 
 // Daily caps per user during beta. Editing, checks and downloads are never limited.
 const DAILY_LIMITS: Record<AiStep, number> = {
@@ -13,9 +13,6 @@ const DAILY_LIMITS: Record<AiStep, number> = {
   win: 30,
   chat: 80,
 }
-
-const redis =
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN ? Redis.fromEnv() : null
 
 // Pro gets three times the daily calls per step; the spend budget still applies.
 const PRO_FACTOR = 3

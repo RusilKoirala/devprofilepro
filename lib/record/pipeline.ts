@@ -205,13 +205,14 @@ export interface InterviewCard {
 // ④ Interview (before writing): a few tappable questions about what the person built and what
 // changed, on their strongest entries. Bare ownership questions from the import are upgraded in
 // place (with options) rather than asked twice. Returns every open question on those entries.
-export async function queueInterview(supabase: SupabaseClient, userId: string): Promise<InterviewCard[]> {
+// `generate: false` skips the AI and returns the questions already open.
+export async function queueInterview(supabase: SupabaseClient, userId: string, { generate = true } = {}): Promise<InterviewCard[]> {
   const record = await loadRecord(supabase)
   const picked = interviewItems(record.items)
   const pickedIds = new Set(picked.map((i) => i.id))
   const openOwnership = new Map(record.questions.filter((q) => q.status === "open" && q.kind === "ownership").map((q) => [q.item_id, q]))
   const asked = record.questions.filter((q) => !(q.status === "open" && q.kind === "ownership"))
-  const fresh = await generateInterview(userId, record.items, record.facts, asked)
+  const fresh = generate ? await generateInterview(userId, record.items, record.facts, asked) : []
 
   const known = new Set(record.questions.map((q) => q.prompt.toLowerCase()))
   const inserts: { item_id: string; prompt: string; kind: string; options: string[] }[] = []
