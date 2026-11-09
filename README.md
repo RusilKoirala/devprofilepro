@@ -1,53 +1,30 @@
-# DevProfile Pro
+# DevProfilePro
 
-Turn your GitHub, an old resume, or a few notes into a clean, one-page developer resume, then tailor it to a specific job.
+So we all get that problem when we have worked alot and the resume isn't updated. What if resume auto updates with your projects and work USING AI. yess that what devprofilepro is
 
-**Live demo: [devprofilepro.vercel.app](https://devprofilepro.vercel.app)** (sign in to try the full app)
+![project](./screenshots/1.png)
 
 ## What it does
 
-- **Imports your work** from public GitHub repos and merged pull requests, an uploaded PDF resume, pasted text, or manual entries.
-- **Builds a Career Record**: one place for every project, job and skill, with a note on where each fact came from.
-- **Writes the resume** with AI (Claude or OpenAI), asks follow-up questions when something is vague, and never invents numbers it can't back up.
-- **Tailors to a job**: paste a job description to get a version focused on it, plus a match report that shows which requirements your evidence actually covers.
-- **Exports** a one-page PDF that fits automatically, or LaTeX source.
-- **Free ATS checker** at [/ats-checker](https://devprofilepro.vercel.app/ats-checker): upload any resume PDF to see what an applicant tracking system can read. No account needed.
+It brings data from public GitHub repos and merged pull requests or your old resume and builds a BIGG career record 
 
-## Tech stack
+THEN comes AI it writes your resume according to your prompt for a job or just general
 
-Next.js 16 (App Router), React 19, Tailwind CSS 4 and shadcn/ui · Clerk for auth · Supabase Postgres with row-level security · Anthropic/OpenAI SDKs · `@react-pdf/renderer` for PDFs · Upstash for rate limits.
+a one-page PDF is made which u can download as pdf or LaTeX source.
 
-## Run it locally
+![wow](./screenshots/2.png)
 
-1. Install Node.js 20.9 or newer, then run `npm ci`.
-2. Copy `.env.example` to `.env.local` and fill it in. You need, at minimum:
-   - `APP_ENABLED=true` (without it, only the landing page is served)
-   - Clerk keys (or leave them empty to use Clerk's keyless dev mode)
-   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`
-   - `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
-3. In Clerk, enable the Supabase integration; in Supabase, add Clerk as a third-party auth provider.
-4. Apply every file in `supabase/migrations/` in filename order.
-5. Run `npm run dev` and open [localhost:3000](http://localhost:3000).
+# What I learned
 
-Payments (Dodo), the waitlist (Loops) and rate limits (Upstash) are optional.
+This should be at a blog but sorry I really wanted to share my learning through readme :) . I will tell everyone to make this backend ones. I really understood alot of things in backend through this project. I understood alot about making schema's and producing relation between them, the way controllers and utils can be used together. 
 
-## Checks
+![again](./screenshots/3.png)
 
-- `npm test`: offline tests, including real PDF rendering and pagination
-- `npm run lint` and `npx tsc --noEmit`
-- `npm run eval -- --dry-run`: inspect the AI fixtures without paid calls (`npm run eval` makes real, billed calls)
-- `supabase/tests/record_integrity.sql`: RLS and data-integrity tests; run it against a disposable database with `psql -v ON_ERROR_STOP=1 -f ...`
+# AI USAGE NOTE
 
-## Code map
+I used Ai help for some parts of the project like improving code structure, debugging complex issues (THOSE TYPO ERROR I CANT FIND WITH MY STUPID EYES ;-; ) and generating some frontend ui code (cuz i suck in ui part).
 
-- `app/(app)`: onboarding, home, Career Record and the resume editor
-- `app/api`: PDF previews, exports, LaTeX downloads, webhooks
-- `lib/ingest`: GitHub, merged PRs, PDF and paste import
-- `lib/ai`: extraction, follow-up questions, writing and spend limits
-- `lib/record`: storage, source tracking and server actions
-- `lib/resume`: document building, PDF fitting, checks and LaTeX
-- `supabase/migrations`: schema, ownership rules and storage policies
+I will say most part of main idea, app flow and overall project structure were build by me. The core backend logic(although i got into some bugs :D).
 
-## License
 
-[MIT](LICENSE)
+# Thank you so much for reading this readme, I really appreciate it :D
