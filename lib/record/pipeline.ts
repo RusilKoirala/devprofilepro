@@ -1,23 +1,24 @@
 import "server-only"
-import type { SupabaseClient } from "@supabase/supabase-js"
-import type { ChatJob } from "@/lib/ai/chat"
-import { extractRecord } from "@/lib/ai/extract"
-import { generateInterview, interviewItems } from "@/lib/ai/interview"
+import type { SupabaseClient } from "@supabase/supabase-js"  
+ import type { ChatJob } from "@/lib/ai/chat"
+import { extractRecord } from "@/lib/ai/extract"    
+import { generateInterview,  interviewItems } from "@/lib/ai/interview"
 import { generateQuestions, MAX_QUESTIONS } from "@/lib/ai/questions"
 import { writeBullets } from "@/lib/ai/write"
-import { loadRecord, loadResume, type CareerRecord } from "@/lib/record/db"
+  import {loadRecord, loadResume, type CareerRecord} from "@/lib/record/db"  
 import { dedupeKey, itemTitle, type CutEntry, type Item, type ItemType, type ResumeLayout, type ResumeRow } from "@/lib/record/types"
 import { sameFact } from "@/lib/record/dedupe"
 import { groundItemData, looksImportant, verifyFacts } from "@/lib/record/verify"
 import type { RepoMeta } from "@/lib/ingest/types"
-import { byRecency } from "@/lib/resume/dates"
+  import {byRecency} from "@/lib/resume/dates"
 import { applyItemOrder, resumeBullets, sharedBullets } from "@/lib/resume/order"
-import { fitToOnePage } from "@/lib/resume/fit"
+import {fitToOnePage} from "@/lib/resume/fit"
 import { dropMessage, skillFocus, tidyTailored } from "@/lib/resume/tidy"
 import { focusedSkills } from "@/lib/resume/build"
 import { unsupportedTerms } from "@/lib/record/evidence"
-import { assessRequirements, checkedSummary, MATCH_REPORT_VERSION } from "@/lib/ai/tailor-check"
-import type { TailorPlan } from "@/lib/ai/tailor"
+
+   import { assessRequirements,  checkedSummary, MATCH_REPORT_VERSION } from "@/lib/ai/tailor-check"
+   import type { TailorPlan } from "@/lib/ai/tailor"
 
 export interface BuildReport {
   items: number
@@ -27,413 +28,464 @@ export interface BuildReport {
   counts: Partial<Record<ItemType, number>>
   added: string[]
   updated: string[]
-  updatedIds: string[]
+  updatedIds: string[]    
   changes: DetailChange[]
 }
 
 export interface DetailChange {
   item_id: string
-  title: string
+  title: string    
   field: string
-  current: string
+  current: string    
   found: string
+
+
   source: string
 }
 
-const REVIEWABLE = ["role", "company", "name", "url", "school", "degree", "details", "location", "start", "end"] as const
+  const REVIEWABLE=["role", "company", "name", "url", "school", "degree", "details", "location", "start", "end"] as const
 const FRESH_MS = 30 * 60 * 1000
 
-function countItems(items: Pick<Item, "type" | "status">[]): BuildReport["counts"] {
+ function countItems( items: Pick<Item, "type" | "status">[]): BuildReport["counts"] {
   const counts: BuildReport["counts"] = {}
   for (const i of items) if (i.status !== "hidden") counts[i.type] = (counts[i.type] ?? 0) + 1
   return counts
-}
+   }
 
-export async function buildRecord(supabase: SupabaseClient, userId: string): Promise<BuildReport> {
-  const record = await loadRecord(supabase)
-  const sources = record.sources.filter((s) => s.kind !== "win" && s.status !== "failed" && s.raw_text)
-  if (!sources.length) {
+  export async function buildRecord(supabase: SupabaseClient,  userId: string): Promise<BuildReport> {
+  const record =await loadRecord(supabase)
+  const sources = record.sources.filter( (s) => s.kind !== "win" && s.status !== "failed" && s.raw_text)
+  if (!sources.length) { 
     if (record.items.length) return { items: record.items.length, factsKept: 0, factsDropped: 0, skippedReadmes: [], counts: countItems(record.items), added: [], updated: [], updatedIds: [], changes: [] }
-    throw new Error("Add at least one source first.")
+       throw new Error("Add at least one source first.")  
   }
 
   const { output, skipped } = await extractRecord(userId, sources)
-  const rawById = new Map(sources.map((s) => [s.id, s.raw_text]))
+  const rawById = new Map(sources.map((s) =>[s.id, s.raw_text]))
   const kindById = new Map(sources.map((s) => [s.id, s.kind]))
 
-  const byKey = new Map(record.items.map((i) => [dedupeKey(i), i.id]))
-  const factsByItem = new Map<string, string[]>()
-  for (const f of record.facts) factsByItem.set(f.item_id, [...(factsByItem.get(f.item_id) ?? []), f.text])
+  const byKey =  new Map(record.items.map((i) => [dedupeKey(i),  i.id]))
+  const factsByItem = new Map<string, string[]>()    
+	  for ( const f of record.facts) factsByItem.set(f.item_id, [...(factsByItem.get(f.item_id) ?? []), f.text]) 
   let factsKept = 0
   let factsDropped = 0
   const added = new Set<string>()
   const updated = new Set<string>()
-  const updatedIds = new Set<string>()
-  const changes: DetailChange[] = []
-  const labelById = new Map(sources.map((s) => [s.id, s.label]))
-  const freshIds = new Set(sources.filter((s) => Date.now() - new Date(s.fetched_at).getTime() < FRESH_MS).map((s) => s.id))
+  const updatedIds  = new Set<string>()
+  const changes: DetailChange[] =  []
+
+
+ const labelById =new Map(sources.map((s) => [s.id,  s.label]))
+  const freshIds = new Set( sources.filter((s) => Date.now() - new Date(s.fetched_at).getTime() < FRESH_MS).map((s) => s.id))
   const squash = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")
-  const questionRows: { item_id: string; prompt: string; kind: string; options: string[] }[] = []
+ const questionRows: { item_id: string; prompt: string; kind: string; options: string[] }[] = []  
 
   for (const extracted of output.items) {
-    const { kept, dropped } = verifyFacts(extracted.facts, rawById)
+  const { kept, dropped } = verifyFacts(extracted.facts, rawById)
 
-    const repoSources = new Set(kept.map((f) => f.source_id).filter((id) => sources.find((s) => s.id === id)?.meta?.repo_id))
+       const repoSources = new Set(kept.map((f) => f.source_id).filter((id)=>sources.find((s) => s.id === id)?.meta?.repo_id))
     const signals = [...repoSources].flatMap((sid) =>
-      ((sources.find((s) => s.id === sid)?.meta as unknown as RepoMeta).signals ?? []).map((sig) => ({ text: sig.text, quote: sig.quote, source_id: sid }))
-    )
-    const allFacts = [...kept, ...verifyFacts(signals, rawById).kept]
-    const teamProject = extracted.team_project || [...repoSources].some((sid) => Number(sources.find((s) => s.id === sid)?.meta?.contributors ?? 0) > 1)
+      ((sources.find((s) => s.id === sid)?.meta as unknown as RepoMeta).signals ?? []).map((sig) => ({ text: sig.text, quote: sig.quote,source_id: sid }))
+     )
+    const allFacts = [...kept, ...verifyFacts(signals, rawById).kept] 
+    const teamProject = extracted.team_project || [...repoSources].some((sid)=> Number(sources.find((s) => s.id === sid)?.meta?.contributors ?? 0) > 1)
     factsKept += allFacts.length
+
     factsDropped += dropped.length
     if (!allFacts.length) continue
 
-    const sourceTexts = [...new Set(kept.map((f) => f.source_id))].map((id) => rawById.get(id)!)
-    const data = groundItemData(extracted.data, sourceTexts)
-    const candidate = { type: extracted.type, data } as Pick<Item, "type" | "data">
-    let itemId = byKey.get(dedupeKey(candidate))
+	    const sourceTexts= [...new Set(kept.map((f) => f.source_id))].map((id) => rawById.get(id)!)
+     const data = groundItemData(extracted.data, sourceTexts) 
+
+
+      const candidate = { type: extracted.type, data } as Pick<Item, "type" | "data">
+    // already have it? then update not insert
+    let itemId = byKey.get( dedupeKey(candidate))    
     if (!itemId) {
-      const { data: itemRow, error } = await supabase
+      const { data: itemRow, error }=await supabase
         .from("items")
-        .insert({ type: extracted.type, data: { ...data, team_project: teamProject }, rank: Math.max(1, Math.min(100, extracted.rank)), status: extracted.show ? "shown" : "hidden", reason: extracted.reason })
+       .insert({ type: extracted.type, data: { ...data, team_project: teamProject }, rank: Math.max(1, Math.min(100, extracted.rank)), status: extracted.show ? "shown" : "hidden", reason: extracted.reason })
         .select("id")
         .single()
-      if (error) throw new Error(error.message)
-      itemId = itemRow.id as string
-      byKey.set(dedupeKey(candidate), itemId)
+	      if (error) throw new Error(error.message)
+      itemId= itemRow.id as string
+      byKey.set(dedupeKey(candidate),itemId)
       if (extracted.type !== "contact") added.add(itemTitle(candidate))
     } else {
-      const existing = record.items.find((i) => i.id === itemId)
+
+         const existing = record.items.find( (i) => i.id === itemId)
+
+
       if (existing) {
-        const merged = { ...data, ...existing.data }
+       const merged = { ...data, ...existing.data }
         for (const [key, value] of Object.entries(data)) {
           const old = existing.data[key as keyof typeof data]
           if (old == null || old === "" || (Array.isArray(old) && !old.length)) Object.assign(merged, { [key]: value })
         }
-        if (JSON.stringify(merged) !== JSON.stringify(existing.data)) {
-          const { error } = await supabase.from("items").update({ data: merged, updated_at: new Date().toISOString() }).eq("id", itemId)
+        if ( JSON.stringify(merged) !== JSON.stringify(existing.data)){
+          const { error }= await supabase.from("items").update( { data: merged, updated_at: new Date().toISOString() }).eq("id", itemId)
           if (error) throw new Error(error.message)
-        }
+      }
         const freshSources = [...new Set(kept.map((f) => f.source_id).filter((id) => freshIds.has(id)))]
-        if (freshSources.length && existing.type !== "contact") {
+        if ( freshSources.length && existing.type !== "contact") {
           for (const field of REVIEWABLE) {
-            const old = existing.data[field]
-            const found = data[field]
-            if (!old || !found || squash(old) === squash(found)) continue
+            const old = existing.data[field]  
+            const found = data[field] 
+            if ( !old || !found || squash(old) === squash(found)) continue    
             if (changes.some((c) => c.item_id === itemId && c.field === field)) continue
-            changes.push({ item_id: itemId, title: itemTitle(existing), field, current: String(old), found: String(found), source: labelById.get(freshSources[0]) ?? "a source" })
+            changes.push({item_id: itemId,title: itemTitle(existing), field,  current: String(old),found: String(found),source: labelById.get(freshSources[0]) ?? "a source" })
           }
         }
-      }
+     }
+
+
+
     }
 
-    const factRows = allFacts
-      .flatMap((f) => {
-        const known = factsByItem.get(itemId!) ?? []
-        if (known.some((t) => sameFact(t, f.text))) return []
+       const factRows = allFacts
+      .flatMap((f) => {    
+          const known =  factsByItem.get(itemId!) ?? []
+        if (known.some((t) => sameFact(t,  f.text))) return []
         factsByItem.set(itemId!, [...known, f.text])
-        const kind = kindById.get(f.source_id)
-        return [{ item_id: itemId, text: f.text, quote: f.quote, source_id: f.source_id, label: kind === "github" || kind === "pr_link" ? "github" : "document" }]
+        const kind = kindById.get(f.source_id)  
+        return [{ item_id: itemId, text: f.text,  quote: f.quote,source_id: f.source_id,label: kind === "github" || kind === "pr_link" ? "github" : "document" }]
+
+
+
       })
     if (factRows.length) {
-      const { error } = await supabase.from("facts").insert(factRows)
+     const { error } = await supabase.from("facts").insert( factRows)  
       if (error) throw new Error(error.message)
-      const existing = record.items.find((i) => i.id === itemId)
-      if (existing && existing.type !== "contact") {
-        updated.add(itemTitle(existing))
-        updatedIds.add(existing.id)
-      }
+      const existing = record.items.find( (i) => i.id === itemId)
+         if (existing && existing.type !== "contact") {
+	        updated.add(itemTitle(existing))
+        updatedIds.add(existing.id) 
+         }
     }
 
-    if (teamProject && !record.items.find((i) => i.id === itemId)?.data.ownership_confirmed) {
+    if (teamProject && !record.items.find((i) =>i.id === itemId)?.data.ownership_confirmed){
       questionRows.push({ item_id: itemId, prompt: `What did you personally build in ${data.name || "this team project"}?`, kind: "ownership", options: [] })
     }
 
     for (const d of dropped.filter((f) => looksImportant(f.text)).slice(0, 1)) {
       questionRows.push({ item_id: itemId, prompt: `We couldn't find this in your files: "${d.text}". Is it right?`, kind: "conflict", options: ["Yes, that's right", "No"] })
     }
-  }
+   }
 
-  const open = record.questions.filter((q) => q.status === "open")
-  const fresh = questionRows.filter((q) => !record.questions.some((old) => old.item_id === q.item_id && old.prompt === q.prompt))
-  if (fresh.length && open.length < MAX_QUESTIONS) {
-    const { error } = await supabase.from("questions").insert(fresh.slice(0, Math.min(2, MAX_QUESTIONS - open.length)))
-    if (error) throw new Error(error.message)
-  }
+  const open =  record.questions.filter((q) => q.status === "open")  
+ const fresh =questionRows.filter((q) => !record.questions.some((old) => old.item_id === q.item_id && old.prompt === q.prompt))
+	  if (fresh.length && open.length < MAX_QUESTIONS)  {
+    const { error } =await supabase.from("questions").insert(fresh.slice(0, Math.min(2, MAX_QUESTIONS - open.length)))
+   if (error) throw new Error(error.message)
+ }
 
-  const { data: after, error: afterError } = await supabase.from("items").select("type,status")
-  if (afterError) throw new Error(afterError.message)
-  return {
+  const { data: after, error: afterError } = await supabase.from("items").select("type,status")    
+
+  if (afterError) throw new Error(afterError.message) 
+return {
     items: output.items.length, factsKept, factsDropped, skippedReadmes: skipped, counts: countItems(after as Pick<Item, "type" | "status">[]),
     added: [...added], updated: [...updated].filter((t) => !added.has(t)), updatedIds: [...updatedIds], changes,
-  }
+ }
 }
 
-export async function refreshQuestions(supabase: SupabaseClient, userId: string) {
+export async function refreshQuestions(supabase: SupabaseClient, userId: string)  {
   const record = await loadRecord(supabase)
-  const open = record.questions.filter((q) => q.status === "open")
-  const room = MAX_QUESTIONS - open.length
+const open = record.questions.filter( (q) => q.status === "open")
+    const room =MAX_QUESTIONS - open.length
   if (room <= 0) return
   const asked = new Set(record.questions.map((q) => q.prompt.toLowerCase()))
   const fresh = (await generateQuestions(userId, record.items, record.facts)).filter((q) => !asked.has(q.prompt.toLowerCase())).slice(0, room)
-  if (fresh.length) {
-    const { error } = await supabase.from("questions").insert(fresh)
+  if (fresh.length) {    
+   const {error} = await supabase.from("questions").insert(fresh)
     if (error) throw new Error(error.message)
-  }
+	 }    
+
+
+
 }
 
-export interface InterviewCard {
+ export interface InterviewCard {
   id: string
   item_id: string
   item_title: string
   kind: string
   prompt: string
-  options: string[]
-}
+	  options: string[]  
+} 
 
-export async function queueInterview(supabase: SupabaseClient, userId: string, { generate = true } = {}): Promise<InterviewCard[]> {
-  const record = await loadRecord(supabase)
+export async function queueInterview(supabase: SupabaseClient,userId: string,  { generate = true } = {}): Promise<InterviewCard[]> {
+const record =await loadRecord(supabase)
+
+
   const picked = interviewItems(record.items)
-  const pickedIds = new Set(picked.map((i) => i.id))
-  const openOwnership = new Map(record.questions.filter((q) => q.status === "open" && q.kind === "ownership").map((q) => [q.item_id, q]))
-  const asked = record.questions.filter((q) => !(q.status === "open" && q.kind === "ownership"))
-  const fresh = generate ? await generateInterview(userId, record.items, record.facts, asked) : []
+ const pickedIds = new Set(picked.map((i) => i.id))
 
-  const known = new Set(record.questions.map((q) => q.prompt.toLowerCase()))
+  const openOwnership = new Map(record.questions.filter((q) => q.status === "open" && q.kind === "ownership").map( (q) => [q.item_id, q]))
+const asked = record.questions.filter((q) => !(q.status === "open" && q.kind === "ownership"))
+  const fresh= generate ? await generateInterview(userId,record.items, record.facts,asked) : []
+
+  // dont ask the same question twice
+  const known =  new Set(record.questions.map((q) => q.prompt.toLowerCase()))
   const inserts: { item_id: string; prompt: string; kind: string; options: string[] }[] = []
-  for (const q of fresh) {
-    const existing = (q.kind === "ownership" || q.kind === "built") && openOwnership.get(q.item_id)
+  for ( const q of fresh) {
+    const existing= (q.kind === "ownership" || q.kind === "built") && openOwnership.get(q.item_id)
     if (existing) {
-      const { error } = await supabase.from("questions").update({ prompt: q.prompt, options: q.options }).eq("id", existing.id)
-      if (error) throw new Error(error.message)
-      openOwnership.delete(q.item_id)
-    } else if (!known.has(q.prompt.toLowerCase())) {
+     const { error } = await supabase.from("questions").update( {prompt: q.prompt, options: q.options}).eq("id", existing.id)
+    if ( error) throw new Error(error.message)
+      openOwnership.delete(q.item_id)    
+   } else if (!known.has(q.prompt.toLowerCase())) {
       inserts.push(q)
       known.add(q.prompt.toLowerCase())
-    }
+    } 
   }
-  if (inserts.length) {
-    const { error } = await supabase.from("questions").insert(inserts)
+if (inserts.length) {
+    const { error } = await supabase.from("questions").insert( inserts)
     if (error) throw new Error(error.message)
-  }
+}
 
-  const after = await loadRecord(supabase)
-  const titles = new Map(after.items.map((i) => [i.id, itemTitle(i)]))
-  const order = new Map(picked.map((i, n) => [i.id, n]))
+  const after  = await loadRecord(supabase)
+  const titles =new Map(after.items.map((i) => [i.id,  itemTitle(i)]))
+ const order = new Map(picked.map((i,n) => [i.id,  n]))
   return after.questions
-    .filter((q) => q.status === "open" && pickedIds.has(q.item_id))
-    .sort((a, b) => order.get(a.item_id)! - order.get(b.item_id)!)
-    .map((q) => ({ id: q.id, item_id: q.item_id, item_title: titles.get(q.item_id) ?? "", kind: q.kind ?? "", prompt: q.prompt, options: q.options ?? [] }))
+  .filter( (q) => q.status === "open" && pickedIds.has(q.item_id))    
+    .sort((a, b)  =>  order.get(a.item_id)! - order.get(b.item_id)!)
+    .map((q) => ({ id: q.id,item_id: q.item_id,item_title: titles.get(q.item_id) ?? "", kind: q.kind ?? "", prompt: q.prompt, options: q.options ?? [] }))
 }
 
 export async function loadJobPost(supabase: SupabaseClient, jobId: string): Promise<string | undefined> {
   const { data } = await supabase.from("jobs").select("description").eq("id", jobId).maybeSingle()
+
+
   return data?.description?.trim() || undefined
-}
+}    
 
 export async function loadChatJob(supabase: SupabaseClient, jobId: string): Promise<ChatJob | undefined> {
-  const { data } = await supabase.from("jobs").select("description, match_report").eq("id", jobId).maybeSingle()
-  const post = data?.description?.trim()
+  const {data} = await supabase.from("jobs").select("description, match_report").eq("id",  jobId).maybeSingle( )
+   const post= data?.description?.trim()
   if (!data || !post) return undefined
   const requirements = (data.match_report?.requirements ?? []) as { text?: unknown; status?: unknown }[]
-  return { post, requirements: requirements.filter((r) => typeof r.text === "string" && typeof r.status === "string").map((r) => ({ text: r.text as string, status: r.status as string })) }
-}
+  return { post,  requirements: requirements.filter((r) => typeof r.text === "string" && typeof r.status === "string").map((r) => ({ text: r.text as string,status: r.status as string })) }
+}    
 
-export async function writeItems(
+	export async function writeItems(
   supabase: SupabaseClient,
-  userId: string,
+userId: string,
   record: CareerRecord,
-  opts: { itemIds?: string[]; targetRole?: string; releaseEdits?: boolean; instruction?: string; purpose?: "fix"; resume?: ResumeRow | null } = {}
-) {
+  opts: { itemIds?: string[]; targetRole?: string; releaseEdits?: boolean; instruction?: string; purpose?: "fix"; resume?: ResumeRow | null } =  {}
+	)  {
   const { itemIds, targetRole, releaseEdits = false, instruction, purpose } = opts
-  const tailored = opts.resume?.kind === "tailored" && itemIds ? opts.resume : null
-  const shared = sharedBullets(record.bullets)
-  const items = record.items.filter((i) => (tailored || i.status !== "hidden") && (!itemIds || itemIds.includes(i.id)))
-  const keep = shared.filter((b) => b.user_edited)
-  const keepItems = new Set(keep.map((b) => b.item_id))
+	  const tailored = opts.resume?.kind === "tailored" && itemIds ? opts.resume : null
+  const shared =sharedBullets(record.bullets)
+   const items = record.items.filter((i) => (tailored || i.status !== "hidden") && (!itemIds || itemIds.includes(i.id)))
+  const keep = shared.filter((b)=> b.user_edited) 
+const keepItems =  new Set(keep.map((b) => b.item_id))
   const toWrite = items.filter((i) => (releaseEdits || tailored || !keepItems.has(i.id)) && (itemIds || !shared.some((b) => b.item_id === i.id)))
-  const jobPost = tailored?.job_id ? await loadJobPost(supabase, tailored.job_id) : undefined
-  const { headline, bullets } = await writeBullets({ userId, items: toWrite, facts: record.facts, keep: releaseEdits || tailored ? [] : keep, targetRole, jobPost, instruction, purpose })
-  if (tailored) return { headline, written: await saveOwnBullets(supabase, tailored, bullets) }
+    const jobPost = tailored?.job_id ? await loadJobPost( supabase,  tailored.job_id) : undefined
 
-  const writtenIds = [...new Set(bullets.map((b) => b.item_id))]
-  if (writtenIds.length) {
-    const { error } = await supabase.rpc("replace_generated_bullets", { p_item_ids: writtenIds, p_bullets: bullets, p_release_edits: releaseEdits })
+
+  const { headline, bullets } = await writeBullets({ userId, items: toWrite, facts: record.facts,keep: releaseEdits || tailored ? [] : keep, targetRole, jobPost,  instruction,  purpose })
+  if (tailored) return {headline, written: await saveOwnBullets(supabase, tailored, bullets)}
+
+  const writtenIds= [...new Set(bullets.map((b) => b.item_id))] 
+	  if ( writtenIds.length) {
+   const { error } = await supabase.rpc("replace_generated_bullets", {p_item_ids: writtenIds, p_bullets: bullets, p_release_edits: releaseEdits})
     if (error) throw new Error(error.message)
-  }
-  return { headline, written: bullets.length }
+ }
+return { headline, written: bullets.length }
 }
 
 export async function writeTailored(supabase: SupabaseClient, userId: string, resumeId: string, plan: TailorPlan): Promise<{ written: number; dropped: string[]; plan: TailorPlan }> {
-  const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
-  if (!resume || resume.kind !== "tailored") throw new Error("Resume not found")
+const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
+ if ( !resume || resume.kind !== "tailored") throw new Error("Resume not found")
   const types = new Map(record.items.map((i) => [i.id, i.type]))
   const writable = (resume.layout.include ?? []).filter((id) => ["job", "project", "award"].includes(types.get(id) ?? ""))
-  const { written } = writable.length ? await writeItems(supabase, userId, record, { itemIds: writable, targetRole: resume.layout.target_role, resume }) : { written: 0 }
+     const { written } = writable.length ? await writeItems(supabase, userId, record, { itemIds: writable, targetRole: resume.layout.target_role, resume }) : { written: 0 }  
   const dropped = await tidyResume(supabase, resumeId)
-  return { written, dropped, plan: await finishReport(supabase, resumeId, plan) }
+return { written,  dropped,  plan: await finishReport(supabase,  resumeId,plan) }
 }
 
-async function tidyResume(supabase: SupabaseClient, resumeId: string): Promise<string[]> {
-  const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
-  if (!resume) throw new Error("Resume not found")
+async function tidyResume(supabase: SupabaseClient,  resumeId: string): Promise<string[]> {
+const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
+   if (!resume) throw new Error("Resume not found")
   const { hide, remove, drop } = tidyTailored(resume, record.items, record.bullets, record.facts)
   if (remove.length) {
-    const { error } = await supabase.from("bullets").delete().eq("resume_id", resumeId).in("id", remove)
+   const { error } = await supabase.from("bullets").delete().eq("resume_id", resumeId).in("id", remove)
     if (error) throw new Error(error.message)
-  }
-  if (hide.length || drop.length) {
+  } 
+ if (hide.length || drop.length) {    
     const gone = new Set(drop.map((d) => d.id))
-    const layout: ResumeLayout = {
+   const layout: ResumeLayout={
       ...resume.layout,
-      include: (resume.layout.include ?? []).filter((id) => !gone.has(id)),
-      ...(resume.layout.item_order ? { item_order: resume.layout.item_order.filter((id) => !gone.has(id)) } : {}),
+      include: (resume.layout.include ?? []).filter((id)=> !gone.has(id)),
+      ...( resume.layout.item_order ? { item_order: resume.layout.item_order.filter((id) => !gone.has(id)) } : {}),
       hidden_bullets: [...new Set([...(resume.layout.hidden_bullets ?? []), ...hide])],
     }
-    const { error } = await supabase.from("resumes").update({ layout, updated_at: new Date().toISOString() }).eq("id", resumeId)
+   const {error} =  await supabase.from("resumes").update({ layout, updated_at: new Date().toISOString() }).eq("id",resumeId)
     if (error) throw new Error(error.message)
-  }
-  const titles = new Map(record.items.map((i) => [i.id, itemTitle(i)]))
-  return drop.map((d) => dropMessage(titles.get(d.id) ?? "An entry", d.reason))
-}
+} 
+  const titles =new Map(record.items.map((i) => [i.id, itemTitle(i)]))
+  return drop.map((d) =>dropMessage(titles.get(d.id) ?? "An entry", d.reason))
+	}
 
 async function finishReport(supabase: SupabaseClient, resumeId: string, plan: TailorPlan): Promise<TailorPlan> {
-  const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
-  if (!resume) throw new Error("Resume not found")
-  const usable = record.items.filter((i) => i.type !== "contact")
-  const byId = new Map(usable.map((i) => [i.id, i]))
+  const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)]) 
+
+
+  if ( !resume) throw new Error("Resume not found")
+const usable = record.items.filter((i) => i.type !== "contact")
+  const byId= new Map(usable.map((i) =>[i.id, i]))
   const include = (resume.layout.include ?? []).filter((id) => byId.has(id))
   const chosen = new Set(include)
-  const requirements = assessRequirements(plan.requirements, chosen, usable, record.facts)
-  const skill_focus = skillFocus(requirements, record.facts, usable, include.map((id) => byId.get(id)!).filter((i) => i.type === "skills"))
-  const printed = (item: Item) => [item.data.category, ...focusedSkills(item.data.skills ?? [], skill_focus[item.id])].filter(Boolean).join(", ")
-  const items = [...plan.items, ...plan.backup]
+  const requirements =  assessRequirements( plan.requirements,  chosen,  usable, record.facts)
+  const skill_focus =  skillFocus(requirements, record.facts, usable, include.map((id) => byId.get(id)!).filter((i) => i.type === "skills"))
+  const printed = (item: Item) => [item.data.category,  ...focusedSkills(item.data.skills ?? [],  skill_focus[item.id])].filter(Boolean).join(", ")
+  const items = [...plan.items, ...plan.backup]  
     .filter((i) => chosen.has(i.item_id))
-    .map((i) => {
-      const item = byId.get(i.item_id)!
+  .map((i) => {
+        const item = byId.get(i.item_id)!
       return item.type === "skills" && unsupportedTerms(i.reason, [printed(item)]).length ? { ...i, reason: "" } : i
-    })
-  const final: TailorPlan = { ...plan, items, backup: [], requirements, summary: checkedSummary(plan.summary, include.map((item_id) => ({ item_id })), usable) }
+     })
+
+
+  const final: TailorPlan = { ...plan, items, backup: [], requirements, summary: checkedSummary(plan.summary, include.map((item_id)=>({ item_id })), usable) }  
   if (Object.keys(skill_focus).length) {
-    const { error } = await supabase.from("resumes").update({ layout: { ...resume.layout, skill_focus }, updated_at: new Date().toISOString() }).eq("id", resumeId)
+    const { error } = await supabase.from("resumes").update({ layout: { ...resume.layout,  skill_focus }, updated_at: new Date().toISOString() }).eq("id", resumeId)
     if (error) throw new Error(error.message)
-  }
-  if (resume.job_id) {
-    const { error } = await supabase.from("jobs").update({ match_report: { version: MATCH_REPORT_VERSION, requirements: final.requirements, summary: final.summary, reasons: final.items } }).eq("id", resume.job_id)
+}
+     if (resume.job_id) {
+    const {error} = await supabase.from("jobs").update({ match_report: { version: MATCH_REPORT_VERSION, requirements: final.requirements, summary: final.summary, reasons: final.items } }).eq("id", resume.job_id)
     if (error) throw new Error(error.message)
   }
   return final
 }
 
-async function saveOwnBullets(supabase: SupabaseClient, resume: ResumeRow, bullets: { item_id: string; text: string; fact_ids: string[] }[]) {
+async function saveOwnBullets(supabase: SupabaseClient,resume: ResumeRow, bullets: {item_id: string; text: string; fact_ids: string[]}[]) {
   const itemIds = [...new Set(bullets.map((b) => b.item_id))]
+
+
   if (!itemIds.length) return 0
   const start = Date.now()
-  const { data: fresh, error: insertError } = await supabase
-    .from("bullets")
-    .insert(bullets.map((b, n) => ({ item_id: b.item_id, text: b.text, fact_ids: b.fact_ids, resume_id: resume.id, user_edited: false, created_at: new Date(start + n).toISOString() })))
+     const { data: fresh, error: insertError }=await supabase
+      .from("bullets")
+    .insert(bullets.map((b, n) => ({ item_id: b.item_id,  text: b.text, fact_ids: b.fact_ids,resume_id: resume.id,user_edited: false, created_at: new Date(start + n).toISOString() })))
     .select("id")
   if (insertError) throw new Error(insertError.message)
-  const keepIds = (fresh ?? []).map((b) => b.id as string)
+  const keepIds  = (fresh ?? []).map((b) => b.id as string)
   const { error: deleteError } = await supabase.from("bullets").delete().eq("resume_id", resume.id).in("item_id", itemIds).not("id", "in", `(${keepIds.join(",")})`)
   if (deleteError) throw new Error(deleteError.message)
-  const own_items = [...new Set([...(resume.layout.own_items ?? []), ...itemIds])]
-  const { error } = await supabase.from("resumes").update({ layout: { ...resume.layout, own_items }, updated_at: new Date().toISOString() }).eq("id", resume.id)
+
+  const own_items = [...new Set( [...(resume.layout.own_items ?? []), ...itemIds])]
+  const { error } = await supabase.from("resumes").update({ layout: { ...resume.layout,own_items }, updated_at: new Date().toISOString() }).eq("id", resume.id)
   if (error) throw new Error(error.message)
   return bullets.length
-}
+ }
 
 export function sectionOrder(): ItemType[] {
   return ["skills", "job", "education", "project", "award"]
 }
 
+
+
+
 export function orderItems<T extends Pick<Item, "type" | "rank" | "data">>(items: T[]): T[] {
   return [...items].sort((a, b) => {
     const dated = (t: string) => t === "job" || t === "education"
-    if (a.type === b.type && dated(a.type)) return byRecency(a.data, b.data) || b.rank - a.rank
+      if (a.type === b.type && dated(a.type)) return byRecency(a.data, b.data) || b.rank - a.rank 
     return b.rank - a.rank
-  })
+ })
 }
 
 export function defaultLayout(record: Pick<CareerRecord, "items" | "bullets">, headline: string, include?: string[], resume?: { id: string; hidden_bullets?: string[]; own_items?: string[] }): ResumeLayout {
-  const picked = include ? new Set(include) : null
-  const shown = record.items.filter((i) => i.type !== "contact" && (picked ? picked.has(i.id) : i.status !== "hidden"))
+  const picked =  include ? new Set(include) : null
+  const shown = record.items.filter( (i) => i.type !== "contact" && ( picked ? picked.has(i.id) : i.status !== "hidden"))
   return {
     headline,
     section_order: sectionOrder(),
-    items: orderItems(shown).map((i) => ({ item_id: i.id, bullet_ids: resumeBullets(record.bullets, i.id, resume).map((b) => b.id) })),
+    items: orderItems(shown).map((i) => ({ item_id: i.id,  bullet_ids: resumeBullets(record.bullets, i.id, resume).map((b) => b.id) })),
   }
 }
 
 export async function fitAndSave(supabase: SupabaseClient, resumeId: string, layout: ResumeLayout, record: Pick<CareerRecord, "items" | "bullets">) {
-  const fit = await fitToOnePage(layout, record, layout.include)
-  const { error } = await supabase
+  const fit = await fitToOnePage(layout,record,  layout.include)  
+  const { error }= await supabase
+
+
     .from("resumes")
-    .update({ layout: fit.layout, cut_log: fit.cuts satisfies CutEntry[], updated_at: new Date().toISOString() })
+    .update({layout: fit.layout, cut_log: fit.cuts satisfies CutEntry[], updated_at: new Date().toISOString()})
     .eq("id", resumeId)
   if (error) throw new Error(error.message)
   return fit
 }
 
-export async function writeBase(supabase: SupabaseClient, userId: string, targetRole?: string, answeredItemIds: string[] = []): Promise<{ resumeId: string; written: number }> {
+export async function writeBase(supabase: SupabaseClient,  userId: string, targetRole?: string,answeredItemIds: string[]  = []): Promise<{ resumeId: string; written: number }> {
   const record = await loadRecord(supabase)
   if (!record.items.length) throw new Error("We couldn't verify any facts. Add clearer notes or another source and try again.")
-  const { data: existing, error: existingError } = await supabase.from("resumes").select("id,layout").eq("kind", "base").maybeSingle()
-  if (existingError) throw new Error(existingError.message)
-  const role = targetRole?.trim() || existing?.layout?.target_role || undefined
-  const { headline, written: writtenNew } = await writeItems(supabase, userId, record, { targetRole: role })
+
+
+  const {data: existing, error: existingError} = await supabase.from("resumes").select("id,layout").eq("kind", "base").maybeSingle()
+
+
+
+  if ( existingError) throw new Error(existingError.message)
+const role =targetRole?.trim() || existing?.layout?.target_role || undefined
+  const { headline, written: writtenNew }= await writeItems( supabase, userId, record, { targetRole: role })
   let written = writtenNew
-  const answered = answeredItemIds.filter((id) => sharedBullets(record.bullets).some((b) => b.item_id === id))
-  if (answered.length) written += (await writeItems(supabase, userId, await loadRecord(supabase), { itemIds: answered, targetRole: role })).written
-  const fresh = await loadRecord(supabase)
+  const answered = answeredItemIds.filter((id)=>sharedBullets(record.bullets).some((b) => b.item_id === id))
+  if (answered.length) written += (await writeItems(supabase, userId,  await loadRecord(supabase),  { itemIds: answered,  targetRole: role })).written
+  const fresh =  await loadRecord(supabase)
   const base = defaultLayout(fresh, existing?.layout?.headline || headline)
   const itemOrder = existing?.layout?.item_order as string[] | undefined
   const layout: ResumeLayout = {
-    ...base,
-    items: applyItemOrder(base.items, itemOrder),
-    ...(role ? { target_role: role } : {}),
-    ...(existing?.layout?.template ? { template: existing.layout.template } : {}),
+       ...base,
+	    items: applyItemOrder(base.items,  itemOrder),
+    ...(role ? { target_role: role } : {}), 
+    ...( existing?.layout?.template ? { template: existing.layout.template } : {}),
     ...(itemOrder ? { item_order: itemOrder } : {}),
   }
   if (existing) {
-    const kept = (existing.layout?.section_order ?? []) as ItemType[]
+    const kept  = (existing.layout?.section_order ?? []) as ItemType[]    
     if (kept.length) layout.section_order = [...kept, ...layout.section_order.filter((t) => !kept.includes(t))]
-    const { error } = await supabase.from("resumes").update({ layout, updated_at: new Date().toISOString() }).eq("id", existing.id)
+    const { error } = await supabase.from("resumes").update({ layout,updated_at: new Date().toISOString() }).eq("id", existing.id) 
     if (error) throw new Error(error.message)
-    return { resumeId: existing.id as string, written }
-  }
-  const { data, error } = await supabase.from("resumes").insert({ kind: "base", title: "Base resume", layout }).select("id").single()
+  return { resumeId: existing.id as string, written }
+
+ }
+	  const { data, error } = await supabase.from("resumes").insert({ kind: "base",  title: "Base resume", layout}).select("id").single( )
   if (error) throw new Error(error.message)
   return { resumeId: data.id as string, written }
 }
 
 export async function relayoutResume(supabase: SupabaseClient, resumeId: string) {
-  const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
+
+const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
   if (!resume) throw new Error("Resume not found")
   const tailored = resume.kind === "tailored"
   const include = tailored ? resume.layout.include : undefined
-  const own = tailored ? { hidden_bullets: resume.layout.hidden_bullets, own_items: resume.layout.own_items } : {}
-  const base = defaultLayout(record, resume.layout.headline, include, tailored ? { id: resume.id, ...own } : undefined)
+const own =tailored ? { hidden_bullets: resume.layout.hidden_bullets, own_items: resume.layout.own_items } : {}
+  const base = defaultLayout(record,  resume.layout.headline, include,tailored ? { id: resume.id,  ...own } : undefined)
   const kept = resume.layout.section_order ?? []
-  const layout: ResumeLayout = {
-    ...base,
-    ...(resume.layout.target_role ? { target_role: resume.layout.target_role } : {}),
+ const layout: ResumeLayout =  {
+    ...base,    
+    ...( resume.layout.target_role ? { target_role: resume.layout.target_role } : {}),
     ...(resume.layout.template ? { template: resume.layout.template } : {}),
-    ...(resume.layout.item_order ? { item_order: resume.layout.item_order } : {}),
+    ...(resume.layout.item_order ? {item_order: resume.layout.item_order} : {}),
     ...(include ? { include } : {}),
     ...(own.hidden_bullets?.length ? { hidden_bullets: own.hidden_bullets } : {}),
     ...(own.own_items?.length ? { own_items: own.own_items } : {}),
-    ...(tailored && resume.layout.skill_focus ? { skill_focus: resume.layout.skill_focus } : {}),
+  ...( tailored && resume.layout.skill_focus ? { skill_focus: resume.layout.skill_focus } : {}),
     items: applyItemOrder(base.items, resume.layout.item_order),
     section_order: kept.length ? [...kept, ...base.section_order.filter((t) => !kept.includes(t))] : base.section_order,
-  }
-  return fitAndSave(supabase, resumeId, layout, record)
+ }
+  return fitAndSave(supabase,resumeId,layout,  record)
 }
 
-export async function buildBaseResume(supabase: SupabaseClient, userId: string, targetRole?: string): Promise<{ resumeId: string; report: BuildReport }> {
-  const report = await buildRecord(supabase, userId)
-  const { resumeId } = await writeBase(supabase, userId, targetRole)
-  await refreshQuestions(supabase, userId).catch(() => {})
+export async function buildBaseResume(supabase: SupabaseClient, userId: string, targetRole?: string): Promise<{ resumeId: string; report: BuildReport }> {    
+  const report = await buildRecord( supabase, userId)
+  const { resumeId } =  await writeBase(supabase, userId,  targetRole)
+  await refreshQuestions(supabase, userId).catch(()  =>  {})
   await relayoutResume(supabase, resumeId)
-  return { resumeId, report }
+
+
+
+  return { resumeId,report }  
 }

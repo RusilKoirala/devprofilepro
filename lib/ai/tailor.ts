@@ -1,44 +1,51 @@
 import "server-only"
 import { z } from "zod"
-import { generate, UNTRUSTED_NOTE } from "@/lib/ai/client"
+import {generate,  UNTRUSTED_NOTE} from "@/lib/ai/client"
+
+
+
 import { recordForPrompt } from "@/lib/ai/record-prompt"
-import type { Bullet, Fact, Item } from "@/lib/record/types"
+  import type {Bullet, Fact, Item} from "@/lib/record/types"
 import { checkTailorPlan, repairTailorPlan } from "@/lib/ai/tailor-check"
 
 const SECTION_TYPES = ["job", "project", "education", "skills", "award"] as const
 
-const RequirementStatus = z.enum(["covered", "unclear", "elsewhere", "not_found"])
+const RequirementStatus = z.enum(["covered", "unclear", "elsewhere", "not_found"])    
 
-export const ModelSchema = z.object({
-  title: z.string().describe("Short name for this resume, e.g. 'Stripe — Backend Intern' or 'Frontend roles'"),
-  company: z.string().nullable().describe("Company named in the request, if any"),
-  role: z.string().nullable().describe("Role the resume is aimed at, if any"),
+export const ModelSchema = z.object({ 
+  title: z.string( ).describe("Short name for this resume, e.g. 'Stripe — Backend Intern' or 'Frontend roles'"),
+    company: z.string().nullable().describe("Company named in the request, if any"),
+role: z.string().nullable().describe("Role the resume is aimed at, if any"), 
   items: z
-    .array(z.object({ item_id: z.string(), reason: z.string().describe("Why it's relevant, in a few words, using only this item's facts"), fact_ids: z.array(z.string()).describe("Ids of this item's own facts that show it") }))
+    .array(z.object({ item_id: z.string(), reason: z.string().describe("Why it's relevant, in a few words, using only this item's facts"), fact_ids: z.array(z.string()).describe("Ids of this item's own facts that show it") }))  
     .describe("Items to include, most relevant first"),
   backup_items: z
+
     .array(z.object({ item_id: z.string(), reason: z.string(), fact_ids: z.array(z.string()) }))
     .describe("Up to 2 more items that also fit the request, next most relevant, not already in items. Added at the end if the page has room. Empty if none."),
   section_order: z.array(z.enum(SECTION_TYPES)),
-  requirements: z
-    .array(z.object({ text: z.string().describe("The requirement as the post states it, nothing about whether the record shows it"), status: RequirementStatus, fact_ids: z.array(z.string()).describe("Facts that show it, from anywhere in the record; empty for not_found") }))
-    .describe("Key requirements (max 10). Empty if the request names none."),
-  summary: z.string().describe("One or two plain sentences to the user on what you chose and why. Name only items you included."),
-})
-export type ModelPlan = z.infer<typeof ModelSchema>
 
-export const TailorSchema = z.object({
+  requirements: z    
+       .array(z.object({ text: z.string().describe("The requirement as the post states it, nothing about whether the record shows it"), status: RequirementStatus, fact_ids: z.array( z.string()).describe("Facts that show it, from anywhere in the record; empty for not_found") })) 
+    .describe("Key requirements (max 10). Empty if the request names none."),
+  summary: z.string( ).describe("One or two plain sentences to the user on what you chose and why. Name only items you included."),
+})
+   export type ModelPlan=z.infer<typeof ModelSchema>
+
+export const TailorSchema= z.object({
   title: z.string(),
   company: z.string().nullable(),
   role: z.string().nullable(),
-  items: z.array(z.object({ item_id: z.string(), reason: z.string(), fact_ids: z.array(z.string()).default([]) })),
-  backup: z.array(z.object({ item_id: z.string(), reason: z.string(), fact_ids: z.array(z.string()).default([]) })).default([]),
+  items: z.array(z.object({ item_id: z.string(), reason: z.string(), fact_ids: z.array(z.string()).default([]) })),  
+
+
+backup: z.array(z.object({ item_id: z.string(),  reason: z.string(),  fact_ids: z.array(z.string()).default([]) })).default([]),
   section_order: z.array(z.enum(SECTION_TYPES)),
   requirements: z.array(z.object({ text: z.string(), status: RequirementStatus, item_ids: z.array(z.string()), fact_ids: z.array(z.string()).default([]) })),
-  summary: z.string(),
+   summary: z.string(),
 })
 export type RequirementStatus = z.infer<typeof RequirementStatus>
-export type TailorPlan = z.infer<typeof TailorSchema>
+export type TailorPlan  = z.infer<typeof TailorSchema>
 
 const SYSTEM = `You help a developer make a version of their resume for a specific request: a pasted job post, a kind of role, or an emphasis they want. You only choose and order items from their Career Record; you never write new claims.
 
@@ -61,17 +68,17 @@ Rules:
 - Reasons describe what the item shows, never its status (don't say "hidden").
 - title: short, e.g. "Stripe — Backend Intern" for a job post, or "Frontend roles" for a direction.`
 
-export async function planTailoredResume(userId: string, brief: string, items: Item[], facts: Fact[], bullets: Bullet[]): Promise<TailorPlan> {
-  const usable = items.filter((i) => i.type !== "contact")
-  return repairTailorPlan(await draftTailorPlan(userId, brief, usable, facts, bullets), usable, facts)
-}
+   export async function planTailoredResume(userId: string, brief: string, items: Item[], facts: Fact[], bullets: Bullet[]): Promise<TailorPlan> {
+  const usable = items.filter((i)=> i.type !== "contact")
+  return repairTailorPlan(await draftTailorPlan(userId,  brief, usable,facts,  bullets),  usable,facts)
+}    
 
 export async function draftTailorPlan(userId: string, brief: string, usable: Item[], facts: Fact[], bullets: Bullet[]): Promise<ModelPlan> {
-  return generate({
+return generate( {
     step: "tailor",
     userId,
     schema: ModelSchema,
-    effort: "high",
+    effort: "high",    
     maxTokens: 16000,
     system: SYSTEM,
     content: [
@@ -80,5 +87,5 @@ export async function draftTailorPlan(userId: string, brief: string, usable: Ite
     ],
     check: (out) => checkTailorPlan(out, usable, facts),
     acceptOnLastAttempt: true,
-  })
-}
+  }) 
+   }

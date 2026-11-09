@@ -1,6 +1,6 @@
 export function normalizeForMatch(text: string): string {
   return text
-    .normalize("NFKC")
+   .normalize("NFKC")
     .replace(/[‘’‚‛′`]/g, "'")
     .replace(/[“”„‟″]/g, '"')
     .replace(/[‐-―−]/g, "-")

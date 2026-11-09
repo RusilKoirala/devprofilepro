@@ -1,24 +1,24 @@
-import "server-only"
+   import "server-only"
 import { z } from "zod"
-import { generate, UNTRUSTED_NOTE } from "@/lib/ai/client"
+import { generate, UNTRUSTED_NOTE } from "@/lib/ai/client"  
 import { recordForPrompt } from "@/lib/ai/record-prompt"
-import type { Fact, Item, Question } from "@/lib/record/types"
+import type { Fact, Item,  Question } from "@/lib/record/types"
 
-export const MAX_INTERVIEW_ITEMS = 4
+	export const MAX_INTERVIEW_ITEMS = 4
 export const MAX_INTERVIEW_QUESTIONS = 8
 
-export const MULTI_KINDS = new Set(["built", "ownership"])
+export const MULTI_KINDS =new Set(["built", "ownership"])
 
-export const InterviewSchema = z.object({
-  questions: z.array(
+export const InterviewSchema = z.object({ 
+   questions: z.array(
     z.object({
       item_id: z.string().describe("Exactly the id attribute of an <item>"),
       kind: z.enum(["built", "ownership", "users", "outcome", "challenge", "team"]),
-      prompt: z.string().describe("One short question, under 12 words, naming the project or job"),
+       prompt: z.string().describe("One short question, under 12 words, naming the project or job"),
       options: z
         .array(z.string())
-        .describe("2-6 short answer choices. For 'built'/'ownership': the parts of this project the facts mention (e.g. 'Auth and accounts', 'Payments with Stripe'). For 'users': honest ranges ('Just me', '<100', '100-1k', '1k+'). Empty only for 'challenge'."),
-    })
+           .describe("2-6 short answer choices. For 'built'/'ownership': the parts of this project the facts mention (e.g. 'Auth and accounts', 'Payments with Stripe'). For 'users': honest ranges ('Just me', '<100', '100-1k', '1k+'). Empty only for 'challenge'."),
+  })
   ),
 })
 
@@ -54,26 +54,28 @@ export function interviewItems(items: Item[]): Item[] {
     .slice(0, MAX_INTERVIEW_ITEMS)
 }
 
-export async function generateInterview(userId: string, items: Item[], facts: Fact[], asked: Question[]): Promise<InterviewQuestion[]> {
-  const picked = interviewItems(items)
+export async function generateInterview( userId: string, items: Item[], facts: Fact[], asked: Question[]): Promise<InterviewQuestion[]> {
+const picked = interviewItems(items)
   if (!picked.length) return []
-  const ids = new Set(picked.map((i) => i.id))
+  const ids = new Set( picked.map((i) => i.id))
   const askedText = asked.map((q) => `- ${q.prompt}`).join("\n")
-  const { questions } = await generate({
+const { questions } = await generate({
     step: "questions",
     userId,
-    schema: InterviewSchema,
+       schema: InterviewSchema,
     effort: "medium",
-    maxTokens: 8000,
-    system: SYSTEM,
-    content: [
-      { type: "text", text: recordForPrompt(picked, facts) },
+    maxTokens: 8000,    
+    system: SYSTEM,  
+    content: [ 
+      { type: "text", text: recordForPrompt(picked,facts) },
       { type: "text", text: `Team entries: ${picked.filter((i) => i.data.team_project && !i.data.ownership_confirmed).map((i) => i.id).join(", ") || "none"}\n\n<already_asked>\n${askedText || "none"}\n</already_asked>` },
     ],
     check: (out) => out.questions.filter((q) => !ids.has(q.item_id)).map((q) => `Question "${q.prompt}" uses unknown item_id ${q.item_id}`),
   })
-  return questions
-    .filter((q) => ids.has(q.item_id))
-    .map((q) => ({ ...q, options: q.kind === "challenge" ? [] : q.options.map((o) => o.trim()).filter(Boolean).slice(0, 6) }))
-    .slice(0, MAX_INTERVIEW_QUESTIONS)
+  return questions    
+    .filter((q) => ids.has(q.item_id))    
+     .map((q) => ({...q,options: q.kind === "challenge" ? [] : q.options.map((o) => o.trim()).filter(Boolean).slice(0, 6) }))
+	    .slice(0,MAX_INTERVIEW_QUESTIONS)
+
+
 }

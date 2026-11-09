@@ -1,4 +1,4 @@
-export const MAX_PDF_BYTES = 5 * 1024 * 1024
+  export const MAX_PDF_BYTES = 5 * 1024 * 1024    
 export const MAX_ZIP_BYTES = 10 * 1024 * 1024
 export const MAX_FILES = 2
 

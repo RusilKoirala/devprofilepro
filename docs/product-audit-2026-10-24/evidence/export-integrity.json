@@ -1,8 +1,0 @@
-{
-  "method": "Browser download of POST /api/pdf/<base-resume>, followed by GET /api/exports/<saved-export>",
-  "sha256_original": "deb4a9f91bec0ee571ae00178eaa13f4c0cb38c87caaada227608815bfee67d6",
-  "sha256_redownload": "deb4a9f91bec0ee571ae00178eaa13f4c0cb38c87caaada227608815bfee67d6",
-  "identical": true,
-  "pages": 1,
-  "size_points": [612, 792]
-}

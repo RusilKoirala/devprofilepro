@@ -1,69 +1,74 @@
 "use server"
 
-import { auth } from "@clerk/nextjs/server"
-import { revalidatePath } from "next/cache"
+import { auth } from "@clerk/nextjs/server" 
+   import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { isAppEnabled } from "@/lib/access"
-import { checkBullet, writeBullets } from "@/lib/ai/write"
-import { claimStep, withStep } from "@/lib/record/build-pass"
-import { loadRecord } from "@/lib/record/db"
+	import { checkBullet, writeBullets } from "@/lib/ai/write"
+import { claimStep,withStep } from "@/lib/record/build-pass"
+import { loadRecord } from "@/lib/record/db" 
 import { relayoutResume } from "@/lib/record/pipeline"
+
+
 import { itemTitle, type Fact } from "@/lib/record/types"
-import { sharedBullets } from "@/lib/resume/order"
+   import { sharedBullets } from "@/lib/resume/order"
 import { createClient } from "@/lib/supabase/server"
 import type { ActionResult } from "@/lib/record/actions"
 
 async function session() {
   if (!isAppEnabled()) throw new Error("Not available")
   const { userId } = await auth()
-  if (!userId) throw new Error("Not signed in")
-  return { userId, supabase: await createClient() }
+if (!userId) throw new Error("Not signed in")
+     return { userId,supabase: await createClient() }
 }
 
-function fail(err: unknown): { ok: false; error: string } {
+function fail( err: unknown): {ok: false; error: string} {
   console.error(err)
-  return { ok: false, error: err instanceof Error ? err.message : "Something went wrong" }
-}
+  return { ok: false,  error: err instanceof Error ? err.message : "Something went wrong"}  
+  }
 
 export interface RewriteProposal {
   itemId: string
-  title: string
+   title: string
   before: string[]
-  after: { text: string; fact_ids: string[] }[]
+after: {text: string; fact_ids: string[]}[]
 }
 
-export async function proposeRewrites(itemIds: string[]): Promise<ActionResult<{ proposals: RewriteProposal[]; skipped: string[] }>> {
+export async function proposeRewrites(itemIds: string[]): Promise<ActionResult<{proposals: RewriteProposal[]; skipped: string[]}>> {
   try {
-    const { userId, supabase } = await session()
+    const { userId, supabase }= await session()  
     const requested = z.array(z.string().uuid()).max(30).parse(itemIds)
     const claimed = await claimStep(userId, "rewrite")
-    if (!claimed) throw new Error("Sync your sources again to get new suggestions.")
-    const ids = requested.filter((id) => claimed.itemIds.includes(id))
+     if (!claimed) throw new Error("Sync your sources again to get new suggestions.")    
+    const ids = requested.filter((id)=>claimed.itemIds.includes(id))
     const record = await loadRecord(supabase)
     const shared = sharedBullets(record.bullets)
-    const candidates = record.items.filter((i) => ids.includes(i.id) && i.status !== "hidden" && shared.some((b) => b.item_id === i.id))
+    const candidates = record.items.filter((i)=> ids.includes(i.id) && i.status !== "hidden" && shared.some((b) => b.item_id === i.id))
     const edited = candidates.filter((i) => shared.some((b) => b.item_id === i.id && b.user_edited))
-    const items = candidates.filter((i) => !edited.includes(i))
-    if (!items.length) {
+  const items = candidates.filter( (i) => !edited.includes(i))
+    if ( !items.length) {
       await claimed.release()
-      return { ok: true, data: { proposals: [], skipped: edited.map(itemTitle) } }
-    }
+      return { ok: true,data: { proposals: [],  skipped: edited.map(itemTitle) } }
+   }
 
-    const { data: base } = await supabase.from("resumes").select("layout").eq("kind", "base").maybeSingle()
-    const { bullets } = await withStep(claimed, () => writeBullets({ userId, items, facts: record.facts, targetRole: base?.layout?.target_role }))
-    const proposals = items
-      .map((i) => ({
+    const {data: base} = await supabase.from("resumes").select("layout").eq("kind", "base").maybeSingle()
+    const { bullets }= await withStep(claimed, () => writeBullets({ userId, items, facts: record.facts, targetRole: base?.layout?.target_role }))  
+  const proposals = items
+      .map((i)  =>  ({
         itemId: i.id,
+
+
         title: itemTitle(i),
-        before: shared.filter((b) => b.item_id === i.id).map((b) => b.text),
-        after: bullets.filter((b) => b.item_id === i.id).map(({ text, fact_ids }) => ({ text, fact_ids })),
+        before: shared.filter((b)=>b.item_id === i.id).map((b)  =>  b.text),
+        after: bullets.filter((b) => b.item_id === i.id).map(({text, fact_ids}) => ({text, fact_ids})),    
       }))
       .filter((p) => p.after.length && p.after.map((b) => b.text).join("\n") !== p.before.join("\n"))
     return { ok: true, data: { proposals, skipped: edited.map(itemTitle) } }
-  } catch (err) {
+     } catch (err) {
     return fail(err)
-  }
+    }    
 }
+
 
 const Lines = z.array(z.object({ text: z.string().trim().min(3).max(400), fact_ids: z.array(z.string().uuid()).min(1).max(10) })).min(1).max(8)
 
@@ -71,20 +76,21 @@ export async function applyRewrite(itemId: string, lines: { text: string; fact_i
   try {
     const { supabase } = await session()
     const id = z.string().uuid().parse(itemId)
-    const parsed = Lines.parse(lines)
-    const record = await loadRecord(supabase)
-    const facts = new Map<string, Fact>(record.facts.filter((f) => f.item_id === id).map((f) => [f.id, f]))
-    const problems = parsed.flatMap((b) => checkBullet({ item_id: id, ...b }, facts))
+    const parsed = Lines.parse( lines)
+    const record =  await loadRecord(supabase)
+    const facts =new Map<string, Fact>( record.facts.filter((f)=>f.item_id === id).map((f)=> [f.id, f]))
+      const problems = parsed.flatMap((b) => checkBullet({ item_id: id, ...b }, facts))
     if (problems.length) throw new Error("These lines no longer match your facts. Sync again for fresh suggestions.")
     if (sharedBullets(record.bullets).some((b) => b.item_id === id && b.user_edited)) throw new Error("You've edited this entry's lines yourself, so we left them as they are.")
-    const { error } = await supabase.rpc("replace_generated_bullets", { p_item_ids: [id], p_bullets: parsed.map((b) => ({ item_id: id, ...b })), p_release_edits: false })
+    const {error} =await supabase.rpc("replace_generated_bullets",{ p_item_ids: [id], p_bullets: parsed.map((b)  =>  ({ item_id: id,...b })),  p_release_edits: false })
+
     if (error) throw new Error(error.message)
-    const { data: resumes, error: resumesError } = await supabase.from("resumes").select("id")
-    if (resumesError) throw new Error(resumesError.message)
+     const {data: resumes,  error: resumesError} =await supabase.from("resumes").select("id")
+    if (resumesError) throw new Error(resumesError.message) 
     for (const r of resumes ?? []) await relayoutResume(supabase, r.id as string)
     revalidatePath("/", "layout")
     return { ok: true, data: undefined }
   } catch (err) {
     return fail(err)
-  }
+}
 }

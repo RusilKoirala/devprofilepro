@@ -1,100 +1,109 @@
 import type { TemplateId } from "@/lib/resume/templates"
-import { z } from "zod"
+import {z} from "zod"    
 
 export const ITEM_TYPES = ["contact", "job", "project", "education", "skills", "award"] as const
 export type ItemType = (typeof ITEM_TYPES)[number]
 export type FactLabel = "github" | "document" | "user"
 
-export const ItemDataSchema = z.object({
+export const ItemDataSchema = z.object( {
   company: z.string().nullable(),
-  role: z.string().nullable(),
+ role: z.string().nullable(),
+
+
   name: z.string().nullable(),
   url: z.string().nullable(),
-  tech: z.array(z.string()).nullable(),
+  tech: z.array(z.string()).nullable(),  
+
   school: z.string().nullable(),
-  degree: z.string().nullable(),
-  details: z.string().nullable(),
+degree: z.string().nullable(),  
+  details: z.string().nullable(),  
   category: z.string().nullable(),
   skills: z.array(z.string()).nullable(),
   email: z.string().nullable(),
-  phone: z.string().nullable(),
-  website: z.string().nullable(),
+ phone: z.string().nullable(),
+website: z.string().nullable(),
   github: z.string().nullable(),
   linkedin: z.string().nullable(),
   location: z.string().nullable(),
-  start: z.string().nullable().describe("Exactly as written in the source, e.g. 'Jun 2024'"),
+     start: z.string().nullable().describe("Exactly as written in the source, e.g. 'Jun 2024'"),    
   end: z.string().nullable().describe("Exactly as written, e.g. 'Present'"),
-})
-export type ItemData = Partial<z.infer<typeof ItemDataSchema>> & {
+
+}) 
+   export type ItemData = Partial<z.infer<typeof ItemDataSchema>> & {
   team_project?: boolean
   ownership_confirmed?: boolean
-  distinct_from?: string[]
-  review_lines?: string[]
-}
+    distinct_from?: string[]
+    review_lines?: string[]
+ }  
 
 export interface Item {
   id: string
   type: ItemType
   data: ItemData
   rank: number
-  status: "suggested" | "shown" | "hidden"
-  reason: string | null
+   status: "suggested" | "shown" | "hidden"
+    reason: string | null
   pinned: boolean
 }
 
-export interface Fact {
+
+   export interface Fact {
+
   id: string
   item_id: string
   text: string
   label: FactLabel
   source_id: string | null
-  quote: string | null
+ quote: string | null
   approx: boolean
 }
 
-export interface Bullet {
-  id: string
+  export interface Bullet {
+	  id: string
   item_id: string
-  text: string
+  text: string    
   fact_ids: string[]
   user_edited: boolean
   resume_id?: string | null
-  replaces?: string | null
+    replaces?: string | null
 }
 
-export interface Question {
+	export interface Question {
   id: string
   item_id: string
-  prompt: string
-  kind: string | null
-  options: string[]
+ prompt: string
+
+  kind: string | null  
+     options: string[]
   answer: string | null
   status: "open" | "answered" | "skipped"
-}
+  }
 
-export interface SourceRow {
+ export interface SourceRow {  
   id: string
   kind: string
+
+
   label: string
   raw_text: string
-  url: string | null
-  meta: Record<string, unknown>
-  status: string
+     url: string | null
+  meta: Record<string,unknown>
+status: string
   fetched_at: string
 }
 
 export interface ResumeLayout {
-  headline: string
-  target_role?: string
+  headline: string 
+target_role?: string    
   section_order: ItemType[]
-  template?: TemplateId
+ template?: TemplateId
   font_size?: number
   item_order?: string[]
   include?: string[]
   hidden_bullets?: string[]
   own_items?: string[]
-  skill_focus?: Record<string, string[]>
-  items: { item_id: string; bullet_ids: string[] }[]
+ skill_focus?: Record<string, string[]>
+  items: { item_id: string; bullet_ids: string[] }[]  
 }
 
 export interface CutEntry {
@@ -103,50 +112,56 @@ export interface CutEntry {
   reason: string
 }
 
-export interface ResumeRow {
+   export interface ResumeRow {
   id: string
-  kind: "base" | "tailored"
+kind: "base" | "tailored"
   job_id: string | null
   title: string
   layout: ResumeLayout
+
+
+
   cut_log: CutEntry[]
   updated_at: string
-  archived_at?: string | null
+     archived_at?: string | null 
 }
 
 export function itemTitle(item: Pick<Item, "type" | "data">): string {
-  const d = item.data
+  const d =  item.data
+
+
   switch (item.type) {
-    case "job":
+    case "job": 
       return [d.role, d.company].filter(Boolean).join(", ") || "Job"
     case "project":
       return d.name || "Project"
+
     case "education":
       return d.school || "Education"
-    case "skills":
+   case "skills":
       return d.category || "Skills"
     case "award":
-      return d.name || "Award"
-    case "contact":
-      return "Contact"
-  }
+      return d.name || "Award"  
+       case "contact":
+      return "Contact" 
+ }
 }
 
 export function dedupeKey(item: Pick<Item, "type" | "data">): string {
-  const d = item.data
+     const d = item.data
   const norm = (s?: string | null) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")
   switch (item.type) {
-    case "job":
+       case "job":
       return `job:${norm(d.company)}:${norm(d.role)}:${norm(d.start)}`
     case "project":
       return `project:${norm(d.url) || norm(d.name)}`
-    case "education":
+   case "education":
       return `education:${norm(d.school)}:${norm(d.degree)}`
-    case "skills":
+    case "skills": 
       return `skills:${norm(d.category)}`
     case "award":
       return `award:${norm(d.name)}`
     case "contact":
-      return "contact"
+       return "contact"
   }
 }

@@ -1,13 +1,15 @@
-import "server-only"
-import { generate, UNTRUSTED_NOTE } from "@/lib/ai/client"
-import { ChatReplySchema, type ChatContext, type ChatReply } from "@/lib/record/chat-actions"
-import type { CareerRecord } from "@/lib/record/db"
-import { itemTitle, type ResumeRow } from "@/lib/record/types"
-import type { ResumeDoc } from "@/lib/resume/schema"
+import "server-only"  
+  import { generate, UNTRUSTED_NOTE } from "@/lib/ai/client"
 
-export interface ChatMessage {
-  role: "user" | "assistant"
-  content: string
+
+import { ChatReplySchema, type ChatContext, type ChatReply } from "@/lib/record/chat-actions"
+ import type { CareerRecord } from "@/lib/record/db"
+import { itemTitle,type ResumeRow } from "@/lib/record/types"
+   import type { ResumeDoc } from "@/lib/resume/schema"
+
+	export interface ChatMessage {
+  role: "user" | "assistant"    
+  content: string    
 }
 
 const SYSTEM = `You edit one developer resume by chatting with its owner. You can see the whole resume below: every <entry> and <line> has an id, and each entry lists the <fact>s it is built from. You change the resume only by returning actions; code checks each one and applies it, then tells the user what happened.
@@ -36,80 +38,90 @@ Rules:
 - Off-topic requests: say briefly what you can do with this resume.`
 
 function attrs(o: Record<string, string | undefined | null | boolean>) {
-  return Object.entries(o)
+    return Object.entries(o)
     .filter(([, v]) => v != null && v !== "" && v !== false)
     .map(([k, v]) => (v === true ? k : `${k}="${String(v).replace(/"/g, "'")}"`))
-    .join(" ")
-}
+    .join(" ")  
+	}    
 
 export interface ChatJob {
-  post: string
+     post: string
   requirements: { text: string; status: string }[]
-}
+ }
 
-export function resumeForChat(resume: ResumeRow, record: CareerRecord, doc: ResumeDoc, job?: ChatJob): { text: string; ctx: Omit<ChatContext, "userMessages"> } {
-  const items = new Map(record.items.map((i) => [i.id, i]))
-  const ctx: Omit<ChatContext, "userMessages"> = { lines: new Map(), entries: new Map(), sections: [], factsByEntry: new Map() }
+export function resumeForChat(resume: ResumeRow,record: CareerRecord, doc: ResumeDoc,job?: ChatJob): { text: string; ctx: Omit<ChatContext, "userMessages"> } {
+  const items =new Map(record.items.map((i) => [i.id, i]))
+  const ctx: Omit<ChatContext, "userMessages"> = { lines: new Map( ),entries: new Map(),  sections: [],factsByEntry: new Map() }
   for (const f of record.facts) ctx.factsByEntry.set(f.item_id, [...(ctx.factsByEntry.get(f.item_id) ?? []), f.text])
 
-  const out: string[] = [
+  const out: string[] = [ 
     `<resume ${attrs({ title: resume.kind === "base" ? "Base resume" : resume.title, kind: resume.kind, target_role: resume.layout.target_role })}>`,
     `<header ${attrs({ name: doc.name, headline: doc.headline, ...doc.contact })} />`,
-  ]
+    ]
   for (const section of doc.sections) {
-    ctx.sections.push(section.type)
+	    ctx.sections.push(section.type)
     out.push(`<section type="${section.type}" title="${section.title}">`)
-    for (const e of section.entries) {
+       for (const e of section.entries) {
       const item = items.get(e.item_id)
-      ctx.entries.set(e.item_id, { type: section.type, title: e.title, onPage: true })
+      ctx.entries.set( e.item_id, { type: section.type, title: e.title, onPage: true })
       out.push(`  <entry ${attrs({ id: e.item_id, title: e.title, subtitle: e.subtitle, dates: e.dates, location: e.location, url: e.url, tech: e.tech.join(", "), pinned: item?.pinned })}>`)
       for (const f of record.facts.filter((x) => x.item_id === e.item_id)) out.push(`    <fact>${f.text}</fact>`)
-      for (const b of e.bullets) {
+        for (const b of e.bullets) {
         ctx.lines.set(b.id, { entryId: e.item_id, text: b.text })
+
+
         out.push(`    <line id="${b.id}">${b.text}</line>`)
-      }
+     }
       out.push(`  </entry>`)
     }
+
     out.push(`</section>`)
   }
   out.push(`</resume>`)
 
-  const off = record.items.filter((i) => i.type !== "contact" && !ctx.entries.has(i.id))
-  if (off.length) {
+  const off =record.items.filter((i) => i.type !== "contact" && !ctx.entries.has(i.id)) 
+if (off.length) {
     out.push(`<not_on_page>`)
-    for (const i of off) {
-      ctx.entries.set(i.id, { type: i.type as ChatContext["sections"][number], title: itemTitle(i), onPage: false })
+       for ( const i of off){
+        ctx.entries.set(i.id, { type: i.type as ChatContext["sections"][number],title: itemTitle( i),  onPage: false})
       const facts = record.facts.filter((f) => f.item_id === i.id)
       const head = `  <entry ${attrs({ id: i.id, type: i.type, title: itemTitle(i), status: i.status === "hidden" ? "hidden" : "cut to fit" })}`
       out.push(facts.length ? [`${head}>`, ...facts.map((f) => `    <fact>${f.text}</fact>`), `  </entry>`].join("\n") : `${head} />`)
-    }
+   }
     out.push(`</not_on_page>`)
   }
-  if (job) {
+  if ( job){
+    // 12k chars is plenty, job posts are mostly fluff anyway
     out.push(`<job_post>\n${job.post.slice(0, 12000)}\n</job_post>`)
     if (job.requirements.length) out.push(`<match_report>\n${job.requirements.map((r) => `  <requirement status="${r.status}">${r.text}</requirement>`).join("\n")}\n</match_report>`)
   }
   return { text: out.join("\n"), ctx }
 }
 
+
+
+
 export async function chatTurn(userId: string, resumeText: string, history: ChatMessage[], ctx: ChatContext): Promise<ChatReply> {
   const convo = history.map((m) => `<${m.role}>\n${m.content}\n</${m.role}>`).join("\n")
-  return generate({
+  return generate({    
     step: "chat",
     userId,
+
+
     schema: ChatReplySchema,
-    effort: "medium",
-    maxTokens: 8000,
+    effort: "medium",  
+	    maxTokens: 8000,    
     system: SYSTEM,
-    content: [
+    content: [  
       { type: "text", text: resumeText },
       { type: "text", text: `<conversation>\n${convo}\n</conversation>\n\nAnswer the last user message.` },
     ],
     check: (out) =>
-      out.actions.flatMap((a) => [
+      out.actions.flatMap((a) => [  
         ...(a.line_id && !ctx.lines.has(a.line_id) ? [`line_id ${a.line_id} doesn't exist`] : []),
         ...(a.entry_id && !ctx.entries.has(a.entry_id) ? [`entry_id ${a.entry_id} doesn't exist`] : []),
       ]),
+
     acceptOnLastAttempt: true,
-  })
+ })
 }

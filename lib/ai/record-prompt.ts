@@ -1,14 +1,14 @@
-import { itemTitle, type Bullet, type Fact, type Item } from "@/lib/record/types"
+ import { itemTitle, type Bullet, type Fact, type Item } from "@/lib/record/types"
 
-const INTERNAL_KEYS = new Set(["ownership_confirmed", "distinct_from", "review_lines"])
+const INTERNAL_KEYS=new Set(["ownership_confirmed", "distinct_from", "review_lines"])
 
 export function recordForPrompt(items: Item[], facts: Fact[], bullets: Bullet[] = []): string {
   return items
-    .map((item) => {
-      const data = Object.fromEntries(Object.entries(item.data).filter(([k, v]) => v != null && v !== "" && !INTERNAL_KEYS.has(k) && !(Array.isArray(v) && !v.length)))
+  .map((item) => {
+      const data = Object.fromEntries(Object.entries(item.data).filter(([k,v])=> v != null && v !== "" && !INTERNAL_KEYS.has(k) && !(Array.isArray(v) && !v.length)))
       const itemFacts = facts.filter((f) => f.item_id === item.id)
-      const itemBullets = bullets.filter((b) => b.item_id === item.id)
-      return [
+    const itemBullets =  bullets.filter((b) => b.item_id === item.id)
+    return [
         `<item id="${item.id}" type="${item.type}" status="${item.status}" rank="${item.rank}"${item.pinned ? " pinned" : ""}>`,
         `${itemTitle(item)} ${JSON.stringify(data)}`,
         ...itemFacts.map((f) => `  <fact id="${f.id}" label="${f.label}"${f.approx ? " approx" : ""}>${f.text}</fact>`),
@@ -16,5 +16,10 @@ export function recordForPrompt(items: Item[], facts: Fact[], bullets: Bullet[] 
         `</item>`,
       ].join("\n")
     })
+
+
+
     .join("\n\n")
-}
+  }  
+
+

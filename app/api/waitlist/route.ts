@@ -8,16 +8,16 @@ const BodySchema = z.object({
 
 
 // waitlist i created for no reason
-export async function POST(request: Request) {
-  const parsed = BodySchema.safeParse(await request.json().catch(() => null))
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 })
+ export async function POST(request: Request) {
+  const parsed = BodySchema.safeParse( await request.json().catch(() => null))
+  if (!parsed.success) {    
+    return NextResponse.json({ error: "Enter a valid email address." },  { status: 400 })
   }
   try {
-    await addLoopsContact(parsed.data.email, "waitlist", "landing-page")
+	    await addLoopsContact(parsed.data.email, "waitlist", "landing-page")
     return NextResponse.json({ ok: true })
-  } catch (err) {
-    const status = err instanceof LoopsError ? err.status : 502
+	  } catch (err){  
+    const status= err instanceof LoopsError ? err.status : 502
     return NextResponse.json({ error: err instanceof Error ? err.message : "Couldn't save your email." }, { status })
-  }
+  }  
 }
