@@ -15,8 +15,6 @@ async function origin() {
   return process.env.NEXT_PUBLIC_APP_URL ?? h.get("origin") ?? `https://${h.get("host")}`
 }
 
-// Upgrade: a Dodo checkout for the chosen plan. Our user id rides along in metadata so the
-// webhook knows whose plan to switch on. Without Dodo keys, it joins the Pro list instead.
 export async function startCheckout(billing: "monthly" | "pass"): Promise<ActionResult<{ url: string } | { joined: true }>> {
   const { userId } = await auth()
   if (!userId) return { ok: false, error: "Not signed in" }
@@ -44,7 +42,6 @@ export async function startCheckout(billing: "monthly" | "pass"): Promise<Action
   }
 }
 
-// Pro users manage cards, invoices and cancelling in Dodo's customer portal.
 export async function openBillingPortal(): Promise<ActionResult<{ url: string }>> {
   const { userId } = await auth()
   if (!userId) return { ok: false, error: "Not signed in" }
@@ -66,8 +63,6 @@ async function ownSubscription() {
   return data as { source: "monthly" | "pass"; status: string; dodo_payment_id: string | null; dodo_subscription_id: string | null } | null
 }
 
-// Cancel (at the end of the paid month) or undo that, for the monthly plan. Dodo's response is
-// applied straight away so the card updates now; the webhook that follows changes nothing more.
 export async function setCancelAtPeriodEnd(cancel: boolean): Promise<ActionResult> {
   const { userId } = await auth()
   if (!userId) return { ok: false, error: "Not signed in" }
@@ -87,7 +82,6 @@ export async function setCancelAtPeriodEnd(cancel: boolean): Promise<ActionResul
   }
 }
 
-// Before billing is set up, "Upgrade" puts the signed-in user on the Pro list in Loops.
 export async function requestPro(billing: "monthly" | "pass"): Promise<ActionResult> {
   const { userId } = await auth()
   if (!userId) return { ok: false, error: "Not signed in" }

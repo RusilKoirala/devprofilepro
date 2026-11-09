@@ -7,8 +7,8 @@ import { createAdminClient } from "@/lib/supabase/admin"
 
 const HANDLED = /^(subscription\.|payment\.succeeded$|refund\.succeeded$)/
 
-// Dodo calls this for every billing event. The signature is checked before anything is read,
-// each delivery is applied once (keyed by webhook-id), and only subscriptions rows change.
+
+// just working on it 
 export async function POST(request: Request) {
   const body = await request.text()
   const headers = Object.fromEntries(request.headers)
@@ -32,7 +32,6 @@ export async function POST(request: Request) {
     const userId = await findUser(supabase, billingEvent)
     if (!userId) {
       console.error("dodo webhook: no user for event", event.type)
-      // 200 so Dodo doesn't retry forever; the event is logged for a manual fix.
       await supabase.from("billing_events").insert({ id: webhookId || crypto.randomUUID(), type: event.type, user_id: null })
       return NextResponse.json({ ok: true, unmatched: true })
     }
@@ -41,12 +40,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error("dodo webhook failed", err)
-    // 500 makes Dodo retry the delivery later.
     return NextResponse.json({ error: "Couldn't apply this event" }, { status: 500 })
   }
 }
 
-// Refund events name only the payment. Which subscription (and whose) it was comes from the payment.
 async function withRefundedPayment(event: BillingEvent): Promise<BillingEvent> {
   if (event.type !== "refund.succeeded") return event
   const payment = await dodo().payments.retrieve(event.data.payment_id)
@@ -56,8 +53,6 @@ async function withRefundedPayment(event: BillingEvent): Promise<BillingEvent> {
   }
 }
 
-// Checkout puts our user id in metadata. A refund issued in Dodo's dashboard is matched to the
-// row its payment created, and as a last resort the paying email is looked up in Clerk.
 async function findUser(supabase: ReturnType<typeof createAdminClient>, event: BillingEvent): Promise<string | null> {
   const fromMetadata = event.data.metadata?.user_id
   if (typeof fromMetadata === "string" && fromMetadata) return fromMetadata

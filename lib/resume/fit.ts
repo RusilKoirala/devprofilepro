@@ -9,16 +9,12 @@ export interface FitResult {
   cuts: CutEntry[]
   pages: number
   pdf: Uint8Array
-  // Pinned content alone doesn't fit: we stop and let the user decide.
   pinnedOverflow: boolean
 }
 
 const MAX_STEPS = 60
-// Larger text first, so a short resume fills its page; lines are cut only at the 10pt floor.
 const SIZES = [11.5, 11, 10.5]
 
-// Render, count pages, and remove the weakest unpinned content until it fits on one page.
-// `relevance` (a tailored resume's items, most relevant to the job first) replaces general strength.
 export async function fitToOnePage(layout: ResumeLayout, record: Pick<CareerRecord, "items" | "bullets">, relevance?: string[]): Promise<FitResult> {
   const items = new Map(record.items.map((i) => [i.id, i]))
   const weight = weigher(relevance)
@@ -36,7 +32,6 @@ export async function fitToOnePage(layout: ResumeLayout, record: Pick<CareerReco
     const pages = await pageCount(pdf)
     if (pages <= 1) return { layout: current, cuts: explain(cuts, current, items, weight), pages, pdf, pinnedOverflow: false }
 
-    // Weakest unpinned item that still has something to cut (skills/education are cut last).
     const candidates = current.items
       .map((li) => ({ li, item: items.get(li.item_id) }))
       .filter(({ item }) => item && !item.pinned && item.type !== "contact")
@@ -49,7 +44,6 @@ export async function fitToOnePage(layout: ResumeLayout, record: Pick<CareerReco
       cuts.push({ item_id: target.li.item_id, bullet_id: bulletId, reason: "" })
     } else {
       current.items = current.items.filter((li) => li !== target.li)
-      // The whole item went, so its earlier bullet cuts collapse into one entry.
       for (let i = cuts.length - 1; i >= 0; i--) if (cuts[i].item_id === target.li.item_id) cuts.splice(i, 1)
       cuts.push({ item_id: target.li.item_id, reason: "" })
     }
@@ -58,7 +52,6 @@ export async function fitToOnePage(layout: ResumeLayout, record: Pick<CareerReco
   return { layout: current, cuts: explain(cuts, current, items, weight), pages: await pageCount(pdf), pdf, pinnedOverflow: false }
 }
 
-// Each cut names the weakest item of the same kind that stayed on the final page.
 function explain(cuts: CutEntry[], layout: ResumeLayout, items: Map<string, Item>, weight: (item: Item) => number): CutEntry[] {
   const onPage = layout.items.map((li) => items.get(li.item_id)).filter((i): i is Item => !!i).sort((a, b) => weight(a) - weight(b))
   return cuts.map((c) => {
@@ -70,13 +63,11 @@ function explain(cuts: CutEntry[], layout: ResumeLayout, items: Map<string, Item
   })
 }
 
-// Never cut education or skills before projects and jobs.
 const keepLast = (item: { type: string }) => (item.type === "education" || item.type === "skills" ? 1000 : 0)
 const rankWeight = (item: { id: string; type: string; rank: number }) => item.rank + keepLast(item)
 
 export function weigher(relevance?: string[]): (item: { id: string; type: string; rank: number }) => number {
   if (!relevance?.length) return rankWeight
   const position = new Map(relevance.map((id, n) => [id, n]))
-  // Most relevant scores 100, least relevant near 0; anything not chosen for the job goes first.
   return (item) => (position.has(item.id) ? 100 - (position.get(item.id)! * 100) / relevance.length : -1) + keepLast(item)
 }

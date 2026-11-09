@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/server"
 
 export const runtime = "nodejs"
 
-// GET: live preview (not saved). POST: export — save the exact PDF + snapshot, then download it.
 export async function GET(_req: Request, { params }: { params: Promise<{ resumeId: string }> }) {
   const { resumeId } = await params
   const loaded = await loadResumeDoc(await createClient(), resumeId)

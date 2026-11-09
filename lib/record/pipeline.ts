@@ -24,14 +24,10 @@ export interface BuildReport {
   factsKept: number
   factsDropped: number
   skippedReadmes: string[]
-  // What the Career Record holds after this build, shown as "Found 2 jobs, 5 projects…"
   counts: Partial<Record<ItemType, number>>
-  // What this build changed: new entries, and existing entries that gained facts.
   added: string[]
   updated: string[]
-  // Existing entries that gained facts, by id: candidates for new wording (proposeRewrites).
   updatedIds: string[]
-  // Details a source read in this update disagrees with. Shown for review, never applied silently.
   changes: DetailChange[]
 }
 
@@ -44,9 +40,7 @@ export interface DetailChange {
   source: string
 }
 
-// Fields a re-read may correct. Lists (tech, skills) are left out: they grow, they don't conflict.
 const REVIEWABLE = ["role", "company", "name", "url", "school", "degree", "details", "location", "start", "end"] as const
-// Sources read this recently count as part of this update; older ones were already reviewed.
 const FRESH_MS = 30 * 60 * 1000
 
 function countItems(items: Pick<Item, "type" | "status">[]): BuildReport["counts"] {
@@ -55,7 +49,6 @@ function countItems(items: Pick<Item, "type" | "status">[]): BuildReport["counts
   return counts
 }
 
-// ② Extract + rank → ③ quote check → save to the Career Record.
 export async function buildRecord(supabase: SupabaseClient, userId: string): Promise<BuildReport> {
   const record = await loadRecord(supabase)
   const sources = record.sources.filter((s) => s.kind !== "win" && s.status !== "failed" && s.raw_text)
@@ -68,11 +61,7 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
   const rawById = new Map(sources.map((s) => [s.id, s.raw_text]))
   const kindById = new Map(sources.map((s) => [s.id, s.kind]))
 
-  // Imports are additive. Deleting accepted items here invalidates existing
-  // layouts if writing or rendering subsequently fails, and loses hide choices.
   const byKey = new Map(record.items.map((i) => [dedupeKey(i), i.id]))
-  // Facts already on each item, including ones added earlier in this build. A reworded copy of one
-  // (the AI phrases facts a little differently on every read) is skipped, not saved again.
   const factsByItem = new Map<string, string[]>()
   for (const f of record.facts) factsByItem.set(f.item_id, [...(factsByItem.get(f.item_id) ?? []), f.text])
   let factsKept = 0
@@ -89,7 +78,6 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
   for (const extracted of output.items) {
     const { kept, dropped } = verifyFacts(extracted.facts, rawById)
 
-    // GitHub signals become facts with no AI, for repos this item cites.
     const repoSources = new Set(kept.map((f) => f.source_id).filter((id) => sources.find((s) => s.id === id)?.meta?.repo_id))
     const signals = [...repoSources].flatMap((sid) =>
       ((sources.find((s) => s.id === sid)?.meta as unknown as RepoMeta).signals ?? []).map((sig) => ({ text: sig.text, quote: sig.quote, source_id: sid }))
@@ -115,8 +103,6 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
       byKey.set(dedupeKey(candidate), itemId)
       if (extracted.type !== "contact") added.add(itemTitle(candidate))
     } else {
-      // A later source may supply a previously missing email, date or link.
-      // Fill blanks while retaining the accepted values already on the item.
       const existing = record.items.find((i) => i.id === itemId)
       if (existing) {
         const merged = { ...data, ...existing.data }
@@ -128,7 +114,6 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
           const { error } = await supabase.from("items").update({ data: merged, updated_at: new Date().toISOString() }).eq("id", itemId)
           if (error) throw new Error(error.message)
         }
-        // A value that differs from an accepted one, read from a source in this update: ask.
         const freshSources = [...new Set(kept.map((f) => f.source_id).filter((id) => freshIds.has(id)))]
         if (freshSources.length && existing.type !== "contact") {
           for (const field of REVIEWABLE) {
@@ -164,7 +149,6 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
       questionRows.push({ item_id: itemId, prompt: `What did you personally build in ${data.name || "this team project"}?`, kind: "ownership", options: [] })
     }
 
-    // A dropped fact that looked important becomes a question instead of disappearing.
     for (const d of dropped.filter((f) => looksImportant(f.text)).slice(0, 1)) {
       questionRows.push({ item_id: itemId, prompt: `We couldn't find this in your files: "${d.text}". Is it right?`, kind: "conflict", options: ["Yes, that's right", "No"] })
     }
@@ -185,7 +169,6 @@ export async function buildRecord(supabase: SupabaseClient, userId: string): Pro
   }
 }
 
-// ④ Questions (A2), topping up to MAX_QUESTIONS open questions.
 export async function refreshQuestions(supabase: SupabaseClient, userId: string) {
   const record = await loadRecord(supabase)
   const open = record.questions.filter((q) => q.status === "open")
@@ -208,10 +191,6 @@ export interface InterviewCard {
   options: string[]
 }
 
-// ④ Interview (before writing): a few tappable questions about what the person built and what
-// changed, on their strongest entries. Bare ownership questions from the import are upgraded in
-// place (with options) rather than asked twice. Returns every open question on those entries.
-// `generate: false` skips the AI and returns the questions already open.
 export async function queueInterview(supabase: SupabaseClient, userId: string, { generate = true } = {}): Promise<InterviewCard[]> {
   const record = await loadRecord(supabase)
   const picked = interviewItems(record.items)
@@ -247,13 +226,11 @@ export async function queueInterview(supabase: SupabaseClient, userId: string, {
     .map((q) => ({ id: q.id, item_id: q.item_id, item_title: titles.get(q.item_id) ?? "", kind: q.kind ?? "", prompt: q.prompt, options: q.options ?? [] }))
 }
 
-// The job post a tailored resume was made from, if it was saved.
 export async function loadJobPost(supabase: SupabaseClient, jobId: string): Promise<string | undefined> {
   const { data } = await supabase.from("jobs").select("description").eq("id", jobId).maybeSingle()
   return data?.description?.trim() || undefined
 }
 
-// The job post plus its saved match report, so the chat knows what the resume still misses.
 export async function loadChatJob(supabase: SupabaseClient, jobId: string): Promise<ChatJob | undefined> {
   const { data } = await supabase.from("jobs").select("description, match_report").eq("id", jobId).maybeSingle()
   const post = data?.description?.trim()
@@ -262,7 +239,6 @@ export async function loadChatJob(supabase: SupabaseClient, jobId: string): Prom
   return { post, requirements: requirements.filter((r) => typeof r.text === "string" && typeof r.status === "string").map((r) => ({ text: r.text as string, status: r.status as string })) }
 }
 
-// ⑤ Write (A3) for some or all shown items, replacing bullets the user didn't edit.
 export async function writeItems(
   supabase: SupabaseClient,
   userId: string,
@@ -270,34 +246,24 @@ export async function writeItems(
   opts: { itemIds?: string[]; targetRole?: string; releaseEdits?: boolean; instruction?: string; purpose?: "fix"; resume?: ResumeRow | null } = {}
 ) {
   const { itemIds, targetRole, releaseEdits = false, instruction, purpose } = opts
-  // A tailored resume rewrites in its own words; the base resume and the record share theirs.
   const tailored = opts.resume?.kind === "tailored" && itemIds ? opts.resume : null
   const shared = sharedBullets(record.bullets)
   const items = record.items.filter((i) => (tailored || i.status !== "hidden") && (!itemIds || itemIds.includes(i.id)))
   const keep = shared.filter((b) => b.user_edited)
   const keepItems = new Set(keep.map((b) => b.item_id))
-  // Rebuilding writes only newly imported items. Existing wording changes only
-  // when the user answers a question or explicitly requests regeneration.
   const toWrite = items.filter((i) => (releaseEdits || tailored || !keepItems.has(i.id)) && (itemIds || !shared.some((b) => b.item_id === i.id)))
-  // A tailored rewrite leads with what its job post asks for, not just the role's name.
   const jobPost = tailored?.job_id ? await loadJobPost(supabase, tailored.job_id) : undefined
   const { headline, bullets } = await writeBullets({ userId, items: toWrite, facts: record.facts, keep: releaseEdits || tailored ? [] : keep, targetRole, jobPost, instruction, purpose })
   if (tailored) return { headline, written: await saveOwnBullets(supabase, tailored, bullets) }
 
   const writtenIds = [...new Set(bullets.map((b) => b.item_id))]
   if (writtenIds.length) {
-    // Atomic replacement also maintains layout references. A failed insert
-    // must leave the previous bullets and edited flags intact.
     const { error } = await supabase.rpc("replace_generated_bullets", { p_item_ids: writtenIds, p_bullets: bullets, p_release_edits: releaseEdits })
     if (error) throw new Error(error.message)
   }
   return { headline, written: bullets.length }
 }
 
-// A new tailored resume in its own words: every chosen job, project and award rewritten for its
-// job post, then the finishing pass (lib/resume/tidy.ts), a Skills list led by what the job asks
-// for, and a match report rebuilt from what is finally on the page. Returns that report's plan and
-// a message for each entry taken off.
 export async function writeTailored(supabase: SupabaseClient, userId: string, resumeId: string, plan: TailorPlan): Promise<{ written: number; dropped: string[]; plan: TailorPlan }> {
   const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
   if (!resume || resume.kind !== "tailored") throw new Error("Resume not found")
@@ -331,8 +297,6 @@ async function tidyResume(supabase: SupabaseClient, resumeId: string): Promise<s
   return drop.map((d) => dropMessage(titles.get(d.id) ?? "An entry", d.reason))
 }
 
-// The report and summary for what the resume finally holds, so neither names an entry that came
-// off, and a Skills explanation only names skills its printed list has.
 async function finishReport(supabase: SupabaseClient, resumeId: string, plan: TailorPlan): Promise<TailorPlan> {
   const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
   if (!resume) throw new Error("Resume not found")
@@ -361,12 +325,9 @@ async function finishReport(supabase: SupabaseClient, resumeId: string, plan: Ta
   return final
 }
 
-// A tailored resume's rewrite: its own lines replace whatever it showed for those items, and the
-// shared wording (and the base resume) stays as it was.
 async function saveOwnBullets(supabase: SupabaseClient, resume: ResumeRow, bullets: { item_id: string; text: string; fact_ids: string[] }[]) {
   const itemIds = [...new Set(bullets.map((b) => b.item_id))]
   if (!itemIds.length) return 0
-  // Explicit times keep the written order (rows inserted together would share one timestamp).
   const start = Date.now()
   const { data: fresh, error: insertError } = await supabase
     .from("bullets")
@@ -382,14 +343,10 @@ async function saveOwnBullets(supabase: SupabaseClient, resume: ResumeRow, bulle
   return bullets.length
 }
 
-// Skills first, then Experience, Education, Projects and Awards: what a recruiter scans for, in
-// the order they scan. Empty sections are skipped when the page is built.
 export function sectionOrder(): ItemType[] {
   return ["skills", "job", "education", "project", "award"]
 }
 
-// Default order: jobs and schools newest first, projects, skills and awards strongest first.
-// A drag in the editor overrides it (layout.item_order).
 export function orderItems<T extends Pick<Item, "type" | "rank" | "data">>(items: T[]): T[] {
   return [...items].sort((a, b) => {
     const dated = (t: string) => t === "job" || t === "education"
@@ -408,9 +365,7 @@ export function defaultLayout(record: Pick<CareerRecord, "items" | "bullets">, h
   }
 }
 
-// ⑥ Fit, then save the layout and what was cut.
 export async function fitAndSave(supabase: SupabaseClient, resumeId: string, layout: ResumeLayout, record: Pick<CareerRecord, "items" | "bullets">) {
-  // A tailored resume cuts by its relevance to the job (its include order), not by general strength.
   const fit = await fitToOnePage(layout, record, layout.include)
   const { error } = await supabase
     .from("resumes")
@@ -420,10 +375,6 @@ export async function fitAndSave(supabase: SupabaseClient, resumeId: string, lay
   return fit
 }
 
-// The first-run flow is split into stages so the client can show real progress:
-// extract (buildRecord) → write (writeBase) → questions (refreshQuestions) → fit (fitBase).
-
-// ⑤ Write bullets for new items and create/update the base resume's layout.
 export async function writeBase(supabase: SupabaseClient, userId: string, targetRole?: string, answeredItemIds: string[] = []): Promise<{ resumeId: string; written: number }> {
   const record = await loadRecord(supabase)
   if (!record.items.length) throw new Error("We couldn't verify any facts. Add clearer notes or another source and try again.")
@@ -431,7 +382,6 @@ export async function writeBase(supabase: SupabaseClient, userId: string, target
   if (existingError) throw new Error(existingError.message)
   const role = targetRole?.trim() || existing?.layout?.target_role || undefined
   const { headline, written: writtenNew } = await writeItems(supabase, userId, record, { targetRole: role })
-  // Entries that already had bullets are rewritten only when the interview added something to them.
   let written = writtenNew
   const answered = answeredItemIds.filter((id) => sharedBullets(record.bullets).some((b) => b.item_id === id))
   if (answered.length) written += (await writeItems(supabase, userId, await loadRecord(supabase), { itemIds: answered, targetRole: role })).written
@@ -446,7 +396,6 @@ export async function writeBase(supabase: SupabaseClient, userId: string, target
     ...(itemOrder ? { item_order: itemOrder } : {}),
   }
   if (existing) {
-    // Keep a section order the user chose; new sections are appended.
     const kept = (existing.layout?.section_order ?? []) as ItemType[]
     if (kept.length) layout.section_order = [...kept, ...layout.section_order.filter((t) => !kept.includes(t))]
     const { error } = await supabase.from("resumes").update({ layout, updated_at: new Date().toISOString() }).eq("id", existing.id)
@@ -458,7 +407,6 @@ export async function writeBase(supabase: SupabaseClient, userId: string, target
   return { resumeId: data.id as string, written }
 }
 
-// ⑥ Re-fit a resume from the current record, keeping its headline, target role and section order.
 export async function relayoutResume(supabase: SupabaseClient, resumeId: string) {
   const [record, resume] = await Promise.all([loadRecord(supabase), loadResume(supabase, resumeId)])
   if (!resume) throw new Error("Resume not found")
@@ -482,7 +430,6 @@ export async function relayoutResume(supabase: SupabaseClient, resumeId: string)
   return fitAndSave(supabase, resumeId, layout, record)
 }
 
-// Whole flow in one call, for scripts and evals.
 export async function buildBaseResume(supabase: SupabaseClient, userId: string, targetRole?: string): Promise<{ resumeId: string; report: BuildReport }> {
   const report = await buildRecord(supabase, userId)
   const { resumeId } = await writeBase(supabase, userId, targetRole)

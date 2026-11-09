@@ -1,4 +1,3 @@
-// Per-bullet coaching shown in the editor. Plain code, no AI: each hint names one fixable thing.
 import { bannedWordsIn } from "@/lib/record/verify"
 
 export interface BulletHint {
@@ -14,7 +13,6 @@ function firstWord(text: string) {
   return text.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z]/g, "") ?? ""
 }
 
-// One hint per bullet at most, most useful first. `others` is every other bullet on the page.
 export function bulletHint(text: string, others: string[] = []): BulletHint | null {
   const t = text.trim()
   if (WEAK_START.test(t)) return { kind: "weak_start", text: "Starts weak. Lead with what you built or changed." }

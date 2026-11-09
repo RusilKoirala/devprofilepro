@@ -12,8 +12,6 @@ export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseKey)
 }
 
-// Supabase trusts Clerk's session token (Third-Party Auth), so RLS policies can
-// use auth.jwt()->>'sub' as the Clerk user ID.
 export async function createClient() {
   if (!isAppEnabled()) notFound()
   if (!supabaseUrl || !supabaseKey) {

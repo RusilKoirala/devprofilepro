@@ -44,12 +44,9 @@ function attrs(o: Record<string, string | undefined | null | boolean>) {
 
 export interface ChatJob {
   post: string
-  // The saved match report's requirements, so "fit the job better" knows what's still missing.
   requirements: { text: string; status: string }[]
 }
 
-// The resume exactly as it is now, with ids, plus what's in the record but not on the page, and
-// the job post a tailored resume was made for.
 export function resumeForChat(resume: ResumeRow, record: CareerRecord, doc: ResumeDoc, job?: ChatJob): { text: string; ctx: Omit<ChatContext, "userMessages"> } {
   const items = new Map(record.items.map((i) => [i.id, i]))
   const ctx: Omit<ChatContext, "userMessages"> = { lines: new Map(), entries: new Map(), sections: [], factsByEntry: new Map() }
@@ -82,7 +79,6 @@ export function resumeForChat(resume: ResumeRow, record: CareerRecord, doc: Resu
     out.push(`<not_on_page>`)
     for (const i of off) {
       ctx.entries.set(i.id, { type: i.type as ChatContext["sections"][number], title: itemTitle(i), onPage: false })
-      // Its facts too, so the chat can suggest bringing back the entry that shows what's asked for.
       const facts = record.facts.filter((f) => f.item_id === i.id)
       const head = `  <entry ${attrs({ id: i.id, type: i.type, title: itemTitle(i), status: i.status === "hidden" ? "hidden" : "cut to fit" })}`
       out.push(facts.length ? [`${head}>`, ...facts.map((f) => `    <fact>${f.text}</fact>`), `  </entry>`].join("\n") : `${head} />`)
@@ -109,7 +105,6 @@ export async function chatTurn(userId: string, resumeText: string, history: Chat
       { type: "text", text: resumeText },
       { type: "text", text: `<conversation>\n${convo}\n</conversation>\n\nAnswer the last user message.` },
     ],
-    // Ids are cheap to get wrong; one retry with the exact problems usually fixes them.
     check: (out) =>
       out.actions.flatMap((a) => [
         ...(a.line_id && !ctx.lines.has(a.line_id) ? [`line_id ${a.line_id} doesn't exist`] : []),

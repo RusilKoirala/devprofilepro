@@ -1,11 +1,7 @@
-// Plans and their monthly allowances (docs/PRICING.md section 3). The only place to change them.
-// Editing, checks, answering questions and downloads are never counted.
-
 export type PlanId = "free" | "pro"
 export type Allowance = "tailored" | "fixes" | "updates"
 
 export const PLANS: Record<PlanId, { name: string; limits: Record<Allowance, number | null> }> = {
-  // null = unlimited (fair use, see the cost ceiling in docs/PRICING.md section 5).
   free: { name: "Free", limits: { tailored: 3, fixes: 20, updates: 2 } },
   pro: { name: "Pro", limits: { tailored: null, fixes: null, updates: null } },
 }
@@ -18,19 +14,14 @@ export const ALLOWANCE_LABELS: Record<Allowance, { title: string; unit: string; 
 
 export const PRO_PRICE = { monthly: 12, pass: 29 }
 
-// Downloads Free sees on the dashboard. Older files stay stored and reappear with Pro.
 export const FREE_HISTORY = 3
 
 export interface PlanUsage {
   plan: PlanId
-  // Set on Pro: how they pay and until when Pro is guaranteed.
   billing?: { source: "monthly" | "pass"; periodEnd: string; cancelAtPeriodEnd: boolean; pastDue: boolean }
   used: Record<Allowance, number>
-  // Start of the next month (UTC), when Free allowances refill.
   resetsAt: string
-  // A query failed: the numbers (and maybe the plan) can't be trusted, so say so instead of showing 0.
   unavailable?: boolean
-  // Pro only: after a very heavy day of its own use, AI runs on the faster model until midnight UTC.
   fastModel?: boolean
 }
 
@@ -39,7 +30,6 @@ export interface AllowanceState {
   used: number
   limit: number | null
   left: number | null
-  // "ok" under 2/3 used, "low" with one or two left, "out" when none are left.
   state: "ok" | "low" | "out"
 }
 
@@ -62,7 +52,6 @@ export function nextMonthStart(now = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
 }
 
-// The line that makes the gap concrete, worst allowance first.
 export function upgradeReason(states: AllowanceState[]): string | undefined {
   const worst = states.find((s) => s.state === "out") ?? states.find((s) => s.state === "low")
   if (!worst) return undefined

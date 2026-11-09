@@ -6,9 +6,6 @@ import type { ItemType } from "@/lib/record/types"
 import { reorderWithin } from "@/lib/resume/order"
 import { TEMPLATE_IDS } from "@/lib/resume/templates"
 
-// Resume edits without the re-fit. Server actions call one and re-fit; the chat applies several
-// in a row and re-fits once. Each loads the resume itself, so a sequence never writes a stale layout.
-
 export const RANGE = /\d\s*[-–]\s*\d|[<>~+]|\bk\b/i
 
 const now = () => new Date().toISOString()
@@ -23,7 +20,6 @@ async function resumeOrThrow(supabase: SupabaseClient, resumeId: string) {
   return resume
 }
 
-// Links typed by hand: "github.com/x" or a bare GitHub username become full URLs.
 export function normalizeLink(value: string | null | undefined, kind?: "github" | "linkedin"): string | null {
   const v = value?.trim()
   if (!v) return null
@@ -73,10 +69,8 @@ export async function editLine(supabase: SupabaseClient, resumeId: string, bulle
   ])
   must(bulletError)
   if (!resume.layout.items.some((li) => li.item_id === bullet!.item_id && li.bullet_ids.includes(bulletId))) throw new Error("That line isn't on this resume")
-  // Edited text is a new user assertion; old quotes no longer prove it.
   const { data: fact, error: factError } = await supabase.from("facts").insert({ item_id: bullet!.item_id, text: clean, label: "user", approx: RANGE.test(clean) }).select("id").single()
   must(factError)
-  // On a tailored resume, editing a shared line makes this resume's own copy; the base resume keeps its wording.
   if (resume.kind === "tailored" && !bullet!.resume_id) {
     must((await supabase.from("bullets").insert({ item_id: bullet!.item_id, text: clean, fact_ids: [fact!.id], user_edited: true, resume_id: resumeId, replaces: bulletId })).error)
     return
@@ -86,7 +80,6 @@ export async function editLine(supabase: SupabaseClient, resumeId: string, bulle
   await clearReview(supabase, bullet!.item_id, bulletId)
 }
 
-// The person rewrote a line that lost part of its source, or confirmed it still holds.
 export async function clearReview(supabase: SupabaseClient, itemId: string, bulletId: string) {
   const { data: item, error } = await supabase.from("items").select("data").eq("id", itemId).single()
   must(error)
@@ -95,8 +88,6 @@ export async function clearReview(supabase: SupabaseClient, itemId: string, bull
   must((await supabase.from("items").update({ data: { ...item!.data, review_lines: list.filter((id) => id !== bulletId) } }).eq("id", itemId)).error)
 }
 
-// A line typed by the user: saved as a "You told us" fact plus a bullet that cites it.
-// On a tailored resume the line belongs to that resume only.
 export async function addLine(supabase: SupabaseClient, itemId: string, input: string, resumeId?: string) {
   const clean = z.string().trim().min(3, "Write a little more.").max(400).parse(input)
   const resume = resumeId ? await resumeOrThrow(supabase, resumeId) : null
@@ -109,7 +100,6 @@ export async function addLine(supabase: SupabaseClient, itemId: string, input: s
 export const BulletSnapshot = z.object({
   item_id: z.string().uuid(), text: z.string().min(1).max(600), fact_ids: z.array(z.string().uuid()).min(1), user_edited: z.boolean(),
   resume_id: z.string().uuid().nullable().optional(), replaces: z.string().uuid().nullable().optional(),
-  // A shared line taken off one tailored resume: undo shows it there again.
   hidden: z.string().uuid().optional(),
 })
 export type DeletedBullet = z.infer<typeof BulletSnapshot>
@@ -121,8 +111,6 @@ async function setHidden(supabase: SupabaseClient, resumeId: string, bulletId: s
   must((await supabase.from("resumes").update({ layout: { ...resume.layout, hidden_bullets }, updated_at: now() }).eq("id", resumeId)).error)
 }
 
-// Facts stay in the Career Record; only the wording goes. Returns what's needed to undo.
-// On a tailored resume a shared line is only taken off that resume.
 export async function removeLine(supabase: SupabaseClient, bulletId: string, resumeId?: string): Promise<DeletedBullet> {
   const { data: bullet, error: bulletError } = await supabase.from("bullets").select("item_id,text,fact_ids,user_edited,resume_id,replaces").eq("id", bulletId).single()
   must(bulletError)
@@ -133,7 +121,6 @@ export async function removeLine(supabase: SupabaseClient, bulletId: string, res
   }
   const { error } = await supabase.from("bullets").delete().eq("id", bulletId)
   must(error)
-  // This resume's version of a shared line: the shared one mustn't reappear in its place.
   if (resume?.kind === "tailored" && bullet!.replaces) await setHidden(supabase, resume.id, bullet!.replaces, true)
   return bullet as DeletedBullet
 }
@@ -141,14 +128,12 @@ export async function removeLine(supabase: SupabaseClient, bulletId: string, res
 export async function restoreLine(supabase: SupabaseClient, resumeId: string, snapshot: DeletedBullet) {
   const { hidden, ...row } = BulletSnapshot.parse(snapshot)
   if (hidden) return setHidden(supabase, resumeId, hidden, false)
-  // The database re-checks that every fact belongs to this user and item.
   must((await supabase.from("bullets").insert(row)).error)
   if (row.resume_id && row.replaces) await setHidden(supabase, resumeId, row.replaces, false)
 }
 
 export async function setItemStateIn(supabase: SupabaseClient, resumeId: string | null, itemId: string, patch: { pinned?: boolean; status?: "shown" | "hidden" }) {
   const safePatch = z.object({ pinned: z.boolean().optional(), status: z.enum(["shown", "hidden"]).optional() }).strict().parse(patch)
-  // On a tailored resume, hide/show only changes that resume's selection, never the base resume.
   const resume = resumeId ? await resumeOrThrow(supabase, resumeId) : null
   if (resume?.kind === "tailored" && resume.layout.include && safePatch.status) {
     const include = safePatch.status === "hidden" ? resume.layout.include.filter((id) => id !== itemId) : [...new Set([...resume.layout.include, itemId])]
@@ -158,7 +143,6 @@ export async function setItemStateIn(supabase: SupabaseClient, resumeId: string 
   if (Object.keys(safePatch).length) must((await supabase.from("items").update({ ...safePatch, updated_at: now() }).eq("id", itemId)).error)
 }
 
-// Name, contact line, headline and target role. Typed by the user, so no source check.
 export async function updateHeaderIn(supabase: SupabaseClient, resumeId: string, input: HeaderInput) {
   const h = HeaderSchema.parse(input)
   const [{ data: existing, error: contactError }, resume] = await Promise.all([
@@ -166,7 +150,6 @@ export async function updateHeaderIn(supabase: SupabaseClient, resumeId: string,
     resumeOrThrow(supabase, resumeId),
   ])
   must(contactError)
-  // Only the fields given change, so a partial update (from the chat) keeps the rest.
   const contact: Record<string, string | null> = {}
   for (const key of ["name", "email", "phone", "location"] as const) if (key in h) contact[key] = h[key] || null
   if ("website" in h) contact.website = normalizeLink(h.website)
@@ -182,9 +165,6 @@ export async function updateHeaderIn(supabase: SupabaseClient, resumeId: string,
   must((await supabase.from("resumes").update({ layout, updated_at: now() }).eq("id", resumeId)).error)
 }
 
-// Titles, companies, dates, links and skill lists.
-// `resumeId`: the resume it was edited from. Editing a skills group's list there replaces that
-// resume's focus for the group, so the list printed is the one just written.
 export async function updateDetailsIn(supabase: SupabaseClient, itemId: string, input: DetailsInput, resumeId?: string | null) {
   const patch = DetailsSchema.parse(input)
   const { data: item, error: itemError } = await supabase.from("items").select("type,data").eq("id", itemId).single()
@@ -204,7 +184,6 @@ export async function updateDetailsIn(supabase: SupabaseClient, itemId: string, 
   must((await supabase.from("resumes").update({ layout: { ...resume.layout, skill_focus }, updated_at: now() }).eq("id", resumeId)).error)
 }
 
-// Entry order inside one section. Display order only: what gets cut to fit still follows strength.
 export async function setItemOrderIn(supabase: SupabaseClient, resumeId: string, sectionIds: string[]) {
   const ids = z.array(z.string().uuid()).min(1).max(100).parse(sectionIds)
   const resume = await resumeOrThrow(supabase, resumeId)
@@ -214,7 +193,6 @@ export async function setItemOrderIn(supabase: SupabaseClient, resumeId: string,
   must((await supabase.from("resumes").update({ layout: { ...resume.layout, item_order: reorderWithin(known, ids) }, updated_at: now() }).eq("id", resumeId)).error)
 }
 
-// Sections not in `order` keep their place after these.
 export async function setTemplateIn(supabase: SupabaseClient, resumeId: string, template: string) {
   const id = z.enum(TEMPLATE_IDS).parse(template)
   const resume = await resumeOrThrow(supabase, resumeId)

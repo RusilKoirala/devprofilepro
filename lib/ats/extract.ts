@@ -5,8 +5,6 @@ import type { ExtractedPdf, PdfLine } from "@/lib/ats/analyze"
 export const MAX_ATS_PDF_BYTES = 5 * 1024 * 1024
 const MAX_PAGES = 10
 
-// Text in the order a parser reads it, plus each line's runs and where they start on the page,
-// which is what the layout check needs. The file is read in memory and never stored.
 export async function extractPdf(bytes: Uint8Array): Promise<ExtractedPdf> {
   const pdf = await getDocumentProxy(bytes.slice())
   const pages = pdf.numPages
@@ -19,7 +17,6 @@ export async function extractPdf(bytes: Uint8Array): Promise<ExtractedPdf> {
     for (const item of items) {
       if (!("str" in item) || !item.str.trim()) continue
       const [, , , , x, y] = item.transform as number[]
-      // Runs within 2pt vertically are on the same line.
       const row = [...byRow.keys()].find((k) => Math.abs(k - y) <= 2) ?? y
       byRow.set(row, [...(byRow.get(row) ?? []), { x: x / width, str: item.str }])
     }

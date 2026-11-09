@@ -4,7 +4,6 @@ import { useSession } from "@clerk/nextjs"
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import { useMemo } from "react"
 
-// Browser client that sends the Clerk session token, so RLS applies.
 export function useSupabase() {
   const { session } = useSession()
   return useMemo(

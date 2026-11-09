@@ -16,7 +16,6 @@ interface PullRequest {
 
 const PR_URL = /github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/i
 
-// Only merged PRs authored by the signed-in GitHub user are accepted.
 export async function ingestPullRequests(userId: string, urls: string[]): Promise<{ sources: IngestedSource[]; rejected: { url: string; reason: string }[] }> {
   const { token, login } = await githubTokenFor(userId)
   const sources: IngestedSource[] = []

@@ -1,9 +1,5 @@
 import type { TemplateId } from "@/lib/resume/templates"
 
-// Shared by the PDF (Template.tsx) and the HTML thumbnail, so a preview looks like the real page.
-// No @react-pdf import here: this file also ships to the browser.
-// One page, bullets, Helvetica (Arial's metric twin). Font sizes are fixed at 10pt or more:
-// we never shrink text to fit, we cut the weakest lines instead (lib/resume/fit.ts).
 const base = {
   page: { paddingVertical: 32, paddingHorizontal: 40, fontFamily: "Helvetica", fontSize: 10, lineHeight: 1.3, color: "#111" },
   name: { fontSize: 22, lineHeight: 1.1, fontFamily: "Helvetica-Bold", textAlign: "center" as const },
@@ -35,7 +31,6 @@ const SLATE = "#1e3a5f"
 
 export const SHEETS: Record<TemplateId, Sheet> = {
   classic: sheet({}),
-  // After the user's "two.tex": navy name and headings, company first in bold, role in violet.
   modern: sheet({
     page: { paddingVertical: 30 },
     name: { fontSize: 24, color: NAVY },
@@ -48,7 +43,6 @@ export const SHEETS: Record<TemplateId, Sheet> = {
     dot: { width: 9, color: VIOLET },
     skillLabel: { color: NAVY },
   }),
-  // Left-aligned, one header line per entry, tighter spacing: the most lines per page.
   compact: sheet({
     page: { paddingVertical: 26, paddingHorizontal: 34, lineHeight: 1.25 },
     name: { fontSize: 20, textAlign: "left" },
@@ -60,7 +54,6 @@ export const SHEETS: Record<TemplateId, Sheet> = {
     bullet: { flexDirection: "row", marginTop: 1, paddingLeft: 6 },
     dot: { width: 8 },
   }),
-  // After the user's Deedy "one.tex": name top left, a side column for skills, education and awards.
   sidebar: sheet({
     page: { paddingVertical: 30, paddingHorizontal: 34 },
     name: { fontSize: 24, textAlign: "left", color: SLATE },
@@ -72,7 +65,6 @@ export const SHEETS: Record<TemplateId, Sheet> = {
   }),
 }
 
-// Text and the gaps between lines grow with the chosen size, so a fuller page still looks even.
 const SCALED = new Set(["fontSize", "marginTop", "marginBottom", "paddingBottom"])
 const cache = new Map<string, Sheet>()
 export function sized(template: TemplateId, size: number): Sheet {

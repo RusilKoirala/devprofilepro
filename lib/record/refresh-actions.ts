@@ -13,9 +13,6 @@ import { sharedBullets } from "@/lib/resume/order"
 import { createClient } from "@/lib/supabase/server"
 import type { ActionResult } from "@/lib/record/actions"
 
-// After a sync adds facts to entries that already have lines: suggest new wording, and apply only
-// what the person approves. Entries with lines they edited by hand are never touched here.
-
 async function session() {
   if (!isAppEnabled()) throw new Error("Not available")
   const { userId } = await auth()
@@ -39,14 +36,12 @@ export async function proposeRewrites(itemIds: string[]): Promise<ActionResult<{
   try {
     const { userId, supabase } = await session()
     const requested = z.array(z.string().uuid()).max(30).parse(itemIds)
-    // Once per sync, and only for the entries that sync changed.
     const claimed = await claimStep(userId, "rewrite")
     if (!claimed) throw new Error("Sync your sources again to get new suggestions.")
     const ids = requested.filter((id) => claimed.itemIds.includes(id))
     const record = await loadRecord(supabase)
     const shared = sharedBullets(record.bullets)
     const candidates = record.items.filter((i) => ids.includes(i.id) && i.status !== "hidden" && shared.some((b) => b.item_id === i.id))
-    // Hand-edited wording stays the person's; say so instead of rewriting around it.
     const edited = candidates.filter((i) => shared.some((b) => b.item_id === i.id && b.user_edited))
     const items = candidates.filter((i) => !edited.includes(i))
     if (!items.length) {
@@ -72,7 +67,6 @@ export async function proposeRewrites(itemIds: string[]): Promise<ActionResult<{
 
 const Lines = z.array(z.object({ text: z.string().trim().min(3).max(400), fact_ids: z.array(z.string().uuid()).min(1).max(10) })).min(1).max(8)
 
-// The approved lines came back through the browser, so every one is checked again here.
 export async function applyRewrite(itemId: string, lines: { text: string; fact_ids: string[] }[]): Promise<ActionResult> {
   try {
     const { supabase } = await session()

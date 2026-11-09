@@ -13,15 +13,14 @@ for (const [address, prefix] of [
 
 const globalV6 = new BlockList()
 globalV6.addSubnet("2000::", 3, "ipv6")
-blocked.addSubnet("2001::", 23, "ipv6") // special-purpose space, including Teredo
+blocked.addSubnet("2001::", 23, "ipv6")
 blocked.addSubnet("2001:db8::", 32, "ipv6")
-blocked.addSubnet("2002::", 16, "ipv6") // 6to4 can embed private IPv4 destinations
+blocked.addSubnet("2002::", 16, "ipv6")
 blocked.addSubnet("3fff::", 20, "ipv6")
 
 export function isPublicAddress(address: string): boolean {
   const family = isIP(address)
   if (family === 4) return !blocked.check(address, "ipv4")
-  // Reject mapped IPv4, local, multicast and other non-global IPv6 forms.
   return family === 6 && globalV6.check(address, "ipv6") && !blocked.check(address, "ipv6")
 }
 
@@ -35,8 +34,6 @@ export function publicUrl(input: string): URL {
   return url
 }
 
-// Resolve and pin the socket to the checked address. Validating a hostname and
-// then using fetch would allow a second DNS answer to point at a private server.
 export async function publicRequestStatus(input: string, method: "HEAD" | "GET", signal: AbortSignal, redirects = 0): Promise<number> {
   if (redirects > 4) throw new Error("Too many redirects")
   signal.throwIfAborted()
@@ -64,7 +61,7 @@ export async function publicRequestStatus(input: string, method: "HEAD" | "GET",
         : callback(null, address.address, address.family),
     }, (response) => {
       resolve({ status: response.statusCode ?? 0, location: response.headers.location })
-      response.destroy() // GET fallback must not download an arbitrary response body.
+      response.destroy()
     })
     request.on("error", reject)
     request.end()

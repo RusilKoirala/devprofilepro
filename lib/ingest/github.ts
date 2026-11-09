@@ -42,7 +42,6 @@ export class GitHubError extends Error {
   }
 }
 
-// Frameworks worth naming on a resume, by dependency name. Anything not listed is ignored.
 const NOTABLE_DEPS: Record<string, string> = {
   next: "Next.js", react: "React", vue: "Vue", svelte: "Svelte", "@angular/core": "Angular",
   express: "Express", fastify: "Fastify", "@nestjs/core": "NestJS", hono: "Hono",
@@ -60,7 +59,6 @@ const NOTABLE_DEPS: Record<string, string> = {
 
 const TUTORIAL_NAME = /(todo|clone|tutorial|course|bootcamp|practice|exercise|learning|hello-?world)/i
 
-// Prefer the user's own OAuth token from Clerk (5,000 req/hr, as them), then our server token.
 export async function githubTokenFor(userId: string): Promise<{ token: string | null; login: string | null }> {
   try {
     const client = await clerkClient()
@@ -98,7 +96,6 @@ function makeFetch(token: string | null) {
     return res.ok ? res.text() : null
   }
 
-  // Count via the Link header's last page with per_page=1.
   async function count(path: string): Promise<number | null> {
     const res = await fetch(`${API}${path}${path.includes("?") ? "&" : "?"}per_page=1`, { headers: headers(), cache: "no-store" })
     if (!res.ok) return null
@@ -119,7 +116,6 @@ export function normalizeGitHubUsername(input: string): string {
     .split(/[/?#]/)[0]
 }
 
-// Plain-code score; the AI later explains and can override. Low scores are hidden, never deleted.
 function quickScore(r: GitHubRepo): number {
   const ageDays = (Date.now() - new Date(r.pushed_at).getTime()) / 86_400_000
   let s = 0
@@ -142,7 +138,6 @@ function parseDeps(file: string, text: string): string[] {
     } else if (file === "go.mod") {
       for (const m of text.matchAll(/^\s*(?:require\s+)?([\w.\-/]+)\s+v[\d.]+/gm)) names.push(m[1])
     } else {
-      // requirements.txt, pyproject.toml, Cargo.toml: grab package-looking tokens at line start
       for (const m of text.matchAll(/^\s*"?([A-Za-z][\w\-]*)/gm)) names.push(m[1].toLowerCase())
     }
   } catch {
@@ -158,8 +153,6 @@ export async function ingestGitHub(opts: { userId: string; username?: string }):
   const username = normalizeGitHubUsername(opts.username || login || "")
   if (!username) throw new GitHubError("No GitHub username", 400)
   if (!/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(username)) throw new GitHubError("Invalid GitHub username", 400)
-  // A connected account proves whose profile this is, so only that one can be imported. Without
-  // one, a typed username still works, but its sources are marked unverified (shown on its facts).
   if (login && username.toLowerCase() !== login.toLowerCase()) {
     throw new GitHubError(`You're connected to GitHub as @${login}, so only that profile can be imported.`, 403)
   }
@@ -216,7 +209,6 @@ export async function ingestGitHub(opts: { userId: string; username?: string }):
       const deps = [...new Set(manifests.flatMap(([f, t]) => (t ? parseDeps(f, t) : [])))]
       const solo = contributors === 1 && userCommits != null && userCommits > 0 && !r.fork
 
-      // Every signal line is written into raw_text, so its quote always verifies.
       const signalLines: SignalFact[] = []
       const tech = [...langs, ...deps.filter((d) => !langs.includes(d))]
       if (tech.length) signalLines.push({ text: `Built with ${tech.join(", ")}`, quote: `Tech: ${tech.join(", ")}` })

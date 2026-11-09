@@ -10,9 +10,6 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import type { ActionResult } from "@/lib/record/actions"
 
-// The user's control over what we keep: remove one source and everything that came only from it,
-// or delete all of their DevProfile data. Billing records stay with the payment provider.
-
 async function session() {
   if (!isAppEnabled()) throw new Error("Not available")
   const { userId } = await auth()
@@ -29,10 +26,6 @@ function fail(err: unknown): { ok: false; error: string } {
   return { ok: false, error: err instanceof Error ? err.message : "Something went wrong" }
 }
 
-// Facts read from this source go; lines that cited only them go; entries left with no facts go.
-// Lines that also cite other facts stay, citing those, but are flagged for review: "Built the API
-// and cut latency 40%" may now rest on the API fact alone. Every resume is re-fitted afterwards.
-// PDFs already downloaded are snapshots and don't change.
 export async function removeSource(sourceId: string): Promise<ActionResult<{ facts: number; entries: number; review: number }>> {
   try {
     const { supabase } = await session()
@@ -66,7 +59,6 @@ export async function removeSource(sourceId: string): Promise<ActionResult<{ fac
       must((await supabase.from("facts").delete().in("id", [...gone])).error)
     }
 
-    // Entries that now have no facts at all came only from this source.
     let entries = 0
     if (touchedItems.length) {
       const { data: left, error: leftError } = await supabase.from("facts").select("item_id").in("item_id", touchedItems)
@@ -95,14 +87,11 @@ export async function removeSource(sourceId: string): Promise<ActionResult<{ fac
   }
 }
 
-// Everything: sources and uploaded files, the Career Record, resumes, job posts, downloaded PDFs
-// and the AI log. The sign-in account itself is deleted from the account menu.
 export async function deleteAllData(confirm: string): Promise<ActionResult> {
   try {
     const { userId, supabase } = await session()
     if (confirm !== "DELETE") throw new Error('Type DELETE to confirm.')
     await deleteUserData(supabase, userId)
-    // The AI log needs the service key, filtered to the signed-in user's id only.
     await scrubAiRuns(createAdminClient(), userId)
     revalidatePath("/", "layout")
     return { ok: true, data: undefined }

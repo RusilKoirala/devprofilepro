@@ -7,7 +7,6 @@ import type { Bullet, Fact, Item } from "@/lib/record/types"
 import { headingOf } from "@/lib/resume/build"
 import { thinLine } from "@/lib/resume/thin"
 
-// Grouped by item: smaller models keep ids straight far better than with one flat list.
 export const WriteSchema = z.object({
   headline: z.string(),
   items: z.array(
@@ -68,7 +67,6 @@ function rangesIn(text: string): string[] {
   return (text.match(/\d[\d,.]*\s*[kKmM]?\s*[-–—]\s*\d[\d,.]*\s*[kKmM+]?/g) ?? []).map((r) => r.replace(/[\s,]/g, "").replace(/[–—]/g, "-").toLowerCase())
 }
 
-// `heading`: what the entry's heading prints, so a line that only repeats it is caught in code.
 export function checkBullet(b: WrittenBullet, itemFacts: Map<string, Fact>, heading?: { title: string; subtitle: string; dates: string }): string[] {
   const errors: string[] = []
   const cited = b.fact_ids.map((id) => itemFacts.get(id))
@@ -96,18 +94,12 @@ export async function writeBullets(opts: {
   items: Item[]
   facts: Fact[]
   keep?: Bullet[]
-  budget?: Map<string, number> // max bullets per item
+  budget?: Map<string, number>
   targetRole?: string
-  // The job post a tailored resume is for. Untrusted text, used only to choose emphasis.
   jobPost?: string
-  // A one-off direction from the user, e.g. "shorter" or "lead with impact".
   instruction?: string
-  // "fix" marks a rewrite the user asked for; it counts toward the plan's monthly AI fixes.
   purpose?: "fix"
 }): Promise<{ headline: string; bullets: WrittenBullet[]; fallbacks: number }> {
-  // A shared README describes the project, not this person's contribution.
-  // Show its metadata in the partial draft, but wait for their answer to write
-  // personal bullets. A prompt alone cannot enforce ownership.
   const items = opts.items.filter((i) => (i.type === "job" || i.type === "project" || i.type === "award") && (!i.data.team_project || i.data.ownership_confirmed) && opts.facts.some((f) => f.item_id === i.id))
   if (!items.length) return { headline: "Software Developer", bullets: [], fallbacks: 0 }
 
@@ -136,7 +128,6 @@ export async function writeBullets(opts: {
     },
   ]
 
-  // One full draft, then one small call that rewrites only the items with failing lines.
   const out = await generate({ step: "write", userId: opts.userId, schema: WriteSchema, effort: "high", maxTokens: 32000, system: SYSTEM, content: prompt(items), check, attempts: 1, acceptOnLastAttempt: true, logMeta: () => (opts.purpose ? { purpose: opts.purpose } : {}) })
   const passing = (b: WrittenBullet) => ids.has(b.item_id) && !checked(b).length
   let drafted = flatten(out).filter((b) => ids.has(b.item_id))
@@ -158,7 +149,6 @@ export async function writeBullets(opts: {
         attempts: 1,
         acceptOnLastAttempt: true,
       })
-      // Keep the better version of each broken item: whichever has more passing lines.
       for (const id of brokenIds) {
         const before = drafted.filter((b) => b.item_id === id)
         const after = flatten(repaired).filter((b) => b.item_id === id)
@@ -166,13 +156,9 @@ export async function writeBullets(opts: {
       }
       headline ||= repaired.headline
     } catch {
-      // The repair is best effort; the fallbacks below keep a truthful draft.
     }
   }
 
-  // Failing lines are dropped. Only an item left with no line at all falls back to its strongest
-  // fact's plain text, which is true by construction, unless that fact too only repeats the heading
-  // or gives a link: then the item has no line, and the checks say so.
   let fallbacks = 0
   const bullets = drafted.filter(passing)
   for (const item of items) {

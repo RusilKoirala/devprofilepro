@@ -1,4 +1,3 @@
-// "Rewrite" directions offered in the editor. Kept out of actions.ts: a "use server" file may only export async functions.
 export const REWRITE_STYLES = {
   default: undefined,
   shorter: "Make every bullet noticeably shorter: 10-16 words, same facts.",

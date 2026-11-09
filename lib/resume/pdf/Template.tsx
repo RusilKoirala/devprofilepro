@@ -15,7 +15,6 @@ function ContactLine({ contact, s }: { contact: ResumeDoc["contact"]; s: Sheet }
     contact.github && { text: displayUrl(contact.github), href: contact.github },
     contact.website && { text: displayUrl(contact.website), href: contact.website },
   ].filter(Boolean) as { text: string; href?: string }[]
-  // One Text run with real " | " separators, so parsers read clean, spaced text.
   return (
     <Text style={s.contact}>
       {parts.map((p, i) => (
@@ -53,7 +52,6 @@ function Bullets({ entry, s }: { entry: ResumeEntry; s: Sheet }) {
 
 function Entry({ entry, type, template, s }: { entry: ResumeEntry; type: string; template: TemplateId; s: Sheet }) {
   const headingOnly = isHeadingOnly(type)
-  // Modern leads with the company (as recruiters search by it), Classic with the role.
   const [first, second] = template === "modern" && type === "job" ? [entry.subtitle, entry.title] : [entry.title, entry.subtitle]
   if (template === "compact") {
     const rest = headingOnly ? [] : [second, entry.location].filter(Boolean)
@@ -109,7 +107,6 @@ function Section({ section, template, s }: { section: ResumeSection; template: T
   )
 }
 
-// The narrow column stacks everything: label over value, no right-aligned dates.
 function SideSection({ section, s }: { section: ResumeSection; s: Sheet }) {
   return (
     <View style={s.section}>

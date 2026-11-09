@@ -17,7 +17,7 @@ export function cleanPdfText(text: string): string {
     .replace(/ﬀ/g, "ff")
     .replace(/ﬃ/g, "ffi")
     .replace(/ﬄ/g, "ffl")
-    .replace(/(\w)-\n(\w)/g, "$1$2") // join hyphenated line breaks
+    .replace(/(\w)-\n(\w)/g, "$1$2")
     .replace(/^[ \t]*[•●▪◦‣∙·•]\s*/gm, "- ")
     .replace(/[ \t]+/g, " ")
     .replace(/ *\n */g, "\n")
@@ -41,7 +41,6 @@ export async function ingestPdf(userId: string, file: File): Promise<IngestedSou
   const { error: uploadError } = await supabase.storage.from("uploads").upload(path, bytes, { contentType: "application/pdf", upsert: true })
   if (uploadError) throw new Error(`Couldn't save ${file.name}: ${uploadError.message}`)
 
-  // unpdf takes ownership of the buffer, so give it a copy. A file that can't be parsed isn't kept.
   let parsed: [{ text: string; totalPages: number }, { links: string[] }]
   try {
     const pdf = await getDocumentProxy(bytes.slice())

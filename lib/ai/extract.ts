@@ -43,7 +43,6 @@ Rules:
 - Output one "contact" item if any contact details exist, and group skills into a few "skills" items by category (Languages, Frameworks, Tools). Only list skills the sources show.
 - section_order: only the types you output. Skills, Experience, Education, Projects, Awards; with no jobs, Projects come right after Skills.`
 
-// Fixed order so the packed block is stable for prompt caching.
 const KIND_ORDER = ["resume_pdf", "linkedin_pdf", "paste", "pr_link", "github", "win"]
 
 export function packSources(sources: SourceRow[]): string {
@@ -57,12 +56,9 @@ export function packSources(sources: SourceRow[]): string {
     .join("\n\n")
 }
 
-// The building models read well past this; it keeps the cost of one build bounded (100k is about
-// $0.40 of input on Opus or GPT-6.1 Sol). Only the lowest-scored READMEs are dropped to fit.
 const TOKEN_BUDGET = 100_000
 
 async function countTokens(text: string): Promise<number> {
-  // Bedrock has no token-counting endpoint; ~4 characters per token is close enough for a budget.
   if (aiProvider() !== "anthropic") return Math.ceil((SYSTEM.length + text.length) / 4)
   const { input_tokens } = await new Anthropic().messages.countTokens({
     model: modelFor("anthropic", "extract"),
@@ -72,7 +68,6 @@ async function countTokens(text: string): Promise<number> {
   return input_tokens
 }
 
-// Drop READMEs of the lowest-scored repos until the packed input fits. Returns what was skipped.
 async function fitBudget(sources: SourceRow[]): Promise<{ sources: SourceRow[]; skipped: string[] }> {
   let current = sources
   const skipped: string[] = []
@@ -99,7 +94,6 @@ export async function extractRecord(userId: string, sources: SourceRow[]): Promi
       { type: "text", text: packSources(fitted.sources), cache: true },
       { type: "text", text: "Build the Career Record from these sources." },
     ],
-    // Facts citing unknown sources are dropped by the quote check, not retried: a retry re-runs the biggest call.
     logMeta: (out) => ({ items: out.items.length, facts: out.items.reduce((n, i) => n + i.facts.length, 0) }),
   })
   return { output, skipped: fitted.skipped, sources: fitted.sources }

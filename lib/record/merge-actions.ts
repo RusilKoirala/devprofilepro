@@ -11,9 +11,6 @@ import type { ItemType, ResumeLayout } from "@/lib/record/types"
 import { createClient } from "@/lib/supabase/server"
 import type { ActionResult } from "@/lib/record/actions"
 
-// Settle a suggested duplicate (lib/record/entry-dupes.ts): merge the two entries, or record that
-// they are different so it isn't suggested again.
-
 async function session() {
   if (!isAppEnabled()) throw new Error("Not available")
   const { userId } = await auth()
@@ -27,9 +24,6 @@ function must(error: { message: string } | null) {
 
 const Id = z.string().uuid()
 
-// Everything from `dropId` moves onto `keepId`: facts, questions, lines the person wrote, each
-// resume's choices and each saved match report's citations. `fields` are the values they picked
-// where the two disagreed.
 export async function mergeEntries(keepId: string, dropId: string, fields: Record<string, string | string[] | null>): Promise<ActionResult> {
   try {
     const { supabase } = await session()
@@ -52,11 +46,8 @@ export async function mergeEntries(keepId: string, dropId: string, fields: Recor
     }
     data.distinct_from = [...new Set([...(kept.data.distinct_from ?? []), ...(dropped.data.distinct_from ?? [])])].filter((id) => id !== drop)
 
-    // Facts first, so moved lines still cite facts of their own entry (the database checks this).
     must((await supabase.from("facts").update({ item_id: keep }).eq("item_id", drop)).error)
     must((await supabase.from("questions").update({ item_id: keep }).eq("item_id", drop)).error)
-    // Lines: the person's own wording and tailored resumes' lines move; generated shared lines of
-    // the dropped entry go (its facts stay), so the merged entry isn't written twice.
     must((await supabase.from("bullets").delete().eq("item_id", drop).is("resume_id", null).eq("user_edited", false)).error)
     must((await supabase.from("bullets").update({ item_id: keep }).eq("item_id", drop)).error)
 
@@ -73,7 +64,6 @@ export async function mergeEntries(keepId: string, dropId: string, fields: Recor
         .eq("id", keep)).error
     )
 
-    // Resumes that chose or ordered the dropped entry now refer to the kept one.
     const { data: resumes, error: resumesError } = await supabase.from("resumes").select("id,layout")
     must(resumesError)
     const swap = (ids?: string[]) => (ids ? [...new Set(ids.map((id) => (id === drop ? keep : id)))] : ids)
@@ -82,7 +72,6 @@ export async function mergeEntries(keepId: string, dropId: string, fields: Recor
       const layout: ResumeLayout = { ...l, include: swap(l.include), item_order: swap(l.item_order), own_items: swap(l.own_items), items: l.items.filter((li) => li.item_id !== drop) }
       must((await supabase.from("resumes").update({ layout }).eq("id", r.id)).error)
     }
-    // Saved match reports that cited the dropped entry now cite the kept one.
     const { data: jobs, error: jobsError } = await supabase.from("jobs").select("id,match_report").not("match_report", "is", null)
     must(jobsError)
     for (const j of jobs ?? []) {

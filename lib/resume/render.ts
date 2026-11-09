@@ -14,7 +14,6 @@ export async function pageCount(pdf: Uint8Array): Promise<number> {
   return (await getDocumentProxy(pdf.slice())).numPages
 }
 
-// "What an applicant-tracking system reads from your file": the text of the actual PDF.
 export async function parserView(pdf: Uint8Array): Promise<string> {
   const { text } = await extractText(await getDocumentProxy(pdf.slice()), { mergePages: true })
   return text

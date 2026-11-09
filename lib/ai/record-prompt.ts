@@ -1,9 +1,7 @@
 import { itemTitle, type Bullet, type Fact, type Item } from "@/lib/record/types"
 
-// App bookkeeping on item data. It says nothing about the person and only distracts the model.
 const INTERNAL_KEYS = new Set(["ownership_confirmed", "distinct_from", "review_lines"])
 
-// The Career Record as compact text for prompts A2-A4. Raw sources are never re-read after A1.
 export function recordForPrompt(items: Item[], facts: Fact[], bullets: Bullet[] = []): string {
   return items
     .map((item) => {

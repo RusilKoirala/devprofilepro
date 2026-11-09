@@ -1,5 +1,3 @@
-// Resume chat: the edits the model may ask for, and the plain-code checks every edit passes
-// before anything is written. Pure code, so it can be unit tested.
 import { z } from "zod"
 import { bannedWordsIn, unsupportedNumbers } from "@/lib/record/verify"
 
@@ -38,13 +36,12 @@ export const ChatReplySchema = z.object({
 })
 export type ChatReply = z.infer<typeof ChatReplySchema>
 
-// What the resume looks like right now, as the checks need it.
 export interface ChatContext {
   lines: Map<string, { entryId: string; text: string }>
   entries: Map<string, { type: SectionType; title: string; onPage: boolean }>
-  sections: SectionType[] // on the page, in order
+  sections: SectionType[]
   factsByEntry: Map<string, string[]>
-  userMessages: string[] // only what the user typed: the one other place a new claim may come from
+  userMessages: string[]
 }
 
 export interface Checked {
@@ -63,8 +60,6 @@ function lineProblem(text: string | null, entryId: string, ctx: ChatContext): st
   if (banned.length) return `It uses filler (${banned.join(", ")}).`
 }
 
-// Every action is checked against the resume as the earlier actions leave it (put an entry back,
-// then move its section). A failed check skips that action only.
 export function checkActions(actions: ChatAction[], start: ChatContext): Checked[] {
   const ctx: ChatContext = { ...start, entries: new Map([...start.entries].map(([id, e]) => [id, { ...e }])), sections: [...start.sections] }
   const place = (entryId: string, onPage: boolean) => {
@@ -125,7 +120,6 @@ function checkOne(action: ChatAction, ctx: ChatContext): Checked {
   }
 }
 
-// null = leave as is. Only the given keys reach the edit, so nothing else is cleared by accident.
 export function presentFields<K extends string>(fields: ChatAction["fields"], keys: readonly K[]): Partial<Record<K, string | string[]>> {
   const out: Partial<Record<K, string | string[]>> = {}
   if (!fields) return out

@@ -1,8 +1,6 @@
 import type { ItemType } from "@/lib/record/types"
 import type { TemplateId } from "@/lib/resume/templates"
 
-// The render shape: what the PDF template, the .tex export and the parser view all read.
-// Built in plain code from a resume layout + the Career Record (lib/resume/build.ts).
 export interface ResumeEntry {
   item_id: string
   title: string
@@ -22,7 +20,6 @@ export interface ResumeSection {
 
 export interface ResumeDoc {
   template: TemplateId
-  // Body text size in pt; unset means 10.
   size?: number
   name: string
   headline: string

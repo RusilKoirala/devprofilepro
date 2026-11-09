@@ -1,6 +1,3 @@
-// Quote check: a fact is kept only if its quote really appears in its source.
-// Pure code with no imports, so it can be unit tested with `node --test`.
-
 export function normalizeForMatch(text: string): string {
   return text
     .normalize("NFKC")
@@ -19,8 +16,6 @@ export function quoteInSource(quote: string, rawText: string): boolean {
   return normalizeForMatch(rawText).includes(q)
 }
 
-// Titles, names, dates and skills are rendered directly from item metadata.
-// They need grounding too, rather than bypassing the fact/quote checks entirely.
 export function groundItemData<T extends Record<string, string | string[] | null | undefined>>(data: T, rawTexts: string[]): T {
   const sources = rawTexts.map(normalizeForMatch)
   const supported = (value: string) => {
@@ -35,7 +30,6 @@ export function groundItemData<T extends Record<string, string | string[] | null
   ])) as T
 }
 
-// Numbers, dates and titles are worth asking about if their quote failed.
 export function looksImportant(text: string): boolean {
   return /\d/.test(text) || /\b(intern|engineer|developer|lead|manager|founder|cto|ceo)\b/i.test(text)
 }
@@ -64,8 +58,6 @@ export function verifyFacts<F extends CandidateFact>(facts: F[], sources: Map<st
   return { kept, dropped }
 }
 
-// Compare complete quantities, preserving scale, percentages, bounds and ranges.
-// "2k" equals "2,000", but never "2"; "100–1k" never supports an exact "1,000".
 const AMOUNT = String.raw`\d+(?:,\d{3})*(?:\.\d+)?(?:\s*(?:[kKmMbB]\b|thousand\b|million\b|billion\b))?`
 const QUANTITY = new RegExp(String.raw`(?:[~≈<>≤≥]|\b(?:about|around|approximately|at least|at most|over|under)\s+)?\s*${AMOUNT}(?:\s*[-–—]\s*${AMOUNT})?\s*(?:\+|%|percent\b)?`, "gi")
 

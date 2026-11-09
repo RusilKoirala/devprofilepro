@@ -6,8 +6,6 @@ import { MAX_ZIP_BYTES } from "@/lib/ingest/limits"
 
 export { MAX_ZIP_BYTES }
 
-// The career files in LinkedIn's "Get a copy of your data" export. Everything else in the
-// archive (messages, connections, ads, logins) is never unzipped.
 const SECTIONS: [file: string, heading: string][] = [
   ["Profile.csv", "Profile"],
   ["Positions.csv", "Experience"],
@@ -22,7 +20,6 @@ const SECTIONS: [file: string, heading: string][] = [
   ["Languages.csv", "Languages"],
 ]
 
-// Private or noisy columns we never put into the record.
 const SKIP_COLUMNS = new Set(["Maiden Name", "Address", "Birth Date", "Zip Code", "Instant Messengers", "License Number"])
 
 export function parseCsv(text: string): string[][] {
@@ -58,8 +55,6 @@ export function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((v) => v.trim()))
 }
 
-// One CSV as readable text: a "Column: value" line per filled cell, a blank line between rows.
-// Skills are a single list, which reads better than one "Name:" line each.
 export function renderSection(heading: string, csv: string): string | null {
   const [header, ...rows] = parseCsv(csv.replace(/^﻿/, ""))
   if (!header || !rows.length) return null
@@ -103,7 +98,6 @@ export async function ingestLinkedInZip(file: File): Promise<IngestedSource> {
 
   const raw = `LinkedIn data export\n\n${parts.join("\n\n")}`
   return {
-    // Stored under the LinkedIn kind so it counts as the user's LinkedIn import everywhere.
     kind: "linkedin_pdf",
     label: file.name,
     raw_text: raw,

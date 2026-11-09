@@ -1,5 +1,3 @@
-// A generic negative answer is still useful evidence. Only rejecting a proposed
-// conflict claim means there is no affirmative fact to add.
 export function questionFact(question: { kind: string | null; prompt: string }, answer: string | null): string | null {
   const clean = answer?.trim()
   if (!clean) return null

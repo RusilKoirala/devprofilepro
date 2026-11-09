@@ -38,8 +38,6 @@ export async function loadResume(supabase: SupabaseClient, id: string): Promise<
   return data as ResumeRow | null
 }
 
-// Re-importing the same repo / PR / file updates its row instead of adding another. When the text
-// changed, the previous read is kept in source_versions, so quotes taken from it stay checkable.
 export async function saveSources(supabase: SupabaseClient, sources: IngestedSource[]): Promise<SourceRow[]> {
   if (!sources.length) return []
   const keyed = sources.filter((s) => s.dedupe_key)

@@ -4,12 +4,9 @@ import { generate, UNTRUSTED_NOTE } from "@/lib/ai/client"
 import { recordForPrompt } from "@/lib/ai/record-prompt"
 import type { Fact, Item, Question } from "@/lib/record/types"
 
-// The interview runs before any bullet is written. Sources say what a project is;
-// only the person can say what they built and what changed because of it.
 export const MAX_INTERVIEW_ITEMS = 4
 export const MAX_INTERVIEW_QUESTIONS = 8
 
-// Kinds the UI answers with several picks plus free text, instead of one tap.
 export const MULTI_KINDS = new Set(["built", "ownership"])
 
 export const InterviewSchema = z.object({
@@ -50,7 +47,6 @@ export interface InterviewQuestion {
   options: string[]
 }
 
-// The entries worth interviewing about: shown jobs and projects, strongest first.
 export function interviewItems(items: Item[]): Item[] {
   return items
     .filter((i) => i.status !== "hidden" && (i.type === "project" || i.type === "job"))

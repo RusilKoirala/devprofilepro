@@ -4,10 +4,6 @@ import { onFastModel } from "@/lib/ai/budget"
 import { isProActive, type SubscriptionRow } from "@/lib/billing/events"
 import { monthStart, nextMonthStart, type PlanUsage } from "@/lib/plans"
 
-// This month's usage against the plan allowances, from usage_events (lib/allowance.ts writes them):
-//   tailored = tailored resumes saved, fixes = AI rewrites and chat messages that changed a resume,
-//   updates  = rebuilds and GitHub/LinkedIn syncs after the first build.
-// Failed AI calls never count. The plan comes from the subscriptions row the Dodo webhook keeps.
 export async function loadPlanUsage(supabase: SupabaseClient, now = new Date()): Promise<PlanUsage> {
   const since = monthStart(now).toISOString()
   const [events, { data: sub, error: subError }] = await Promise.all([

@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server"
 
 export const runtime = "nodejs"
 
-// Re-downloading an old export returns the stored file, never a re-render.
 export async function GET(_req: Request, { params }: { params: Promise<{ exportId: string }> }) {
   const { exportId } = await params
   const supabase = await createClient()

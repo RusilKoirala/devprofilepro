@@ -1,13 +1,9 @@
-// Near-duplicate facts. Every build re-reads all sources and the AI words the same fact a little
-// differently each time ("GPA 3.86 / 4.00" vs "GPA 3.86/4.00"), so exact-text checks miss them.
-// Pure code, so it can be unit tested.
 import { numbersIn } from "@/lib/record/verify"
 
 const FILLER = new Set(["a", "an", "the", "in", "with", "of", "and", "at", "for", "on", "to", "from", "by", "as", "is", "was", "using", "via", "my", "i"])
 const SIMILAR = 0.8
 
 function tokens(text: string): Set<string> {
-  // Words only: numbers are compared exactly, separately.
   const words = text.toLowerCase().normalize("NFKC").match(/[a-z]+/g) ?? []
   return new Set(words.map((w) => w.replace(/s$/, "")).filter((w) => !FILLER.has(w)))
 }
@@ -16,7 +12,6 @@ function numbers(text: string): string {
   return numbersIn(text).map((n) => n.replace(/[–—]/g, "-")).sort().join("|")
 }
 
-// Same entry, same numbers, and nearly the same words. Different numbers are never duplicates.
 export function sameFact(a: string, b: string): boolean {
   if (numbers(a) !== numbers(b)) return false
   const ta = tokens(a)
@@ -33,8 +28,6 @@ export interface FactLike {
   text: string
 }
 
-// duplicate id → the fact it merges into. Keeps the one most lines cite, then the oldest
-// (facts arrive oldest first).
 export function findDuplicateFacts(facts: FactLike[], citations: Map<string, number> = new Map()): Map<string, string> {
   const merge = new Map<string, string>()
   const byItem = new Map<string, FactLike[]>()

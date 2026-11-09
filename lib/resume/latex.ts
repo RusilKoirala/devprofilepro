@@ -1,14 +1,11 @@
 import { displayUrl } from "./build.ts"
 import type { ResumeDoc } from "@/lib/resume/schema"
 
-// Plain string template of the same content (Jake's Resume). The app never compiles it, but
-// scripts/check-latex.mts does, to confirm it fits on one page whenever the PDF does.
 export function escapeLatex(s: string): string {
   const escapes: Record<string, string> = {
     "\\": "\\textbackslash{}", "~": "\\textasciitilde{}", "^": "\\textasciicircum{}",
     "–": "--", "—": "--",
   }
-  // One pass: escaping braces must not corrupt commands inserted for backslashes.
   return s.replace(/[\\&%$#_{}~^–—]/g, (char) => escapes[char] ?? `\\${char}`)
 }
 
@@ -55,7 +52,6 @@ const PREAMBLE = String.raw`\documentclass[letterpaper,10pt]{article}
 export function toLatex(doc: ResumeDoc): string {
   const c = doc.contact
   const contact = [
-    // Same fields, same order as the PDF's contact line.
     c.phone && e(c.phone),
     c.email && href(`mailto:${c.email}`, c.email),
     c.location && e(c.location),
@@ -96,5 +92,4 @@ ${sections.join("\n\n")}
 `
 }
 
-// Overleaf opens a .tex from a data URL via its /docs endpoint (form POST with snip_uri or encoded_snip).
 export const OVERLEAF_URL = "https://www.overleaf.com/docs"

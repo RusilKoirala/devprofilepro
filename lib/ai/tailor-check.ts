@@ -2,18 +2,10 @@ import type { ModelPlan, TailorPlan } from "@/lib/ai/tailor"
 import { support, unsupportedTerms, type Support } from "@/lib/record/evidence"
 import { itemTitle, type Fact, type Item } from "@/lib/record/types"
 
-// Plain-code checks on a tailoring plan. A known item id is not enough: the evidence cited for an
-// item has to be that item's own facts, coverage has to rest on items that are on the resume, and
-// the cited facts have to actually name what the requirement asks for.
-
-// Saved with every match report. Reports from before these checks (no version) are shown as such.
 export const MATCH_REPORT_VERSION = 4
 
-// A verdict about the record, not part of what a job post asks for.
 const VERDICT = /\b(no evidence|not (?:recorded|found|shown|mentioned|listed)|nothing in (?:the|your) record|(?:isn't|is not|aren't|are not) (?:recorded|in (?:the|your) record))\b/i
 
-// A requirement as the post states it. The model sometimes appends its verdict ("… — no evidence
-// anywhere in the record"), which then reads as part of the requirement and next to its status.
 export function requirementText(text: string): string {
   const m = VERDICT.exec(text)
   if (!m) return text.trim()
@@ -22,16 +14,12 @@ export function requirementText(text: string): string {
   return (cut >= 0 ? head.slice(0, cut) : head).replace(/[\s,:;—–-]+$/, "").trim() || text.trim()
 }
 
-// A summary sentence about which requirements the record does or doesn't show. Statuses are
-// checked by code and shown next to each requirement, so the summary leaves them out rather than
-// risk saying the opposite.
 const REQUIREMENT_CLAIM = /\b(requirements?|no evidence|not (?:recorded|found|shown|mentioned|listed)|(?:isn't|aren't|doesn't|don't) (?:show|cover|mention|appear|recorded)|missing|lacks?|gaps?|cover(?:s|ed|ing)?)\b/i
 
 export function withoutRequirementClaims(summary: string): string {
   return summary.split(/(?<=[.!?])\s+/).filter((s) => s.trim() && !REQUIREMENT_CLAIM.test(s)).join(" ").trim()
 }
 
-// Names a summary could use to refer to an item ("Stripe", "PulseOps").
 function names(item: Pick<Item, "type" | "data">): string[] {
   const d = item.data
   const list = item.type === "job" ? [d.company] : item.type === "project" || item.type === "award" ? [d.name] : []
@@ -43,7 +31,6 @@ function mentions(text: string, name: string) {
   return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, "i").test(text)
 }
 
-// Unselected items the summary names (unless a selected item shares the name).
 function strayMentions(plan: { items: { item_id: string }[]; summary: string }, items: Item[]): string[] {
   const chosen = new Set(plan.items.map((i) => i.item_id))
   const chosenNames = items.filter((i) => chosen.has(i.id)).flatMap(names)
@@ -56,7 +43,6 @@ function strayMentions(plan: { items: { item_id: string }[]; summary: string }, 
 export function checkTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]): string[] {
   const ids = new Set(items.map((i) => i.id))
   const factItem = new Map(facts.map((f) => [f.id, f.item_id]))
-  // Backups end up on the page too when there's room, so they're checked the same way.
   const listed = [...plan.items, ...(plan.backup_items ?? [])]
   const chosen = new Set(listed.map((i) => i.item_id))
   const errors: string[] = []
@@ -84,8 +70,6 @@ export function checkTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]): 
   return errors
 }
 
-// The text an entry contributes as evidence besides its facts: what its heading prints on a resume
-// (lib/resume/build.ts and the templates). Tech stored on a job or skills group isn't printed.
 function itemText(item: Item) {
   const d = item.data
   const printed =
@@ -101,18 +85,11 @@ const RANK: Record<Support, number> = { full: 2, partial: 1, unknown: 0, none: 0
 
 type Requirement = TailorPlan["requirements"][number]
 
-// Every requirement is checked against the whole record, not only what the AI cited:
-//   covered    the cited (or found) facts on the resume name everything it asks for
-//   unclear    they name part of it, or only a weaker form (a Dockerfile for Docker)
-//   elsewhere  the record shows it, but in entries this resume doesn't include
-//   not_found  nothing in the record names it
-// A requirement code can't check ("Strong communication") keeps the AI's call, at most "unclear".
 export function assessRequirements(requirements: ModelPlan["requirements"], chosen: Set<string>, items: Item[], facts: Fact[]): Requirement[] {
   const byId = new Map(items.map((i) => [i.id, i]))
   const factById = new Map(facts.filter((f) => byId.has(f.item_id)).map((f) => [f.id, f]))
   const evidence = (fs: Fact[]) => [...fs.map((f) => f.text), ...[...new Set(fs.map((f) => f.item_id))].map((id) => itemText(byId.get(id)!))]
   const result = (text: string, status: Requirement["status"], fs: Fact[]): Requirement => ({ text, status, item_ids: [...new Set(fs.map((f) => f.item_id))], fact_ids: fs.map((f) => f.id) })
-  // The facts in these entries that name some of what the requirement asks for, best first.
   const search = (text: string, inChosen: boolean) =>
     facts
       .filter((f) => byId.has(f.item_id) && chosen.has(f.item_id) === inChosen)
@@ -125,12 +102,10 @@ export function assessRequirements(requirements: ModelPlan["requirements"], chos
     const r = { ...rest, text: requirementText(text) }
     const cited = r.fact_ids.map((id) => factById.get(id)).filter((f): f is Fact => !!f && chosen.has(f.item_id))
     if (support(r.text, []) === "unknown") {
-      // Nothing code can check: the AI's call stands on its cited facts, but never as "covered".
       return r.status === "not_found" || !cited.length ? result(r.text, "not_found", []) : result(r.text, "unclear", cited)
     }
     if (r.status === "covered" && support(r.text, evidence(cited)) === "full") return result(r.text, "covered", cited)
 
-    // What the AI cited, plus anything else on the resume that names the requirement.
     const onResume = [...new Map([...cited, ...search(r.text, true)].map((f) => [f.id, f])).values()].slice(0, 4)
     const here = onResume.length ? support(r.text, evidence(onResume)) : "none"
     if (here === "full") return result(r.text, r.status === "unclear" ? "unclear" : "covered", onResume)
@@ -139,7 +114,6 @@ export function assessRequirements(requirements: ModelPlan["requirements"], chos
     const better = elsewhere.length && RANK[support(r.text, evidence(elsewhere.slice(0, 4)))] > RANK[here]
     if (here === "partial" && !better) return result(r.text, "unclear", onResume)
     if (elsewhere.length) {
-      // The two strongest entries it shows up in, so the person can add one.
       const entries = [...new Set(elsewhere.map((f) => f.item_id))].slice(0, 2)
       return result(r.text, "elsewhere", elsewhere.filter((f) => entries.includes(f.item_id)).slice(0, 4))
     }
@@ -147,8 +121,6 @@ export function assessRequirements(requirements: ModelPlan["requirements"], chos
   })
 }
 
-// An entry's explanation stays only when its cited facts are its own and name every skill or tool
-// it mentions. Remarks about the entry's status ("hidden but relevant") are taken out.
 function checkedReason(reason: string, item: Item, own: Fact[]): string {
   const text = reason.replace(/\s*\([^)]*\b(hidden|shown|suggested|status)\b[^)]*\)\s*/gi, " ").trim()
   if (!text || !own.length || /\b(hidden|is shown)\b/i.test(text)) return ""
@@ -160,8 +132,6 @@ const KEPT: Partial<Record<Item["type"], string>> = {
   skills: "Kept: your strongest skills group.",
 }
 
-// Keep only evidence that checks out. Education and one skills group are always kept when they
-// exist, in code rather than by asking.
 export function repairTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]): TailorPlan {
   const byId = new Map(items.map((i) => [i.id, i]))
   const factById = new Map(facts.map((f) => [f.id, f]))
@@ -171,7 +141,6 @@ export function repairTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]):
       .filter((i) => byId.has(i.item_id) && !seen.has(i.item_id) && seen.add(i.item_id))
       .map((i) => {
         const own = i.fact_ids.map((f) => factById.get(f)).filter((f): f is Fact => f?.item_id === i.item_id)
-        // A reason built on another item's facts describes the wrong thing, so it goes.
         const borrowed = i.fact_ids.some((f) => factById.has(f) && factById.get(f)!.item_id !== i.item_id)
         return { item_id: i.item_id, reason: borrowed ? "" : checkedReason(i.reason, byId.get(i.item_id)!, own), fact_ids: own.map((f) => f.id) }
       })
@@ -190,11 +159,8 @@ export function repairTailorPlan(plan: ModelPlan, items: Item[], facts: Fact[]):
   return { title: plan.title, company: plan.company, role: plan.role, items: picked, backup, section_order: plan.section_order, requirements, summary: checkedSummary(plan.summary, picked, items) }
 }
 
-// The AI's summary of what it chose, without its claims about requirements, unless it names an
-// entry that isn't on the resume.
 export function checkedSummary(summary: string, picked: { item_id: string }[], items: Item[]) {
   const byId = new Map(items.map((i) => [i.id, i]))
-  // Sentences naming an entry that isn't on the resume go, the rest stay.
   const kept = withoutRequirementClaims(summary)
     .split(/(?<=[.!?])\s+/)
     .filter((s) => s.trim() && !strayMentions({ items: picked, summary: s }, items).length)
@@ -204,8 +170,6 @@ export function checkedSummary(summary: string, picked: { item_id: string }[], i
   return `Chose ${picked.length} entr${picked.length === 1 ? "y" : "ies"} for this: ${picked.slice(0, 4).map((i) => itemTitle(byId.get(i.item_id)!)).join("; ")}${picked.length > 4 ? "; and more" : ""}.`
 }
 
-// A match report for a resume that already exists: the AI's fresh read of the job post, checked
-// against the entries this resume actually includes. Used to re-check reports made before these checks.
 export function reportForResume(plan: ModelPlan, include: string[], items: Item[], facts: Fact[]) {
   const byId = new Map(items.map((i) => [i.id, i]))
   const factById = new Map(facts.map((f) => [f.id, f]))
@@ -231,9 +195,6 @@ interface StoredReport {
   [key: string]: unknown
 }
 
-// After two entries are merged, a saved report that cited the dropped one cites the kept one.
-// Facts keep their ids when they move, so fact citations need no change. Returns null when the
-// report doesn't mention the dropped entry.
 export function remapReport<T extends StoredReport>(report: T, dropId: string, keepId: string): T | null {
   const cites = report.reasons?.some((r) => r.item_id === dropId) || report.requirements?.some((r) => r.item_ids?.includes(dropId))
   if (!cites) return null

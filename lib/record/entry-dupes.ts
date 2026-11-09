@@ -1,13 +1,9 @@
-// Entries that are probably the same thing read twice: one freelance period under two job titles,
-// one employer spelled two ways, one repo under two names. Exact identity keys (types.ts dedupeKey)
-// miss these, so the Career Record suggests merges and the person decides. Pure code.
 import { dateValue } from "@/lib/resume/dates"
 import type { Item, ItemData } from "@/lib/record/types"
 
 export interface DuplicatePair {
   a: string
   b: string
-  // Why we think so, in plain words.
   why: string
 }
 
@@ -21,7 +17,6 @@ function squash(s?: string | null) {
   return words(s).join("")
 }
 
-// "Layer5" ~ "Layer5, Inc." ~ "Layer5 (Meshery)"; "Acme" !~ "Acme Bank Holdings Group".
 export function similarName(x?: string | null, y?: string | null): boolean {
   const a = squash(x)
   const b = squash(y)
@@ -43,7 +38,6 @@ function range(d: Pick<ItemData, "start" | "end">): [number, number] | null {
   return [start, end == null ? start : end]
 }
 
-// Two periods share at least a month.
 function overlaps(a: Pick<ItemData, "start" | "end">, b: Pick<ItemData, "start" | "end">): boolean | null {
   const ra = range(a)
   const rb = range(b)
@@ -91,7 +85,6 @@ export function findDuplicateEntries(items: Pick<Item, "id" | "type" | "data">[]
       const reason = why(a, b)
       if (!reason) continue
       pairs.push({ a: a.id, b: b.id, why: reason })
-      // One suggestion per entry at a time; the next shows once this one is settled.
       used.add(a.id)
       used.add(b.id)
     }

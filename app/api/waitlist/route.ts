@@ -6,8 +6,8 @@ const BodySchema = z.object({
   email: z.email().max(254),
 })
 
-// Adds signups to Loops as contacts in the "waitlist" group, so the invite
-// email can be sent from Loops later.
+
+// waitlist i created for no reason
 export async function POST(request: Request) {
   const parsed = BodySchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {

@@ -1,6 +1,5 @@
 export type SourceKind = "github" | "resume_pdf" | "linkedin_pdf" | "paste" | "pr_link" | "win"
 
-// One row for the `sources` table. raw_text is what quotes are verified against.
 export interface IngestedSource {
   kind: SourceKind
   label: string
@@ -12,7 +11,6 @@ export interface IngestedSource {
   status?: "ok" | "partial" | "failed"
 }
 
-// A fact we can state straight from API data, with no AI. `quote` is a line of raw_text.
 export interface SignalFact {
   text: string
   quote: string

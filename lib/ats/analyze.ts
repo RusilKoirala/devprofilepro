@@ -1,14 +1,8 @@
-// The public ATS check: what commonly breaks resume parsing, judged from the PDF's own text and
-// layout. Pure code with no AI and no network, so the same file always gets the same report.
-// Honest scope (docs/USER_PROBLEMS.md section 6): this is our parser's view, not a guarantee
-// about any particular ATS.
 import { bannedWordsIn } from "@/lib/record/verify"
 
 export interface PdfLine {
   page: number
-  // Left edge of each text run on the line, as a share of the page width (0-1).
   xs: number[]
-  // The text of each run, in the same order as xs.
   runs: string[]
 }
 
@@ -21,8 +15,6 @@ export interface ExtractedPdf {
 
 export type AtsStatus = "pass" | "warn" | "fail"
 
-// Three different questions: can software read the file at all, is key information there, and
-// is the writing strong. Only the first decides whether the file "can be read".
 export type AtsGroup = "parsing" | "info" | "content"
 
 export interface AtsCheck {
@@ -31,14 +23,11 @@ export interface AtsCheck {
   label: string
   status: AtsStatus
   detail: string
-  // What to do about it, shown only when the check isn't a pass.
   fix?: string
 }
 
 export interface AtsReport {
-  // pass: text extracts cleanly. fail: almost nothing could be read.
   verdict: "pass" | "fail"
-  // Things a recruiter needs that weren't found (email, a work section), separate from parsing.
   missingInfo: string[]
   score: number
   checks: AtsCheck[]
@@ -46,9 +35,7 @@ export interface AtsReport {
   preview: string
 }
 
-// Below this almost nothing came out of the file: an image or a design export.
 const MIN_TEXT_CHARS = 40
-// Below this it read fine but is short, which can mean parts of it are images.
 const SHORT_TEXT_CHARS = 250
 const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
 const PHONE = /(?:\+?\d[\d\s().-]{7,}\d)/
@@ -75,11 +62,6 @@ function lineText(l: PdfLine) {
   return l.runs.join(" ").replace(/\s+/g, " ").trim()
 }
 
-// Two-column layouts get read across both columns, mixing them line by line. Two signals:
-// - rows split in two: a run starts mid-page after real text (right-aligned dates sit past 70%
-//   of the width, so they don't count);
-// - two left margins: many lines start at the page's left edge and many start mid-page, which
-//   is what columns with unaligned rows look like.
 export function looksTwoColumn(lines: PdfLine[]): boolean {
   const starts = lines.filter((l) => l.runs.join("").trim().length >= 8).map((l) => l.xs[0])
   const midStarts = starts.filter((x) => x >= 0.3 && x <= 0.7).length
@@ -102,7 +84,6 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
   const words = text.split(/\s+/).filter(Boolean).length
   const checks: AtsCheck[] = []
 
-  // 1. Selectable text. Everything else depends on it.
   const chars = text.replace(/\s/g, "").length
   const readable = chars >= MIN_TEXT_CHARS
   checks.push(
@@ -121,7 +102,6 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
   )
   if (!readable) return finish(checks, words, text)
 
-  // 2. Contact details.
   const email = EMAIL.test(text)
   const phone = PHONE.test(text)
   const profile = PROFILE.test(text) || pdf.links.some((l) => PROFILE.test(l))
@@ -135,7 +115,6 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
     fix: missing.length ? "Put your email, phone and a LinkedIn or GitHub link as plain text at the top, not inside a header, footer, image or icon." : undefined,
   })
 
-  // 3. Standard section headings, so the ATS knows where jobs and schools are.
   const found = SECTIONS.filter((s) => lines.some((l) => l.length <= 40 && s.pattern.test(l.replace(/[:|]/g, "").trim())))
   const hasWork = found.some((s) => s.id === "experience" || s.id === "projects")
   const notFound = SECTIONS.filter((s) => !found.includes(s) && !(s.id === "projects" && found.some((f) => f.id === "experience"))).map((s) => s.name)
@@ -148,7 +127,6 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
     fix: notFound.length ? `Use plain headings an ATS expects: ${SECTIONS.map((s) => s.name).join(", ")}. Creative names like "My Journey" or "Toolbox" often aren't recognised.` : undefined,
   })
 
-  // 4. Layout: columns get mixed together when read top to bottom.
   const twoColumn = looksTwoColumn(pdf.lines)
   checks.push({
     id: "layout",
@@ -159,7 +137,6 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
     fix: twoColumn ? "Move sidebar content (skills, contact, languages) into the main column, or use a single-column template." : undefined,
   })
 
-  // 5. Icon fonts and symbols that come out as garbage.
   const glyphs = (text.match(ICON_GLYPHS) ?? []).length
   checks.push({
     id: "glyphs",
@@ -170,7 +147,6 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
     fix: glyphs >= 3 ? "Replace icons with words (\"Email:\", \"GitHub:\") and drop skill-rating bars or dots." : undefined,
   })
 
-  // 6. Dates in one format.
   const formats = DATE_FORMATS.filter(([, re]) => (text.match(re) ?? []).length > 0).map(([name]) => name)
   const anyDates = formats.length > 0 || /\b(19|20)\d{2}\b/.test(text)
   checks.push({
@@ -182,7 +158,6 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
     fix: !anyDates ? "Add start and end dates like \"Jun 2024 – Aug 2025\" to each job and school." : formats.length > 1 ? "Pick one format, e.g. \"Jun 2024 – Present\", and use it everywhere." : undefined,
   })
 
-  // 7. Length.
   checks.push({
     id: "length",
     group: "content",
@@ -192,7 +167,6 @@ export function analyzeResume(pdf: ExtractedPdf): AtsReport {
     fix: pdf.pages > 2 ? "Cut to one page (two at most with 10+ years of experience). Recruiters skim; extra pages bury your best work." : words < 200 ? "This is very short. Add your projects, what you built in each, and the tools you used." : undefined,
   })
 
-  // 8. Bullets with results, and no weak openers or buzzwords.
   const bullets = lines.filter((l) => BULLET.test(l))
   const withNumbers = bullets.filter((b) => /\d/.test(b.replace(/\b(19|20)\d{2}\b/g, "")))
   const weak = lines.filter((l) => WEAK_OPENERS.test(l)).length

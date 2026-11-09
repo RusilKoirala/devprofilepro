@@ -9,12 +9,10 @@ function dates(start?: string | null, end?: string | null) {
   return start || end || ""
 }
 
-// Same skill, by name or a known alias ("Postgres" for "PostgreSQL").
 export function sameSkill(a: string, b: string) {
   return a.trim().toLowerCase() === b.trim().toLowerCase() || hasTerm(a, b) || hasTerm(b, a)
 }
 
-// A skills group's list with this resume's focus first.
 export function focusedSkills(skills: string[], focus: string[] = []): string[] {
   const lead = focus.filter((f, n) => !focus.slice(0, n).some((g) => sameSkill(f, g)))
   return [...lead, ...skills.filter((s) => !lead.some((f) => sameSkill(s, f)))]
@@ -27,8 +25,6 @@ function entryFor(item: Item, bullets: ResumeEntry["bullets"], focus?: string[])
     case "job":
       return { ...base, title: d.role ?? "", subtitle: d.company ?? "" }
     case "education": {
-      // Extracted education often repeats itself: the date inside the details ("Expected
-      // Graduation: 2027") or the details inside the degree. Print each once.
       const degree = d.degree ?? ""
       const details = d.details && !degree.toLowerCase().includes(d.details.toLowerCase()) ? d.details : ""
       const subtitle = [degree, details].filter(Boolean).join(", ")
@@ -42,13 +38,11 @@ function entryFor(item: Item, bullets: ResumeEntry["bullets"], focus?: string[])
   }
 }
 
-// What an entry's heading prints: its title, subtitle and dates.
 export function headingOf(item: Item): Pick<ResumeEntry, "title" | "subtitle" | "dates"> {
   const { title, subtitle, dates } = entryFor(item, [])
   return { title, subtitle, dates }
 }
 
-// layout + record → ResumeDoc. Names, titles and dates always come from the record, never from AI wording.
 export function buildResume(layout: ResumeLayout, record: Pick<CareerRecord, "items" | "bullets">): ResumeDoc {
   const items = new Map(record.items.map((i) => [i.id, i]))
   const bullets = new Map(record.bullets.map((b) => [b.id, b]))

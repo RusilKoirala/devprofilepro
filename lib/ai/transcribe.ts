@@ -4,7 +4,6 @@ import { generate } from "@/lib/ai/client"
 
 const TranscriptSchema = z.object({ text: z.string() })
 
-// A0: only for scanned PDFs where unpdf found almost no text.
 export async function transcribePdf(userId: string, pdf: Uint8Array): Promise<string> {
   const { text } = await generate({
     step: "transcribe",

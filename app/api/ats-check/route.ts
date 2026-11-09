@@ -6,7 +6,8 @@ import { allowPublic } from "@/lib/ratelimit"
 
 const PER_DAY = 20
 
-// The free ATS checker. Public and signed out: the PDF is read in memory and never stored.
+
+// basically checking for ats like this code was availabe online just few tweaks needed
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown"
   if (!(await allowPublic("ats-check", ip, PER_DAY))) {
@@ -18,7 +19,6 @@ export async function POST(request: Request) {
   if (!(file instanceof File) || !file.size) return NextResponse.json({ error: "Choose your resume PDF first." }, { status: 400 })
   if (file.size > MAX_ATS_PDF_BYTES) return NextResponse.json({ error: "That PDF is over 5 MB. Export a smaller copy and try again." }, { status: 400 })
   const bytes = new Uint8Array(await file.arrayBuffer())
-  // Check the bytes, not the browser's MIME guess: every PDF starts with %PDF.
   if (String.fromCharCode(...bytes.slice(0, 4)) !== "%PDF") return NextResponse.json({ error: "That isn't a PDF. Export your resume as PDF and try again." }, { status: 400 })
 
   try {

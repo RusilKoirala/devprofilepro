@@ -5,14 +5,10 @@ import { recordForPrompt } from "@/lib/ai/record-prompt"
 import type { Bullet, Fact, Item } from "@/lib/record/types"
 import { checkTailorPlan, repairTailorPlan } from "@/lib/ai/tailor-check"
 
-// A4, first version: choose and order existing Career Record items for a request or job post.
-// It never writes new wording; a tailored resume's own wording comes from its editor and chat.
 const SECTION_TYPES = ["job", "project", "education", "skills", "award"] as const
 
 const RequirementStatus = z.enum(["covered", "unclear", "elsewhere", "not_found"])
 
-// What the model returns. Every reason and every covered requirement cites fact ids, so code can
-// check that the evidence really belongs to the item it is said to explain.
 export const ModelSchema = z.object({
   title: z.string().describe("Short name for this resume, e.g. 'Stripe — Backend Intern' or 'Frontend roles'"),
   company: z.string().nullable().describe("Company named in the request, if any"),
@@ -31,13 +27,11 @@ export const ModelSchema = z.object({
 })
 export type ModelPlan = z.infer<typeof ModelSchema>
 
-// The plan the app keeps: the model's choices after code checks, with item ids derived from the cited facts.
 export const TailorSchema = z.object({
   title: z.string(),
   company: z.string().nullable(),
   role: z.string().nullable(),
   items: z.array(z.object({ item_id: z.string(), reason: z.string(), fact_ids: z.array(z.string()).default([]) })),
-  // Next most relevant items, written too and placed last: one page keeps them only if there's room.
   backup: z.array(z.object({ item_id: z.string(), reason: z.string(), fact_ids: z.array(z.string()).default([]) })).default([]),
   section_order: z.array(z.enum(SECTION_TYPES)),
   requirements: z.array(z.object({ text: z.string(), status: RequirementStatus, item_ids: z.array(z.string()), fact_ids: z.array(z.string()).default([]) })),
@@ -69,11 +63,9 @@ Rules:
 
 export async function planTailoredResume(userId: string, brief: string, items: Item[], facts: Fact[], bullets: Bullet[]): Promise<TailorPlan> {
   const usable = items.filter((i) => i.type !== "contact")
-  // Whatever still fails the check is repaired or dropped rather than trusted.
   return repairTailorPlan(await draftTailorPlan(userId, brief, usable, facts, bullets), usable, facts)
 }
 
-// The model's plan after its one retry, before code repairs it. Evals score this directly.
 export async function draftTailorPlan(userId: string, brief: string, usable: Item[], facts: Fact[], bullets: Bullet[]): Promise<ModelPlan> {
   return generate({
     step: "tailor",

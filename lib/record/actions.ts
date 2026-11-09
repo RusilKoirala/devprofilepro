@@ -40,7 +40,6 @@ import {
 } from "@/lib/record/edits"
 import { REWRITE_STYLES, type RewriteStyle } from "@/lib/record/rewrite-styles"
 
-// `upgrade` is set when a Free allowance ran out, so the client can offer Pro.
 export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; error: string; upgrade?: Allowance }
 
 async function session() {
@@ -52,13 +51,11 @@ async function session() {
 
 function fail(err: unknown): { ok: false; error: string; upgrade?: Allowance } {
   if (err instanceof AllowanceError) return { ok: false, error: err.message, upgrade: err.allowance }
-  // A provider or schema error means nothing to the person; they get what happened and what to do.
   if (err instanceof AiError && err.reason !== "refusal") {
     console.error(err)
     return { ok: false, error: "The AI step didn't finish, so nothing was changed or counted. Try again in a minute." }
   }
   if (err instanceof RateLimitedError || err instanceof AiError || err instanceof GitHubError || err instanceof BudgetError) return { ok: false, error: err.message }
-  // Validation details are for us; the person gets the one message that says what to change.
   if (err instanceof z.ZodError) return { ok: false, error: err.issues[0]?.message && !/^(Expected|Invalid|Required)/.test(err.issues[0].message) ? err.issues[0].message : "That didn't look right. Check it and try again." }
   console.error(err)
   return { ok: false, error: err instanceof Error ? err.message : "Something went wrong" }
@@ -70,10 +67,6 @@ export interface CoverageLine {
   detail: string
 }
 
-// ① Ingest everything the user gave us on /start.
-// After the first build, reading sources again is a sync or rebuild: a Free allowance.
-// Counted by the Career Record, not the base resume: deleting the base resume must not make the
-// next rebuild free.
 async function hasBuiltRecord(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { count, error } = await supabase.from("items").select("id", { count: "exact", head: true })
   if (error) throw new Error(error.message)
@@ -83,7 +76,6 @@ async function hasBuiltRecord(supabase: Awaited<ReturnType<typeof createClient>>
 export async function addSources(formData: FormData): Promise<ActionResult<CoverageLine[]>> {
   try {
     const { userId, supabase } = await session()
-    // Checked here too, before anything is fetched, so a Free user out of syncs isn't left half way.
     if (await hasBuiltRecord(supabase)) await requireAllowance(supabase, "updates")
     const coverage: CoverageLine[] = []
     const sources: IngestedSource[] = []
@@ -158,18 +150,13 @@ export async function addSources(formData: FormData): Promise<ActionResult<Cover
   }
 }
 
-// ②→⑥ Build the base resume in stages, so the client shows real progress instead of a timer.
-
-// ② Extract + ③ quote check.
 export async function stageExtract(): Promise<ActionResult<{ counts: Partial<Record<ItemType, number>>; factsKept: number; factsDropped: number; skipped: string[]; added: string[]; updated: string[]; updatedIds: string[]; changes: DetailChange[] }>> {
   try {
     const { userId, supabase } = await session()
-    // The first build is free; every read after it counts as a sync or rebuild.
     const counted = await hasBuiltRecord(supabase)
     if (counted) await requireAllowance(supabase, "updates")
     const report = await buildRecord(supabase, userId)
     if (counted) await recordUsage(supabase, "updates")
-    // The AI steps after this one (interview, writing, questions, rewrites) run once on this pass.
     await issueBuildPass(userId, report.updatedIds)
     return { ok: true, data: { counts: report.counts, factsKept: report.factsKept, factsDropped: report.factsDropped, skipped: report.skippedReadmes, added: report.added, updated: report.updated, updatedIds: report.updatedIds, changes: report.changes } }
   } catch (err) {
@@ -177,7 +164,6 @@ export async function stageExtract(): Promise<ActionResult<{ counts: Partial<Rec
   }
 }
 
-// ⑤ Write bullets and save the base resume's layout.
 export async function stageWrite(targetRole?: string, answeredItemIds: string[] = []): Promise<ActionResult<{ resumeId: string; written: number }>> {
   try {
     const { userId, supabase } = await session()
@@ -185,8 +171,6 @@ export async function stageWrite(targetRole?: string, answeredItemIds: string[] 
     const answered = z.array(z.string().uuid()).max(50).parse(answeredItemIds)
     const claimed = await claimStep(userId, "write")
     if (claimed) return { ok: true, data: await withStep(claimed, () => writeBase(supabase, userId, role, answered)) }
-    // No pass: only a first build that never got its base resume (say, interrupted for longer
-    // than a pass lasts) may still finish. It writes entries with no lines yet, nothing else.
     const { data: base, error } = await supabase.from("resumes").select("id").eq("kind", "base").maybeSingle()
     if (error) throw new Error(error.message)
     if (base) throw new Error("Sync your sources to write new lines. To rewrite an entry, use Rewrite on it.")
@@ -196,12 +180,9 @@ export async function stageWrite(targetRole?: string, answeredItemIds: string[] 
   }
 }
 
-// ④ Interview before writing. Best effort: if it fails, the resume is written from the sources alone.
 export async function stageInterview(): Promise<ActionResult<InterviewCard[]>> {
   try {
     const { userId, supabase } = await session()
-    // Without a pass (it was used, or a build is picked up later) the open questions are shown
-    // again, but no new ones are written.
     const claimed = await claimStep(userId, "interview")
     if (!claimed) return { ok: true, data: await queueInterview(supabase, userId, { generate: false }) }
     return { ok: true, data: await withStep(claimed, () => queueInterview(supabase, userId)) }
@@ -214,8 +195,6 @@ export async function stageInterview(): Promise<ActionResult<InterviewCard[]>> {
 
 const InterviewAnswers = z.array(z.object({ id: z.string().uuid(), answer: z.string().trim().max(1000).nullable() })).max(20)
 
-// Saves every interview answer as a "You told us" fact in one go, without rewriting after each
-// one; stageWrite then writes the resume once. Returns the entries that gained a fact.
 export async function submitInterview(answers: { id: string; answer: string | null }[]): Promise<ActionResult<{ itemIds: string[] }>> {
   try {
     const { supabase } = await session()
@@ -230,7 +209,6 @@ export async function submitInterview(answers: { id: string; answer: string | nu
   }
 }
 
-// ④ Questions. Best effort: a failure here never blocks the draft.
 export async function stageQuestions(): Promise<ActionResult<{ open: number }>> {
   try {
     const { userId, supabase } = await session()
@@ -243,7 +221,6 @@ export async function stageQuestions(): Promise<ActionResult<{ open: number }>> 
   }
 }
 
-// ⑥ Fit to one page.
 export async function stageFit(resumeId: string): Promise<ActionResult<{ pages: number; cuts: number; pinnedOverflow: boolean }>> {
   try {
     const { supabase } = await session()
@@ -255,7 +232,6 @@ export async function stageFit(resumeId: string): Promise<ActionResult<{ pages: 
   }
 }
 
-// New resume from a request or job post, in stages like the first build: plan (AI) → save → fit → check.
 export async function stageTailorPlan(brief: string): Promise<ActionResult<TailorPlan>> {
   try {
     const { userId, supabase } = await session()
@@ -276,9 +252,7 @@ export async function stageTailorSave(brief: string, input: TailorPlan): Promise
     await requireAllowance(supabase, "tailored")
     const [record, { data: base, error: baseError }] = await Promise.all([loadRecord(supabase), supabase.from("resumes").select("layout").eq("kind", "base").maybeSingle()])
     if (baseError) throw new Error(baseError.message)
-    // The plan came back through the browser: keep only ids that are really in this user's record.
     const known = new Set(record.items.filter((i) => i.type !== "contact").map((i) => i.id))
-    // Backups go last, so fitting one page cuts them first.
     const include = [...new Set([...plan.items, ...plan.backup].map((i) => i.item_id))].filter((id) => known.has(id))
     if (!include.length) throw new Error("Nothing in your Career Record matched this. Try describing the role differently.")
     const types = new Map(record.items.map((i) => [i.id, i.type]))
@@ -293,17 +267,13 @@ export async function stageTailorSave(brief: string, input: TailorPlan): Promise
       target_role: plan.role ?? plan.title,
       section_order: [...new Set([...plan.section_order, "skills", "job", "education", "project", "award"] as const)],
       ...(base?.layout?.template ? { template: base.layout.template } : {}),
-      // Relevance order for projects, skills and awards; jobs and schools stay newest first.
       item_order: include.filter((id) => types.get(id) !== "job" && types.get(id) !== "education"),
       include,
       items: [],
     }
     const { data, error } = await supabase.from("resumes").insert({ kind: "tailored", job_id: job.id, title: plan.title.slice(0, 120) || "New resume", layout }).select("id").single()
     if (error) throw new Error(error.message)
-    // Counted when saved, not when the AI call ran.
     await recordUsage(supabase, "tailored", data.id as string)
-    // Written for the job here, in the counted step, so the writing can't be asked for on its own.
-    // If it fails, the resume is kept in the base resume's wording and the chat can rewrite it.
     const draft = await writeTailored(supabase, userId, data.id as string, plan).catch((err) => {
       console.error("tailored write failed", err)
       return null
@@ -314,8 +284,6 @@ export async function stageTailorSave(brief: string, input: TailorPlan): Promise
   }
 }
 
-// A fresh, checked match report for a tailored resume, e.g. one whose report was made before the
-// evidence checks. Only the report changes: the resume keeps its entries and wording.
 export async function recheckMatch(resumeId: string): Promise<ActionResult> {
   try {
     const { userId, supabase } = await session()
@@ -336,7 +304,6 @@ export async function recheckMatch(resumeId: string): Promise<ActionResult> {
   }
 }
 
-// Recompute a resume's layout from the record (keeping its headline and section order) and re-fit.
 async function relayout(resumeId: string) {
   const { supabase } = await session()
   await relayoutResume(supabase, resumeId)
@@ -352,7 +319,6 @@ export async function refit(resumeId: string): Promise<ActionResult> {
   }
 }
 
-// Each action: one edit from lib/record/edits.ts, then re-fit the page.
 async function edit<T>(resumeId: string | null, apply: (supabase: Awaited<ReturnType<typeof session>>["supabase"]) => Promise<T>): Promise<ActionResult<T extends void ? undefined : T>> {
   try {
     const { supabase } = await session()
@@ -373,13 +339,10 @@ export async function setItemState(resumeId: string | null, itemId: string, patc
   return edit(resumeId, (supabase) => setItemStateIn(supabase, resumeId, itemId, patch))
 }
 
-// Restoring something the fit step cut pins it, so the next fit doesn't cut it again.
 export async function restoreCut(resumeId: string, itemId: string): Promise<ActionResult> {
   return setItemState(resumeId, itemId, { pinned: true, status: "shown" })
 }
 
-// Records one answer. A useful answer becomes a "You told us" fact (ranges stay ranges), and
-// confirms ownership of a team project. Returns the item that gained a fact, if any.
 async function saveAnswer(supabase: Awaited<ReturnType<typeof createClient>>, questionId: string, answer: string | null): Promise<string | null> {
   const { data: q, error: questionError } = await supabase.from("questions").select("id,item_id,prompt,kind,status").eq("id", questionId).single()
   if (questionError) throw new Error(questionError.message)
@@ -408,7 +371,6 @@ export async function answerQuestion(resumeId: string | null, questionId: string
     const { userId, supabase } = await session()
     const itemId = await saveAnswer(supabase, questionId, answer)
     if (itemId) {
-      // Rewrite only the affected item.
       const record = await loadRecord(supabase)
       const resume = resumeId ? await loadResume(supabase, resumeId) : null
       await writeItems(supabase, userId, record, { itemIds: [itemId], targetRole: resume?.layout.target_role })
@@ -443,7 +405,6 @@ export async function updateItemDetails(resumeId: string | null, itemId: string,
   return edit(resumeId, (supabase) => updateDetailsIn(supabase, itemId, input, resumeId))
 }
 
-// The person checked a line that lost part of its source and it still holds.
 export async function keepLine(resumeId: string, itemId: string, bulletId: string): Promise<ActionResult> {
   return edit(resumeId, (supabase) => clearReview(supabase, z.string().uuid().parse(itemId), z.string().uuid().parse(bulletId)))
 }
@@ -464,7 +425,6 @@ export async function setItemOrder(resumeId: string, sectionIds: string[]): Prom
   return edit(resumeId, (supabase) => setItemOrderIn(supabase, resumeId, sectionIds))
 }
 
-// A new design changes how much fits, so the page is re-fit from everything again.
 export async function setTemplate(resumeId: string, template: string): Promise<ActionResult> {
   return edit(resumeId, (supabase) => setTemplateIn(supabase, resumeId, template))
 }
@@ -479,7 +439,6 @@ const ManualItemSchema = z.object({
   facts: z.array(z.string().trim().min(3)).max(8),
 })
 
-// Manual entry: facts labelled "You told us", no AI.
 export async function addManualItem(input: z.input<typeof ManualItemSchema>): Promise<ActionResult> {
   try {
     const { supabase } = await session()
@@ -508,8 +467,6 @@ export async function addManualItem(input: z.input<typeof ManualItemSchema>): Pr
   }
 }
 
-// Merge reworded copies of the same fact into one, keeping every line's citation pointing at a fact
-// that still exists. Nothing on the page changes; the Career Record just stops repeating itself.
 export async function mergeDuplicateFacts(): Promise<ActionResult<{ merged: number }>> {
   try {
     const { supabase } = await session()
@@ -535,13 +492,11 @@ export async function mergeDuplicateFacts(): Promise<ActionResult<{ merged: numb
 }
 
 const ExportPatch = z.object({
-  // null = not sent. Any status marks the file as sent (keeping the first sent date).
   status: z.enum(APPLICATION_STATUSES).nullable().optional(),
   sentTo: z.string().trim().max(300).optional(),
   notes: z.string().trim().max(2000).optional(),
 })
 
-// Where a downloaded file went and how that application is going.
 export async function updateExport(exportId: string, input: z.input<typeof ExportPatch>): Promise<ActionResult> {
   try {
     const { supabase } = await session()
@@ -563,15 +518,12 @@ export async function updateExport(exportId: string, input: z.input<typeof Expor
   }
 }
 
-// Chat about one resume: one AI call proposes typed edits, code checks each against the resume,
-// applies the ones that pass in order, re-fits once, and reports every edit as applied or skipped.
 export interface ChatEditResult {
   label: string
   ok: boolean
   reason?: string
 }
 
-// Only the most recent turns go to the model, so long chats stay cheap and never hit a hard limit.
 const CHAT_TURNS = 12
 const ChatHistory = z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(20000) })).min(1).max(200)
 const HEADER_KEYS = ["name", "headline", "target_role", "email", "phone", "location", "website", "github", "linkedin"] as const
@@ -581,7 +533,6 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
   try {
     const { userId, supabase } = await session()
     const recent = ChatHistory.parse(messages).slice(-CHAT_TURNS)
-    // The model's conversation must open with the user.
     const history = recent.slice(Math.max(0, recent.findIndex((m) => m.role === "user")))
     if (history.at(-1)?.role !== "user") throw new Error("Nothing to answer.")
     await requireAllowance(supabase, "fixes")
@@ -613,7 +564,7 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
 
     const edits: ChatEditResult[] = []
     let changed = false
-    let stale = false // hide/show changes which entries the layout holds; moves need it current
+    let stale = false
     for (const c of checkActions(out.actions, ctx)) {
       const a = c.action
       if (!c.ok) {
@@ -672,15 +623,12 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
         edits.push({ label: label(a), ok: false, reason: err instanceof Error ? err.message : "Couldn't apply this" })
       }
     }
-    // Saved so the conversation follows the person to another device. Best effort: a failed save
-    // must not lose the edits that were just made.
     const at = Date.now()
     const { error: chatError } = await supabase.from("chat_messages").insert([
       { resume_id: resumeId, role: "user", content: history.at(-1)!.content, created_at: new Date(at).toISOString() },
       { resume_id: resumeId, role: "assistant", content: out.reply, edits, created_at: new Date(at + 1).toISOString() },
     ])
     if (chatError) console.error("chat_messages insert failed", chatError)
-    // A chat message counts only when it changed the resume.
     if (changed) {
       await recordUsage(supabase, "fixes", resumeId)
       await relayout(resumeId)
@@ -691,7 +639,6 @@ export async function chatWithResume(resumeId: string, messages: ChatMessage[]):
   }
 }
 
-// The finished resume for a result card: its render shape plus how the checks went.
 export async function resumeSummary(resumeId: string): Promise<ActionResult<{ doc: ResumeDoc; bulletFacts: Record<string, string[]>; fails: number; warns: number; ready: boolean }>> {
   const checks = await runResumeChecks(resumeId)
   if (!checks.ok) return checks
@@ -708,7 +655,6 @@ export async function resumeSummary(resumeId: string): Promise<ActionResult<{ do
   }
 }
 
-// ⑦ Checks + parser view, run on the actual rendered PDF.
 export async function runResumeChecks(resumeId: string): Promise<ActionResult<{ results: CheckResult[]; ready: boolean; parserText: string }>> {
   try {
     const { supabase } = await session()
@@ -733,7 +679,6 @@ export async function runResumeChecks(resumeId: string): Promise<ActionResult<{ 
   }
 }
 
-// Resume library: rename, duplicate, delete. Downloads stay on the Dashboard after a delete.
 export async function renameResume(resumeId: string, title: string): Promise<ActionResult> {
   try {
     const { supabase } = await session()
@@ -747,7 +692,6 @@ export async function renameResume(resumeId: string, title: string): Promise<Act
   }
 }
 
-// A copy is always a tailored resume (there is one base), with its own copy of any own wording.
 export async function duplicateResume(resumeId: string): Promise<ActionResult<{ resumeId: string }>> {
   try {
     const { supabase } = await session()
@@ -765,7 +709,6 @@ export async function duplicateResume(resumeId: string): Promise<ActionResult<{ 
     if (error) throw new Error(error.message)
     const own = record.bullets.filter((b) => b.resume_id === resume.id)
     if (own.length) {
-      // New ids for the copy's own lines, so its layout and hidden list are remapped to them.
       const ids = new Map(own.map((b) => [b.id, crypto.randomUUID()]))
       const start = Date.now()
       const { error: bulletError } = await supabase.from("bullets").insert(
@@ -788,11 +731,8 @@ export async function deleteResume(resumeId: string): Promise<ActionResult> {
     const { supabase } = await session()
     const resume = await loadResume(supabase, resumeId)
     if (!resume) throw new Error("Resume not found")
-    // Its own lines go with it (cascade); every PDF downloaded from it stays. The base resume has no
-    // lines of its own, so deleting it leaves the Career Record whole; Get started builds a new one.
     const { error } = await supabase.from("resumes").delete().eq("id", resumeId)
     if (error) throw new Error(error.message)
-    // The job post goes too, unless a copy of this resume still uses it.
     if (resume.job_id) {
       const { count } = await supabase.from("resumes").select("id", { count: "exact", head: true }).eq("job_id", resume.job_id)
       if (count === 0) {
@@ -807,7 +747,6 @@ export async function deleteResume(resumeId: string): Promise<ActionResult> {
   }
 }
 
-// Archive hides a resume from the sidebar and the default list; nothing is deleted.
 export async function archiveResume(resumeId: string, archived: boolean): Promise<ActionResult> {
   try {
     const { supabase } = await session()

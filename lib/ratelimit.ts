@@ -3,7 +3,6 @@ import { Ratelimit } from "@upstash/ratelimit"
 import type { AiStep } from "@/lib/ai/model"
 import { redis } from "@/lib/redis"
 
-// Daily caps per user during beta. Editing, checks and downloads are never limited.
 const DAILY_LIMITS: Record<AiStep, number> = {
   transcribe: 10,
   extract: 10,
@@ -14,7 +13,6 @@ const DAILY_LIMITS: Record<AiStep, number> = {
   chat: 80,
 }
 
-// Pro gets three times the daily calls per step; the spend budget still applies.
 const PRO_FACTOR = 3
 const limiters = new Map<string, Ratelimit>()
 
@@ -42,15 +40,12 @@ export async function checkLimit(userId: string, step: AiStep, pro = false) {
   if (!res.success) throw new RateLimitedError(step, res.reset)
 }
 
-// For showing "N left today" before the user clicks.
 export async function remaining(userId: string, step: AiStep): Promise<number | null> {
   const l = limiter(step)
   if (!l) return null
   return (await l.getRemaining(userId)).remaining
 }
 
-// Public, signed-out tools (the ATS checker): a daily cap per IP. Uses Upstash when configured,
-// otherwise a per-process map, which is enough to stop a script hammering one server.
 const publicLimiters = new Map<string, Ratelimit>()
 const memoryHits = new Map<string, { day: string; n: number }>()
 

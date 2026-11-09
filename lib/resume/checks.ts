@@ -12,15 +12,11 @@ export interface CheckResult {
   label: string
   status: CheckStatus
   detail?: string
-  // Where on the resume to look, so the editor can take the person there.
   targets?: { itemId: string; bulletId?: string }[]
-  // Lines the person can settle from the checks panel, each on its own: take it off this resume
-  // ("remove"), or also confirm it still holds ("review").
   lines?: { itemId: string; bulletId: string; text: string }[]
   fix?: "remove" | "review"
 }
 
-// Warnings serious enough that the resume isn't called ready until they're dealt with.
 const BLOCKING = new Set(["empty", "ownership", "partial_sources"])
 
 export type LinkStatus = "ok" | "broken" | "restricted" | "unchecked"
@@ -40,8 +36,6 @@ export async function testLink(url: string): Promise<LinkStatus> {
   }
 }
 
-// Writing problems a structure check can catch: entries with nothing under them, lines that repeat
-// the heading or are only a link, the same skill in two groups, a date written twice.
 export function contentChecks(doc: ResumeDoc, opts: { openOwnership?: { itemId: string; title: string }[] } = {}): CheckResult[] {
   const entries = doc.sections.flatMap((s) => s.entries.map((e) => ({ ...e, type: s.type })))
   const emptyEntries = entries.filter((e) => (e.type === "job" || e.type === "project") && !e.bullets.length)
@@ -120,7 +114,6 @@ export async function runChecks(
     detail: hasContact ? undefined : [!doc.name && "name", !doc.contact.email && "email", !links.length && "a GitHub, LinkedIn or website link"].filter(Boolean).join(", ") + " missing",
   })
 
-  // Dates: one format everywhere, end >= start
   const ranges = doc.sections.flatMap((s) => s.entries).map((e) => e.dates).filter(Boolean)
   const parts = ranges.flatMap((r) => r.split(/\s+[–-]\s+/))
   const formats = new Set(parts.map(dateFormat).filter((f) => f !== "present"))
@@ -137,7 +130,6 @@ export async function runChecks(
     detail: backwards.length ? `End before start: ${backwards.join("; ")}` : unrecognized.length ? `Couldn't check: ${unrecognized.join(", ")}` : formats.size > 1 ? `Mixed formats: ${[...formats].join(", ")}` : undefined,
   })
 
-  // Links
   const allLinks = [...new Set([...links, ...doc.sections.flatMap((s) => s.entries.map((e) => e.url)).filter(Boolean)])]
   const statuses = await Promise.all(allLinks.map(async (u) => [u, await testLink(u)] as const))
   const broken = statuses.filter(([, s]) => s === "broken").map(([u]) => u)
@@ -158,7 +150,6 @@ export async function runChecks(
   const buzz = [...new Set(bulletTexts.flatMap(bannedWordsIn))]
   results.push({ id: "buzzwords", label: "No buzzwords", status: buzz.length ? "warn" : "pass", detail: buzz.length ? buzz.join(", ") : undefined })
 
-  // Skills are used somewhere else on the page
   const skills = doc.sections.filter((s) => s.type === "skills").flatMap((s) => s.entries.flatMap((e) => e.subtitle.split(/,\s*/))).filter(Boolean)
   const body = [...bulletTexts, ...doc.sections.flatMap((s) => s.entries.flatMap((e) => e.tech))].join(" ").toLowerCase()
   const unused = skills.filter((sk) => !body.includes(sk.toLowerCase()))
@@ -170,7 +161,6 @@ export async function runChecks(
   })
 
   results.push({ id: "sources", label: "Every line has a source", status: opts.allBulletsSourced ? "pass" : "fail" })
-  // Lines that kept one source after another they cited was removed.
   const review = new Set(opts.reviewLines ?? [])
   const partly = doc.sections.flatMap((s) => s.entries.flatMap((e) => e.bullets.filter((b) => review.has(b.id)).map((b) => ({ itemId: e.item_id, bulletId: b.id, text: b.text }))))
   results.push({
